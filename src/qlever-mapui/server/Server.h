@@ -31,6 +31,10 @@ class Server : public util::http::Handler {
   util::http::Answer handleClearSessReq(const Params& pars) const;
   util::http::Answer handlePosReq(const Params& pars) const;
 
+  void clearSession(const std::string& id) const;
+  void clearSessions() const;
+  void clearOldSessions() const;
+
   static std::string writePNG(const unsigned char* data, size_t w, size_t h);
 
   mutable std::mutex _m;

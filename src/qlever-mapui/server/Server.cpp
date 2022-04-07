@@ -349,7 +349,6 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   const Requestor& r = *_rs[id];
   _m.unlock();
 
-
   auto res = r.getNearest({x, y}, 100);
 
   std::stringstream json;
@@ -365,7 +364,8 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
       if (!first) {
         json << ",";
       }
-      json << "[\"" << util::jsonStringEscape(kv.first) << "\",\"" << util::jsonStringEscape(kv.second) << "\"]";
+      json << "[\"" << util::jsonStringEscape(kv.first) << "\",\""
+           << util::jsonStringEscape(kv.second) << "\"]";
 
       first = false;
     }
@@ -373,7 +373,8 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
     auto ll = util::geo::webMercToLatLng<float>(res.pos.getX(), res.pos.getY());
 
     json << "]";
-    json << std::setprecision(10) << ",\"ll\":{\"lat\" : " << ll.getY() << ",\"lng\":" << ll.getX() << "}";
+    json << std::setprecision(10) << ",\"ll\":{\"lat\" : " << ll.getY()
+         << ",\"lng\":" << ll.getX() << "}";
 
     json << "}";
   }
@@ -388,20 +389,15 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
 
 // _____________________________________________________________________________
 util::http::Answer Server::handleClearSessReq(const Params& pars) const {
-  if (pars.count("id") == 0 || pars.find("id")->second.empty())
-    throw std::invalid_argument("No session id (?id=) specified.");
-  auto id = pars.find("id")->second;
-
-  LOG(INFO) << "Clearing session " << id;
+  std::string id;
+  if (pars.count("id") != 0 && !pars.find("id")->second.empty())
+    id = pars.find("id")->second;
 
   _m.lock();
-
-  if (_rs.count(id)) {
-    _rs[id]->getMutex().lock();
-    delete _rs[id];
-    _rs.erase(id);
-
-    // TODO: erase from querycache!
+  if (id.size()) {
+    clearSession(id);
+  } else {
+    clearSessions();
   }
 
   _m.unlock();
@@ -442,7 +438,9 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     auto ur = bbox.getUpperRight();
 
     std::stringstream json;
-    json << std::fixed << "{\"qid\" : \"" << id << "\",\"bounds\":[[" << ll.getX() << "," << ll.getY() << "],[" << ur.getX() << "," << ur.getY() << "]]"
+    json << std::fixed << "{\"qid\" : \"" << id << "\",\"bounds\":[["
+         << ll.getX() << "," << ll.getY() << "],[" << ur.getX() << ","
+         << ur.getY() << "]]"
          << "}";
 
     auto answ = util::http::Answer("200 OK", json.str());
@@ -479,7 +477,8 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   auto ur = bbox.getUpperRight();
 
   std::stringstream json;
-  json << std::fixed << "{\"qid\" : \"" << id << "\",\"bounds\":[[" << ll.getX() << "," << ll.getY() << "],[" << ur.getX() << "," << ur.getY() << "]]"
+  json << std::fixed << "{\"qid\" : \"" << id << "\",\"bounds\":[[" << ll.getX()
+       << "," << ll.getY() << "],[" << ur.getX() << "," << ur.getY() << "]]"
        << "}";
 
   auto answ = util::http::Answer("200 OK", json.str(), true);
@@ -521,50 +520,33 @@ inline void pngWriteCb(png_structp png_ptr, png_bytep data, png_size_t length) {
 
 // _____________________________________________________________________________
 std::string Server::writePNG(const unsigned char* data, size_t w, size_t h) {
-  // NULLS are user error/warning functions.
   png_structp png_ptr =
       png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
   if (!png_ptr) {
-    std::cerr << "Error initializing libpng write struct." << std::endl;
     return "";
   }
 
   png_infop info_ptr = png_create_info_struct(png_ptr);
   if (!info_ptr) {
-    std::cerr << "Error initializing libpng info struct." << std::endl;
     png_destroy_write_struct(&png_ptr, (png_infopp) nullptr);
     return "";
   }
 
   if (setjmp(png_jmpbuf(png_ptr))) {
-    std::cerr << "Error in setjmp!?" << std::endl;
     png_destroy_write_struct(&png_ptr, &info_ptr);
     return "";
   }
 
-  // Could be used for progress report of some sort.
   std::stringstream ss;
   png_set_write_fn(png_ptr, &ss, pngWriteCb, 0);
 
-  // turn on or off filtering, and/or choose specific filters.
-  // You can use either a single PNG_FILTER_VALUE_NAME or the logical OR
-  // of one or more PNG_FILTER_NAME masks.
-  png_set_filter(png_ptr, 0, PNG_FILTER_NONE | PNG_FILTER_VALUE_NONE
-                 // | PNG_FILTER_SUB   | PNG_FILTER_VALUE_SUB
-                 // | PNG_FILTER_UP    | PNG_FILTER_VALUE_UP
-                 // | PNG_FILTER_AVE   | PNG_FILTER_VALUE_AVE
-                 // | PNG_FILTER_PAETH | PNG_FILTER_VALUE_PAETH
-                 // | PNG_ALL_FILTERS
-  );
+  png_set_filter(png_ptr, 0, PNG_FILTER_NONE | PNG_FILTER_VALUE_NONE);
 
-  // set the zlib compression level.
-  // 1 = fast but not much compression, 9 = slow but much compression.
-  png_set_compression_level(png_ptr, 7);
+  png_set_compression_level(png_ptr, 9);
 
   static const int bit_depth = 8;
   static const int color_type = PNG_COLOR_TYPE_RGB_ALPHA;
-  static const int interlace_type =
-      PNG_INTERLACE_ADAM7;  // or PNG_INTERLACE_NONE
+  static const int interlace_type = PNG_INTERLACE_NONE;
   png_set_IHDR(png_ptr, info_ptr, w, h, bit_depth, color_type, interlace_type,
                PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
 
@@ -577,8 +559,42 @@ std::string Server::writePNG(const unsigned char* data, size_t w, size_t h) {
 
   png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, nullptr);
 
-  // Cleanup
   png_free(png_ptr, row_pointers);
   png_destroy_write_struct(&png_ptr, &info_ptr);
   return ss.str();
+}
+
+// _____________________________________________________________________________
+void Server::clearSession(const std::string& id) const {
+  if (_rs.count(id)) {
+    LOG(INFO) << "Clearing session " << id;
+    _rs[id]->getMutex().lock();
+    delete _rs[id];
+    _rs.erase(id);
+
+    for (auto it = _queryCache.cbegin(); it != _queryCache.cend();) {
+      if (it->second == "id") {
+        it = _queryCache.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+}
+
+// _____________________________________________________________________________
+void Server::clearSessions() const {
+  for (auto r : _rs) {
+    LOG(INFO) << "Clearing session " << r.first;
+    r.second->getMutex().lock();
+    delete r.second;
+  }
+
+  _rs.clear();
+  _queryCache.clear();
+}
+
+// _____________________________________________________________________________
+void Server::clearOldSessions() const {
+  // TODO
 }

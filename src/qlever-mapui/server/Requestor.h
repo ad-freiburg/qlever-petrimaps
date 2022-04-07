@@ -70,6 +70,10 @@ class Requestor {
     return _lgrid;
   }
 
+  const util::geo::Grid<std::pair<size_t, size_t>, util::geo::Point, float>& getLinePointGrid() const {
+    return _lpgrid;
+  }
+
   const std::vector<util::geo::FPoint>& getPoints() const {
     return _points;
   }
@@ -95,6 +99,7 @@ class Requestor {
 
   mutable util::geo::Grid<size_t, util::geo::Point, float> _pgrid;
   mutable util::geo::Grid<size_t, util::geo::Line, float> _lgrid;
+  mutable util::geo::Grid<std::pair<size_t, size_t>, util::geo::Point, float> _lpgrid;
   mutable util::geo::FBox _bbox;
 
 	mutable size_t _received;
