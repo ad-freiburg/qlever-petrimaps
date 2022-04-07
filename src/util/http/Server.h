@@ -29,7 +29,7 @@ namespace http {
 // socket backlog size
 const static size_t BLOG = 128;
 // socket read buffer size
-const static size_t BSIZE = 4 * 1024;
+const static size_t BSIZE = 16 * 1024;
 // zlib compression buffer size
 const size_t BSIZE_C = 128 * 1024;
 
