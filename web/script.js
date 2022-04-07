@@ -47,13 +47,13 @@ function loadMap(id, bounds) {
         var ll= e.latlng;
         var pos = L.Projection.SphericalMercator.project(ll);
 
-        fetch('/pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id)
+        fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id)
           .then(response => response.json())
           .then(data => openPopup(data));
         });
 }
 
 console.log("Loading data from QLever...");
-fetch('/query' + window.location.search)
+fetch('query' + window.location.search)
   .then(response => response.json())
   .then(data => loadMap(data["qid"], data["bounds"]));
