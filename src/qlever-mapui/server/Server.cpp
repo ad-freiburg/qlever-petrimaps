@@ -121,7 +121,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   double realCellSize = 50000;  // TODO: get this from grid
   double virtCellSize = res * 2.5;
 
-  size_t NUM_THREADS = 8;
+  size_t NUM_THREADS = 16;
 
   size_t subCellSize = (size_t)ceil(realCellSize / virtCellSize);
   size_t* subCellCount[NUM_THREADS];
@@ -155,7 +155,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
       subCellCount[i] = new size_t[subCellSize * subCellSize];
     }
 
-#pragma omp parallel for num_threads(NUM_THREADS)
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
     for (size_t x = r.getPointGrid().getCellXFromX(bbox.getLowerLeft().getX());
          x <= r.getPointGrid().getCellXFromX(bbox.getUpperRight().getX());
          x++) {
@@ -236,7 +236,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
     for (size_t i = 0; i < NUM_THREADS; i++) {
       subCellCount[i] = new size_t[subCellSize * subCellSize];
     }
-#pragma omp parallel for num_threads(NUM_THREADS)
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
     for (size_t x = r.getLineGrid().getCellXFromX(bbox.getLowerLeft().getX());
          x <= r.getLineGrid().getCellXFromX(bbox.getUpperRight().getX()); x++) {
       for (size_t y = r.getLineGrid().getCellYFromY(bbox.getLowerLeft().getY());
@@ -311,7 +311,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   LOG(INFO) << "End render";
 
-  auto answ = util::http::Answer("200 OK", writePNG(&image[0], w, h), false);
+  auto answ = util::http::Answer("200 OK", writePNG(&image[0], w, h));
   answ.params["Content-Type"] = "image/png";
 
   LOG(INFO) << "End render to PNG";
@@ -380,7 +380,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
 
   json << "]";
 
-  auto answ = util::http::Answer("200 OK", json.str(), true);
+  auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";
 
   return answ;
@@ -406,7 +406,7 @@ util::http::Answer Server::handleClearSessReq(const Params& pars) const {
 
   _m.unlock();
 
-  auto answ = util::http::Answer("200 OK", "{}", true);
+  auto answ = util::http::Answer("200 OK", "{}");
   answ.params["Content-Type"] = "application/json; charset=utf-8";
 
   return answ;
@@ -445,7 +445,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     json << std::fixed << "{\"qid\" : \"" << id << "\",\"bounds\":[[" << ll.getX() << "," << ll.getY() << "],[" << ur.getX() << "," << ur.getY() << "]]"
          << "}";
 
-    auto answ = util::http::Answer("200 OK", json.str(), true);
+    auto answ = util::http::Answer("200 OK", json.str());
     answ.params["Content-Type"] = "application/json; charset=utf-8";
     reqor->getMutex().unlock();
 
