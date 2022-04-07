@@ -90,14 +90,33 @@ void Requestor::parse(const char* c, size_t size) const {
 
           auto p = _dangling.rfind("POINT(", 1);
           if (p != std::string::npos) {
-            _points.push_back(util::geo::latLngToWebMerc(util::geo::FPoint{
+            auto point = util::geo::latLngToWebMerc(util::geo::FPoint{
                 util::atof(_dangling.c_str() + p + 6, 10),
                 util::atof(
                     static_cast<const char*>(memchr(_dangling.c_str() + p + 6,
                                                     ' ', _dangling.size() - p) +
                                              1),
-                    10)}));
+                    10)});
+
+            if (point.getY() > std::numeric_limits<float>::max()) {
+              continue;
+            }
+
+            if (point.getY() < std::numeric_limits<float>::lowest()) {
+              continue;
+            }
+
+            if (point.getX() > std::numeric_limits<float>::max()) {
+              continue;
+            }
+
+            if (point.getX() < std::numeric_limits<float>::lowest()) {
+              continue;
+            }
+
+            _points.push_back(point);
             _pcols.push_back(_cols.size() - 1);
+
             _bbox = util::geo::extendBox(_points.back(), _bbox);
             // std::cout << util::geo::getWKT(_points.back()) << std::endl;
           } else if ((p = _dangling.rfind("LINESTRING(", 1)) !=
@@ -105,13 +124,32 @@ void Requestor::parse(const char* c, size_t size) const {
             p += 11;
             util::geo::FLine line;
             while (true) {
-              line.push_back(util::geo::latLngToWebMerc(util::geo::FPoint{
+              auto point = util::geo::latLngToWebMerc(util::geo::FPoint{
                   util::atof(_dangling.c_str() + p, 10),
                   util::atof(static_cast<const char*>(
                                  memchr(_dangling.c_str() + p, ' ',
                                         _dangling.size() - p) +
                                  1),
-                             10)}));
+                             10)});
+
+              if (point.getY() > std::numeric_limits<float>::max()) {
+                continue;
+              }
+
+              if (point.getY() < std::numeric_limits<float>::lowest()) {
+                continue;
+              }
+
+              if (point.getX() > std::numeric_limits<float>::max()) {
+                continue;
+              }
+
+              if (point.getX() < std::numeric_limits<float>::lowest()) {
+                continue;
+              }
+
+              line.push_back(point);
+
               // std::cout << util::geo::getWKT(_points.back()) << std::endl;
               _bbox = util::geo::extendBox(line.back(), _bbox);
               auto n = memchr(_dangling.c_str() + p, ',', _dangling.size() - p);
@@ -163,6 +201,7 @@ void Requestor::request(const std::string& query) const {
   }
 
   LOG(INFO) << "Done, received " << _received << " rows in total.";
+  LOG(INFO) << "BBox: " << util::geo::getWKT(_bbox);
   LOG(INFO) << "Starting building grid...";
 
   _pgrid = util::geo::Grid<size_t, util::geo::Point, float>(50000, 50000, _bbox,
@@ -195,7 +234,6 @@ std::string Requestor::queryUrl(std::string query) const {
   if (util::toLower(query).find("limit") == std::string::npos) {
     query += " LIMIT 18446744073709551615";
   }
-
 
   auto esc = curl_easy_escape(_curl, query.c_str(), query.size());
 
@@ -246,13 +284,13 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
     }
   }
 
-
   if (dBest < rad && dBest < dBestL) {
     return {true, _points[nearest], _cols[_pcols[nearest]]};
   }
 
   if (dBestL < rad && dBestL < dBest) {
-    return {true, util::geo::PolyLine<float>(_lines[nearestL]).projectOn(rp).p, _cols[_lcols[nearestL]]};
+    return {true, util::geo::PolyLine<float>(_lines[nearestL]).projectOn(rp).p,
+            _cols[_lcols[nearestL]]};
   }
 
   return {false, {0, 0}, {}};

@@ -437,10 +437,15 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     auto ll = bbox.getLowerLeft();
     auto ur = bbox.getUpperRight();
 
+    double llX = ll.getX();
+    double llY = ll.getY();
+    double urX = ur.getX();
+    double urY = ur.getY();
+
     std::stringstream json;
     json << std::fixed << "{\"qid\" : \"" << id << "\",\"bounds\":[["
-         << ll.getX() << "," << ll.getY() << "],[" << ur.getX() << ","
-         << ur.getY() << "]]"
+         << llX << "," << llY << "],[" << urX << ","
+         << urY << "]]"
          << "}";
 
     auto answ = util::http::Answer("200 OK", json.str());

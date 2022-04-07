@@ -4143,6 +4143,7 @@ function openPopup(data) {
 
 function loadMap(id, bounds) {
     console.log("Loading session " + id);
+    document.getElementById("msg").style.display = "none";
     var ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
     var ur =  L.Projection.SphericalMercator.unproject({"x": bounds[1][0], "y":bounds[1][1]});
     var bounds = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
