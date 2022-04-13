@@ -127,7 +127,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   size_t NUM_THREADS = 16;
 
   size_t subCellSize = (size_t)ceil(realCellSize / virtCellSize);
-  size_t* subCellCount[NUM_THREADS];
+  size_t** subCellCount = new size_t*[NUM_THREADS];
 
   LOG(INFO) << "Resolution: " << res;
   LOG(INFO) << "Virt cell size: " << virtCellSize;
@@ -243,17 +243,17 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
       subCellCount[i] = new size_t[subCellSize * subCellSize];
     }
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
-    for (size_t x = r.getLineGrid().getCellXFromX(bbox.getLowerLeft().getX());
-         x <= r.getLineGrid().getCellXFromX(bbox.getUpperRight().getX()); x++) {
-      for (size_t y = r.getLineGrid().getCellYFromY(bbox.getLowerLeft().getY());
-           y <= r.getLineGrid().getCellYFromY(bbox.getUpperRight().getY());
+    for (size_t x = r.getLinePointGrid().getCellXFromX(bbox.getLowerLeft().getX());
+         x <= r.getLinePointGrid().getCellXFromX(bbox.getUpperRight().getX()); x++) {
+      for (size_t y = r.getLinePointGrid().getCellYFromY(bbox.getLowerLeft().getY());
+           y <= r.getLinePointGrid().getCellYFromY(bbox.getUpperRight().getY());
            y++) {
-        if (x >= r.getLineGrid().getXWidth() ||
-            y >= r.getLineGrid().getYHeight())
+        if (x >= r.getLinePointGrid().getXWidth() ||
+            y >= r.getLinePointGrid().getYHeight())
           continue;
-        const auto& cell = r.getLineGrid().getCell(x, y);
+        const auto& cell = r.getLinePointGrid().getCell(x, y);
         if (cell.size() == 0) continue;
-        const auto& cellBox = r.getLineGrid().getBox(x, y);
+        const auto& cellBox = r.getLinePointGrid().getBox(x, y);
 
         memset(subCellCount[omp_get_thread_num()], 0,
                subCellSize * subCellSize * sizeof(size_t));
@@ -261,12 +261,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         if (subCellSize == 1) {
           subCellCount[omp_get_thread_num()][0] = cell.size();
         } else {
-          for (const auto& i : cell) {
-            auto lid = r.getLines()[i].first;
-            const auto& lbox = r.getLineBBox(lid);
-            if (!util::geo::intersects(lbox, cellBox)) continue;
-            const auto& l = r.getLine(lid);
-            for (const auto& p : l) {
+          for (const auto& p : cell) {
               if (!util::geo::contains(p, cellBox)) continue;
               float dx = p.getX() - cellBox.getLowerLeft().getX();
               size_t virtX = floor(dx / virtCellSize);
@@ -276,7 +271,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
               subCellCount[omp_get_thread_num()][virtX * subCellSize + virtY] +=
                   1;
-            }
           }
         }
 
@@ -326,6 +320,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   LOG(INFO) << "End render to PNG";
 
   heatmap_free(hm);
+  delete[] subCellCount;
 
   return answ;
 }

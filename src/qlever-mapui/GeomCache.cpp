@@ -19,9 +19,9 @@ using mapui::GeomCache;
 const static char* QUERY =
     "SELECT ?geometry WHERE {"
     " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry"
-    // " . ?osm_id <https://www.openstreetmap.org/wiki/Key:highway> ?a"
+    // " . ?osm_id <https://www.openstreetmap.org/wiki/Key:building> ?a"
     // " . ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
-    // "<https://www.openstreetmap.org/way> ."
+    // "<https://www.openstreetmap.org/relation> ."
     "} LIMIT "
     "18446744073709551615";
     // "1000000";
@@ -66,14 +66,8 @@ void GeomCache::parse(const char* c, size_t size) {
           auto p = _dangling.rfind("\"POINT(", 0);
 
           if (p != std::string::npos) {
-            auto point = util::geo::latLngToWebMerc(util::geo::FPoint{
-                util::atof(_dangling.c_str() + p + 7, 10),
-                util::atof(
-                    static_cast<const char*>(memchr(_dangling.c_str() + p + 7,
-                                                    ' ', _dangling.size() - p) +
-                                             1),
-                    10)});
-
+            p += 7;
+            auto point = parsePoint(_dangling, p);
             if (point.getY() > std::numeric_limits<float>::max()) {
               continue;
             }
@@ -89,89 +83,43 @@ void GeomCache::parse(const char* c, size_t size) {
             if (point.getX() < std::numeric_limits<float>::lowest()) {
               continue;
             }
-
             _points.push_back(point);
             _qleverIdToInternalId.push_back({-1, _points.size() - 1});
           } else if ((p = _dangling.rfind("\"LINESTRING(", 0)) !=
                      std::string::npos) {
             p += 12;
-            util::geo::FLine line;
-            while (true) {
-              auto point = util::geo::latLngToWebMerc(util::geo::FPoint{
-                  util::atof(_dangling.c_str() + p, 10),
-                  util::atof(static_cast<const char*>(
-                                 memchr(_dangling.c_str() + p, ' ',
-                                        _dangling.size() - p) +
-                                 1),
-                             10)});
-
-              if (point.getY() > std::numeric_limits<float>::max()) {
-                continue;
-              }
-
-              if (point.getY() < std::numeric_limits<float>::lowest()) {
-                continue;
-              }
-
-              if (point.getX() > std::numeric_limits<float>::max()) {
-                continue;
-              }
-
-              if (point.getX() < std::numeric_limits<float>::lowest()) {
-                continue;
-              }
-
-              line.push_back(point);
-
-              auto n = memchr(_dangling.c_str() + p, ',', _dangling.size() - p);
-              if (!n) break;
-              p = static_cast<const char*>(n) - _dangling.c_str() + 1;
-            }
-
+            const auto& line = parseLineString(_dangling, p);
             _lines.push_back(line);
             _lineBoxes.push_back(util::geo::getBoundingBox(line));
             _qleverIdToInternalId.push_back({-1, I_OFFSET + _lines.size() - 1});
-          // } else if ((p = _dangling.rfind("\"POLYGON(", 0)) !=
-                     // std::string::npos) {
-            // p += 9;
-            // util::geo::FLine line;
-            // while (true) {
-              // p = _dangling.find("(", p);
-              // if (p == std::string::npos) break;
-
-              // auto point = util::geo::latLngToWebMerc(util::geo::FPoint{
-                  // util::atof(_dangling.c_str() + p, 10),
-                  // util::atof(static_cast<const char*>(
-                                 // memchr(_dangling.c_str() + p, ' ',
-                                        // _dangling.size() - p) +
-                                 // 1),
-                             // 10)});
-
-              // if (point.getY() > std::numeric_limits<float>::max()) {
-                // continue;
-              // }
-
-              // if (point.getY() < std::numeric_limits<float>::lowest()) {
-                // continue;
-              // }
-
-              // if (point.getX() > std::numeric_limits<float>::max()) {
-                // continue;
-              // }
-
-              // if (point.getX() < std::numeric_limits<float>::lowest()) {
-                // continue;
-              // }
-
-              // line.push_back(point);
-
-              // auto n = memchr(_dangling.c_str() + p, ',', _dangling.size() - p);
-              // if (!n) break;
-              // p = static_cast<const char*>(n) - _dangling.c_str() + 1;
-            // }
-            // _lines.push_back(line);
-            // _lineBoxes.push_back(util::geo::getBoundingBox(line));
-            // _qleverIdToInternalId.push_back({-1, I_OFFSET + _lines.size() - 1});
+          } else if ((p = _dangling.rfind("\"MULTILINESTRING(", 0)) !=
+                     std::string::npos) {
+            p += 17;
+            while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
+              const auto& line = parseLineString(_dangling, p + 1);
+              _lines.push_back(line);
+              _lineBoxes.push_back(util::geo::getBoundingBox(line));
+              _qleverIdToInternalId.push_back({-1, I_OFFSET + _lines.size() - 1});
+            }
+          } else if ((p = _dangling.rfind("\"POLYGON(", 0)) !=
+                     std::string::npos) {
+            p += 9;
+            while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
+              const auto& line = parseLineString(_dangling, p + 1);
+              _lines.push_back(line);
+              _lineBoxes.push_back(util::geo::getBoundingBox(line));
+              _qleverIdToInternalId.push_back({-1, I_OFFSET + _lines.size() - 1});
+            }
+          } else if ((p = _dangling.rfind("\"MULTIPOLYGON(", 0)) !=
+                     std::string::npos) {
+            p += 13;
+              while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
+                if (_dangling[p+1] == '(') p++;
+                const auto& line = parseLineString(_dangling, p + 1);
+                _lines.push_back(line);
+                _lineBoxes.push_back(util::geo::getBoundingBox(line));
+                _qleverIdToInternalId.push_back({-1, I_OFFSET + _lines.size() - 1});
+              }
           } else {
             _qleverIdToInternalId.push_back({-1, 2 * I_OFFSET});
           }
@@ -289,6 +237,57 @@ std::string GeomCache::queryUrl(std::string query) const {
      << "&query=" << esc;
 
   return ss.str();
+}
+
+// _____________________________________________________________________________
+util::geo::FLine GeomCache::parseLineString(const std::string& a,
+                                            size_t p) const {
+  util::geo::FLine line;
+  auto end = memchr(a.c_str() + p, ')', a.size() - p);
+  assert(end);
+  while (true) {
+    auto point = util::geo::latLngToWebMerc(util::geo::FPoint{
+        util::atof(a.c_str() + p, 10),
+        util::atof(static_cast<const char*>(
+                       memchr(a.c_str() + p, ' ', a.size() - p) + 1),
+                   10)});
+
+    if (point.getY() > std::numeric_limits<float>::max()) {
+      continue;
+    }
+
+    if (point.getY() < std::numeric_limits<float>::lowest()) {
+      continue;
+    }
+
+    if (point.getX() > std::numeric_limits<float>::max()) {
+      continue;
+    }
+
+    if (point.getX() < std::numeric_limits<float>::lowest()) {
+      continue;
+    }
+
+    line.push_back(point);
+
+    auto n = memchr(a.c_str() + p, ',', a.size() - p);
+    if (!n || n > end) break;
+    p = static_cast<const char*>(n) - a.c_str() + 1;
+  }
+
+  return line;
+}
+
+// _____________________________________________________________________________
+util::geo::FPoint GeomCache::parsePoint(const std::string& a, size_t p) const {
+  auto point = util::geo::latLngToWebMerc(util::geo::FPoint{
+      util::atof(a.c_str() + p, 10),
+      util::atof(
+          static_cast<const char*>(
+              memchr(a.c_str() + p, ' ', a.size() - p) + 1),
+          10)});
+
+  return point;
 }
 
 // _____________________________________________________________________________

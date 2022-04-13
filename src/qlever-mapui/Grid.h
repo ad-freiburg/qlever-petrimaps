@@ -75,8 +75,8 @@ class Grid {
   size_t getXWidth() const;
   size_t getYHeight() const;
 
-  double getCellWidth() const { return _width; }
-  double getCellHeight() const { return _height; }
+  double getCellWidth() const { return _cellWidth; }
+  double getCellHeight() const { return _cellHeight; }
 
   size_t getCellXFromX(double lon) const;
   size_t getCellYFromY(double lat) const;

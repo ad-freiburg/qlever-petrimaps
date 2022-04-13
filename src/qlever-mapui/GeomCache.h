@@ -71,8 +71,12 @@ class GeomCache {
 
   std::string queryUrl(std::string query) const;
 
+  util::geo::FLine parseLineString(const std::string& a, size_t p) const;
+  util::geo::FPoint parsePoint(const std::string& a, size_t p) const;
+
   std::vector<util::geo::FPoint> _points;
   std::vector<util::geo::FLine> _lines;
+  std::vector<util::geo::FPolygon> _polygons;
 
   std::vector<util::geo::FBox> _lineBoxes;
 
