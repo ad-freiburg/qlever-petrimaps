@@ -7,6 +7,7 @@
 #include <codecvt>
 #include <locale>
 #include <set>
+#include <unordered_set>
 #include <vector>
 #include "qlever-mapui/build.h"
 #include "qlever-mapui/index.h"
@@ -42,6 +43,8 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
       a = handleQueryReq(params);
     } else if (cmd == "/clearsession") {
       a = handleClearSessReq(params);
+    } else if (cmd == "/load") {
+      a = handleLoadReq(params);
     } else if (cmd == "/pos") {
       a = handlePosReq(params);
     } else if (cmd == "/build.js") {
@@ -118,7 +121,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   heatmap_t* hm = heatmap_new(w, h);
 
-  double realCellSize = 50000;  // TODO: get this from grid
+  double realCellSize = r.getPointGrid().getCellWidth();
   double virtCellSize = res * 2.5;
 
   size_t NUM_THREADS = 16;
@@ -135,13 +138,13 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   double THRESHOLD = 50;
 
   if (res < THRESHOLD) {
-    std::set<size_t> ret;
+    std::unordered_set<size_t> ret;
 
     r.getPointGrid().get(bbox, &ret);
     LOG(INFO) << "Done lookup";
 
     for (size_t i : ret) {
-      const auto& p = r.getPoints()[i];
+      const auto& p = r.getPoint(r.getPoints()[i].first);
       if (!util::geo::contains(p, bbox)) continue;
 
       points[0].push_back(
@@ -177,7 +180,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
           subCellCount[omp_get_thread_num()][0] = cell.size();
         } else {
           for (const auto& i : cell) {
-            const auto& p = r.getPoints()[i];
+            const auto& p = r.getPoint(r.getPoints()[i].first);
             float dx = p.getX() - cellBox.getLowerLeft().getX();
             size_t virtX = floor(dx / virtCellSize);
 
@@ -215,13 +218,16 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   // LINES
   if (res < THRESHOLD) {
-    std::set<size_t> ret;
+    std::unordered_set<size_t> ret;
 
     r.getLineGrid().get(bbox, &ret);
     LOG(INFO) << "Done lookup";
 
     for (size_t i : ret) {
-      const auto& l = r.getLines()[i];
+      auto lid = r.getLines()[i].first;
+      const auto& lbox = r.getLineBBox(lid);
+      if (!util::geo::intersects(lbox, bbox)) continue;
+      const auto& l = r.getLine(lid);
       if (!util::geo::intersects(l, bbox)) continue;
 
       for (const auto& p : util::geo::densify(l, res)) {
@@ -256,7 +262,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
           subCellCount[omp_get_thread_num()][0] = cell.size();
         } else {
           for (const auto& i : cell) {
-            const auto& l = r.getLines()[i];
+            auto lid = r.getLines()[i].first;
+            const auto& lbox = r.getLineBBox(lid);
+            if (!util::geo::intersects(lbox, cellBox)) continue;
+            const auto& l = r.getLine(lid);
             for (const auto& p : l) {
               if (!util::geo::contains(p, cellBox)) continue;
               float dx = p.getX() - cellBox.getLowerLeft().getX();
@@ -335,6 +344,10 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
     throw std::invalid_argument("No session id (?id=) specified.");
   auto id = pars.find("id")->second;
 
+  if (pars.count("rad") == 0 || pars.find("rad")->second.empty())
+    throw std::invalid_argument("No rad (?rad=) specified.");
+  auto rad = atof(pars.find("rad")->second.c_str());
+
   LOG(INFO) << "Click at " << x << ", " << y;
 
   _m.lock();
@@ -349,7 +362,9 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   const Requestor& r = *_rs[id];
   _m.unlock();
 
-  auto res = r.getNearest({x, y}, 100);
+  r.getMutex().lock();
+  auto res = r.getNearest({x, y}, rad);
+  r.getMutex().unlock();
 
   std::stringstream json;
 
@@ -409,13 +424,40 @@ util::http::Answer Server::handleClearSessReq(const Params& pars) const {
 }
 
 // _____________________________________________________________________________
+util::http::Answer Server::handleLoadReq(const Params& pars) const {
+  if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
+    throw std::invalid_argument("No backend (?backend=) specified.");
+  auto query = pars.find("query")->second;
+  auto backend = pars.find("backend")->second;
+
+  LOG(INFO) << "Backend is " << backend;
+
+  _m.lock();
+  if (_queryCache.count(backend)) {
+    _m.unlock();
+    auto answ = util::http::Answer("200 OK", "{}");
+    answ.params["Content-Type"] = "application/json; charset=utf-8";
+    return answ;
+  }
+
+  auto cache = new GeomCache(backend);
+
+  _caches[backend] = cache;
+  cache->request();
+  cache->requestIds();
+  _m.unlock();
+
+  auto answ = util::http::Answer("200 OK", "{}");
+  answ.params["Content-Type"] = "application/json; charset=utf-8";
+  return answ;
+}
+
+// _____________________________________________________________________________
 util::http::Answer Server::handleQueryReq(const Params& pars) const {
   if (pars.count("query") == 0 || pars.find("query")->second.empty())
     throw std::invalid_argument("No query (?q=) specified.");
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
-  std::string cb;
-  if (pars.count("cb")) cb = pars.find("cb")->second.c_str();
   auto query = pars.find("query")->second;
   auto backend = pars.find("backend")->second;
 
@@ -454,6 +496,14 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
 
     return answ;
   }
+
+  if (_caches.count(backend) == 0) {
+    auto cache = new GeomCache(backend);
+
+    _caches[backend] = cache;
+    cache->request();
+    cache->requestIds();
+  }
   _m.unlock();
 
   std::random_device dev;
@@ -463,7 +513,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
 
   std::string id = std::to_string(d(rng));
 
-  auto reqor = new Requestor(backend);
+  auto reqor = new Requestor(_caches[backend]);
 
   _m.lock();
   _rs[id] = reqor;
@@ -471,12 +521,13 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   _m.unlock();
 
   T_START(req);
+  reqor->getMutex().lock();
   reqor->request(query);
 
   LOG(INFO) << "TOTAL REQUEST TIME: " << T_STOP(req) << " ms";
-  LOG(INFO) << "NUMBER RESULTS: " << reqor->size();
 
   auto bbox = reqor->getPointGrid().getBBox();
+  reqor->getMutex().unlock();
 
   auto ll = bbox.getLowerLeft();
   auto ur = bbox.getUpperRight();
@@ -547,7 +598,7 @@ std::string Server::writePNG(const unsigned char* data, size_t w, size_t h) {
 
   png_set_filter(png_ptr, 0, PNG_FILTER_NONE | PNG_FILTER_VALUE_NONE);
 
-  png_set_compression_level(png_ptr, 9);
+  png_set_compression_level(png_ptr, 7);
 
   static const int bit_depth = 8;
   static const int color_type = PNG_COLOR_TYPE_RGB_ALPHA;

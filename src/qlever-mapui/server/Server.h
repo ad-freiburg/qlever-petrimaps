@@ -10,6 +10,7 @@
 #include <mutex>
 #include <string>
 #include "qlever-mapui/server/Requestor.h"
+#include "qlever-mapui/GeomCache.h"
 #include "util/http/Server.h"
 
 namespace mapui {
@@ -30,6 +31,7 @@ class Server : public util::http::Handler {
   util::http::Answer handleQueryReq(const Params& pars) const;
   util::http::Answer handleClearSessReq(const Params& pars) const;
   util::http::Answer handlePosReq(const Params& pars) const;
+  util::http::Answer handleLoadReq(const Params& pars) const;
 
   void clearSession(const std::string& id) const;
   void clearSessions() const;
@@ -39,6 +41,7 @@ class Server : public util::http::Handler {
 
   mutable std::mutex _m;
 
+  mutable std::map<std::string, GeomCache*> _caches;
   mutable std::map<std::string, Requestor*> _rs;
   mutable std::map<std::string, std::string> _queryCache;
 };

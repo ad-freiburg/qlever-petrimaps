@@ -2,7 +2,7 @@ var sessionId;
 
 var map = L.map('m', {
     renderer: L.canvas(),
-    maxZoom: 19
+    maxZoom: 17
 }).setView([47.9965, 7.8469], 13);
 
 L.tileLayer('https://stamen-tiles-{s}.a.ssl.fastly.net/toner-lite/{z}/{x}/{y}.png', {
@@ -12,14 +12,18 @@ L.tileLayer('https://stamen-tiles-{s}.a.ssl.fastly.net/toner-lite/{z}/{x}/{y}.pn
 
 function openPopup(data) {
     if (data.length > 0) {
-        var content = "";
+        var content = "<table>";
 
 
         for (var i in data[0]["attrs"]) {
-            content += "<br>" + data[0]["attrs"][i][1].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            content += "<tr>";
+            content += "<td style='white-space:nowrap;'>" + data[0]["attrs"][i][0] + "</td><td>" + data[0]["attrs"][i][1].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') + "</td>";
+            content += "</tr>";
         }
 
-        L.popup()
+        content += "</table>";
+
+        L.popup({"maxWidth" : 600})
             .setLatLng(data[0]["ll"])
             .setContent(content)
             .openOn(map);
@@ -47,7 +51,7 @@ function loadMap(id, bounds) {
         var ll= e.latlng;
         var pos = L.Projection.SphericalMercator.project(ll);
 
-        fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id)
+        fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
           .then(response => response.json())
           .then(data => openPopup(data));
         });
