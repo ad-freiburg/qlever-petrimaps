@@ -24,11 +24,11 @@ void Requestor::request(const std::string& qry) {
   _query = qry;
   _points.clear();
   _lines.clear();
-  CURLcode res;
 
   RequestReader reader(_cache->getBackendURL());
   _query = qry;
 
+  LOG(INFO) << "Requesting IDs for query " << qry;
   reader.requestIds(prepQuery(qry));
 
   LOG(INFO) << "Done, have " << reader.ids.size() << " ids in total.";

@@ -58,9 +58,9 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
     } else {
       a = util::http::Answer("404 Not Found", "dunno");
     }
-  } catch (std::runtime_error e) {
+  } catch (const std::runtime_error& e) {
     a = util::http::Answer("400 Bad Request", e.what());
-  } catch (std::invalid_argument e) {
+  } catch (const std::invalid_argument& e) {
     a = util::http::Answer("400 Bad Request", e.what());
   } catch (...) {
     a = util::http::Answer("500 Internal Server Error",

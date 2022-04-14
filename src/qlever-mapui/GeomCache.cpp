@@ -3,9 +3,11 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <curl/curl.h>
+
 #include <cstring>
 #include <iostream>
 #include <sstream>
+
 #include "qlever-mapui/GeomCache.h"
 #include "qlever-mapui/Misc.h"
 #include "qlever-mapui/server/Requestor.h"
@@ -19,12 +21,12 @@ using mapui::GeomCache;
 const static char* QUERY =
     "SELECT ?geometry WHERE {"
     " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry"
-    // " . ?osm_id <https://www.openstreetmap.org/wiki/Key:building> ?a"
-    // " . ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
-    // "<https://www.openstreetmap.org/relation> ."
+    " . ?osm_id <https://www.openstreetmap.org/wiki/Key:highway> ?a"
+    " . ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
+    "<https://www.openstreetmap.org/relation> ."
     "} LIMIT "
-    "18446744073709551615";
-    // "1000000";
+    // "18446744073709551615";
+    "1000";
 
 // _____________________________________________________________________________
 size_t GeomCache::writeCb(void* contents, size_t size, size_t nmemb,
@@ -47,8 +49,7 @@ size_t GeomCache::writeCbIds(void* contents, size_t size, size_t nmemb,
 // _____________________________________________________________________________
 void GeomCache::parse(const char* c, size_t size) {
   const char* start = c;
-  const char* tmp;
-  while ((c - start) < size) {
+  while (c < start + size) {
     switch (_state) {
       case IN_HEADER:
         if (*c == '\n') {
@@ -65,7 +66,7 @@ void GeomCache::parse(const char* c, size_t size) {
 
           auto p = _dangling.rfind("\"POINT(", 0);
 
-          if (p != std::string::npos) {
+          if (isGeom && p != std::string::npos) {
             p += 7;
             auto point = parsePoint(_dangling, p);
             if (point.getY() > std::numeric_limits<float>::max()) {
@@ -85,41 +86,50 @@ void GeomCache::parse(const char* c, size_t size) {
             }
             _points.push_back(point);
             _qleverIdToInternalId.push_back({-1, _points.size() - 1});
-          } else if ((p = _dangling.rfind("\"LINESTRING(", 0)) !=
-                     std::string::npos) {
+          } else if (isGeom && (p = _dangling.rfind("\"LINESTRING(", 0)) !=
+                                   std::string::npos) {
             p += 12;
             const auto& line = parseLineString(_dangling, p);
             _lines.push_back(line);
             _lineBoxes.push_back(util::geo::getBoundingBox(line));
-            _qleverIdToInternalId.push_back({-1, I_OFFSET + _lines.size() - 1});
-          } else if ((p = _dangling.rfind("\"MULTILINESTRING(", 0)) !=
-                     std::string::npos) {
+            _qleverIdToInternalId.push_back({0, I_OFFSET + _lines.size() - 1});
+          } else if (isGeom && (p = _dangling.rfind("\"MULTILINESTRING(", 0)) !=
+                                   std::string::npos) {
             p += 17;
+            size_t i = 0;
             while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
               const auto& line = parseLineString(_dangling, p + 1);
               _lines.push_back(line);
               _lineBoxes.push_back(util::geo::getBoundingBox(line));
-              _qleverIdToInternalId.push_back({-1, I_OFFSET + _lines.size() - 1});
+              _qleverIdToInternalId.push_back(
+                  {i == 0 ? 0 : 1, I_OFFSET + _lines.size() - 1});
+              i++;
             }
-          } else if ((p = _dangling.rfind("\"POLYGON(", 0)) !=
-                     std::string::npos) {
+          } else if (isGeom && (p = _dangling.rfind("\"POLYGON(", 0)) !=
+                                   std::string::npos) {
             p += 9;
+            size_t i = 0;
             while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
               const auto& line = parseLineString(_dangling, p + 1);
               _lines.push_back(line);
               _lineBoxes.push_back(util::geo::getBoundingBox(line));
-              _qleverIdToInternalId.push_back({-1, I_OFFSET + _lines.size() - 1});
+              _qleverIdToInternalId.push_back(
+                  {i == 0 ? 0 : 1, I_OFFSET + _lines.size() - 1});
+              i++;
             }
-          } else if ((p = _dangling.rfind("\"MULTIPOLYGON(", 0)) !=
-                     std::string::npos) {
+          } else if (isGeom && (p = _dangling.rfind("\"MULTIPOLYGON(", 0)) !=
+                                   std::string::npos) {
             p += 13;
-              while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
-                if (_dangling[p+1] == '(') p++;
-                const auto& line = parseLineString(_dangling, p + 1);
-                _lines.push_back(line);
-                _lineBoxes.push_back(util::geo::getBoundingBox(line));
-                _qleverIdToInternalId.push_back({-1, I_OFFSET + _lines.size() - 1});
-              }
+            size_t i = 0;
+            while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
+              if (_dangling[p + 1] == '(') p++;
+              const auto& line = parseLineString(_dangling, p + 1);
+              _lines.push_back(line);
+              _lineBoxes.push_back(util::geo::getBoundingBox(line));
+              _qleverIdToInternalId.push_back(
+                  {i == 0 ? 0 : 1, I_OFFSET + _lines.size() - 1});
+              i++;
+            }
           } else {
             _qleverIdToInternalId.push_back({-1, 2 * I_OFFSET});
           }
@@ -136,11 +146,9 @@ void GeomCache::parse(const char* c, size_t size) {
         }
 
         _dangling += *c;
-
         c++;
 
         break;
-
       default:
         break;
     }
@@ -151,10 +159,30 @@ void GeomCache::parse(const char* c, size_t size) {
 void GeomCache::parseIds(const char* c, size_t size) {
   for (size_t i = 0; i < size; i++) {
     _curId.bytes[_curByte] = c[i];
-    _curByte = ++_curByte % 8;
+    _curByte = (_curByte + 1) % 8;
 
     if (_curByte == 0) {
-      _qleverIdToInternalId[_curRow].first = _curId.val;
+      // it may be that the two requests don't match, for example if
+      // qlever is not running and we parse a 503 as a binary ID list
+
+      // this must also be a first geometry of a (possibly) multi-geometry,
+      // (indicated by a preliminary id of 0)
+      // otherwise we are out of sync with the non-ID query
+      if (_curRow < _qleverIdToInternalId.size() &&
+          _qleverIdToInternalId[_curRow].first == 0) {
+        _qleverIdToInternalId[_curRow].first = _curId.val;
+      }
+
+      // if a qlever entity contained multiple geometries (MULTILINESTRING,
+      // MULTIPOLYGON, MULTIPOIN), they appear consecutively in
+      // _qleverIdToInternalId; continuation geometries are marked by a
+      // preliminary qlever ID of 1, while the first geometry always has a
+      // preliminary id of 0
+      while (_curRow < _qleverIdToInternalId.size() - 1 &&
+             _qleverIdToInternalId[_curRow + 1].first == 1) {
+        _qleverIdToInternalId[++_curRow].first = _curId.val;
+      }
+
       _curRow++;
     }
   }
@@ -166,11 +194,10 @@ void GeomCache::request() {
   _points.clear();
   _lines.clear();
   _dangling = "";
-  CURLcode res;
 
   if (_curl) {
     auto qUrl = queryUrl(QUERY);
-    LOG(INFO) << "Query URL is " << qUrl;
+    LOG(INFO) << "[GEOMCACHE] Query URL is " << qUrl;
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
@@ -182,24 +209,22 @@ void GeomCache::request() {
 
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
-    res = curl_easy_perform(_curl);
+    curl_easy_perform(_curl);
   }
 
-  LOG(INFO) << "Done";
-  LOG(INFO) << "Received " << _points.size() << " points and " << _lines.size()
+  LOG(INFO) << "[GEOMCACHE] Done";
+  LOG(INFO) << "[GEOMCACHE] Received " << _points.size() << " points and " << _lines.size()
             << " lines";
 }
 
 // _____________________________________________________________________________
 void GeomCache::requestIds() {
-  CURLcode res;
-
   _curByte = 0;
   _curRow = 0;
 
   if (_curl) {
     auto qUrl = queryUrl(QUERY);
-    LOG(INFO) << "Binary ID query URL is " << qUrl;
+    LOG(INFO) << "[GEOMCACHE] Binary ID query URL is " << qUrl;
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbIds);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
@@ -211,16 +236,16 @@ void GeomCache::requestIds() {
 
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
-    res = curl_easy_perform(_curl);
+    curl_easy_perform(_curl);
   }
 
-  LOG(INFO) << "Received " << _curRow << " rows";
-  LOG(INFO) << "Done";
+  LOG(INFO) << "[GEOMCACHE] Received " << _curRow << " rows";
+  LOG(INFO) << "[GEOMCACHE] Done";
 
   // sorting by qlever id
-  LOG(INFO) << "Sorting results by qlever ID...";
+  LOG(INFO) << "[GEOMCACHE] Sorting results by qlever ID...";
   std::sort(_qleverIdToInternalId.begin(), _qleverIdToInternalId.end());
-  LOG(INFO) << "... done";
+  LOG(INFO) << "[GEOMCACHE] ... done";
 }
 
 // _____________________________________________________________________________
@@ -246,11 +271,11 @@ util::geo::FLine GeomCache::parseLineString(const std::string& a,
   auto end = memchr(a.c_str() + p, ')', a.size() - p);
   assert(end);
   while (true) {
-    auto point = util::geo::latLngToWebMerc(util::geo::FPoint{
+    auto point = util::geo::latLngToWebMerc(util::geo::FPoint(
         util::atof(a.c_str() + p, 10),
         util::atof(static_cast<const char*>(
-                       memchr(a.c_str() + p, ' ', a.size() - p) + 1),
-                   10)});
+                       memchr(a.c_str() + p, ' ', a.size() - p)) + 1,
+                   10)));
 
     if (point.getY() > std::numeric_limits<float>::max()) {
       continue;
@@ -280,12 +305,11 @@ util::geo::FLine GeomCache::parseLineString(const std::string& a,
 
 // _____________________________________________________________________________
 util::geo::FPoint GeomCache::parsePoint(const std::string& a, size_t p) const {
-  auto point = util::geo::latLngToWebMerc(util::geo::FPoint{
+  auto point = util::geo::latLngToWebMerc(util::geo::FPoint(
       util::atof(a.c_str() + p, 10),
-      util::atof(
-          static_cast<const char*>(
-              memchr(a.c_str() + p, ' ', a.size() - p) + 1),
-          10)});
+      util::atof(static_cast<const char*>(
+                     memchr(a.c_str() + p, ' ', a.size() - p)) + 1,
+                 10)));
 
   return point;
 }
@@ -302,7 +326,6 @@ std::vector<std::pair<size_t, size_t>> GeomCache::getRelObjects(
   while (i < ids.size() && j < _qleverIdToInternalId.size()) {
     if (ids[i].first == _qleverIdToInternalId[j].first) {
       ret.push_back({_qleverIdToInternalId[j].second, ids[i].second});
-      i++;
       j++;
     } else if (ids[i].first < _qleverIdToInternalId[j].first) {
       i++;

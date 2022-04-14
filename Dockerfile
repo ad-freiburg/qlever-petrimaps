@@ -8,7 +8,8 @@ RUN apt-get update \
        make \
        cmake \
        xxd \
-       libcurl4-openssl-dev \
+	   # careful, OpenSSL is not thread safe, you MUST use GnuTLS
+       libcurl4-gnutls-dev \
 	   default-jre \
 	   libpng-dev \
 	   libomp-dev \

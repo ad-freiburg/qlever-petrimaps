@@ -3,6 +3,7 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <iostream>
+#include <curl/curl.h>
 #include "qlever-mapui/server/Server.h"
 #include "util/Misc.h"
 #include "util/http/Server.h"
@@ -26,6 +27,9 @@ int main(int argc, char** argv) {
 
   // initialize randomness
   srand(time(NULL) + rand());  // NOLINT
+
+  // init CURL
+   curl_global_init(CURL_GLOBAL_DEFAULT);
 
   int port = 9090;
 
