@@ -125,7 +125,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   double realCellSize = r.getPointGrid().getCellWidth();
   double virtCellSize = res * 2.5;
 
-  size_t NUM_THREADS = 16;
+  size_t NUM_THREADS = 24;
 
   size_t subCellSize = (size_t)ceil(realCellSize / virtCellSize);
   size_t** subCellCount = new size_t*[NUM_THREADS];
@@ -227,10 +227,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
     LOG(INFO) << "[SERVER] ... done";
 
     for (size_t i : ret) {
-      auto lid = r.getLines()[i].first;
-      const auto& lbox = r.getLineBBox(lid);
+      auto lid = r.getObjects()[i].first;
+      const auto& lbox = r.getLineBBox(lid - I_OFFSET);
       if (!util::geo::intersects(lbox, bbox)) continue;
-      const auto& l = r.getLine(lid);
+      const auto& l = r.getLine(lid - I_OFFSET);
       if (!util::geo::intersects(l, bbox)) continue;
 
       for (const auto& p : util::geo::densify(l, res)) {

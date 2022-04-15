@@ -55,6 +55,10 @@ class Requestor {
     return _lines;
   }
 
+  const std::vector<std::pair<uint64_t, uint64_t>>& getObjects() const {
+    return _objects;
+  }
+
   const util::geo::FPoint& getPoint(uint64_t id) const {
     return _cache->getPoints()[id];
   }
@@ -85,6 +89,7 @@ class Requestor {
 
   std::vector<std::pair<uint64_t, uint64_t>> _points;
   std::vector<std::pair<uint64_t, uint64_t>> _lines;
+  std::vector<std::pair<uint64_t, uint64_t>> _objects;
 
   petrimaps::Grid<size_t, util::geo::Point, float> _pgrid;
   petrimaps::Grid<size_t, util::geo::Line, float> _lgrid;

@@ -7,6 +7,7 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include <parallel/algorithm>
 
 #include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/Misc.h"
@@ -21,9 +22,9 @@ using petrimaps::GeomCache;
 const static char* QUERY =
     "SELECT ?geometry WHERE {"
     " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry"
-    // " . ?osm_id <https://www.openstreetmap.org/wiki/Key:building> ?a"
+    // " . ?osm_id <https://www.openstreetmap.org/wiki/Key:highway> ?a"
     // " . ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
-    // "<https://www.openstreetmap.org/relation> ."
+    // "<https://www.openstreetmap.org/way> ."
     "} LIMIT "
     "18446744073709551615";
     // "100000";
@@ -69,9 +70,12 @@ void GeomCache::parse(const char* c, size_t size) {
           if (isGeom && p != std::string::npos) {
             p += 7;
             auto point = parsePoint(_dangling, p);
-            if (!pointValid(point)) continue;
-            _points.push_back(point);
-            _qleverIdToInternalId.push_back({0, _points.size() - 1});
+            if (pointValid(point)) {
+              _points.push_back(point);
+              _qleverIdToInternalId.push_back({0, _points.size() - 1});
+            } else {
+              _qleverIdToInternalId.push_back({0, 2 * I_OFFSET});
+            }
           } else if (isGeom && (p = _dangling.rfind("\"LINESTRING(", 0)) !=
                                    std::string::npos) {
             p += 12;
@@ -117,10 +121,14 @@ void GeomCache::parse(const char* c, size_t size) {
               i++;
             }
           } else {
-            _qleverIdToInternalId.push_back({-1, 2 * I_OFFSET});
+            _qleverIdToInternalId.push_back({0, 2 * I_OFFSET});
           }
 
           if (*c == '\n') {
+            _curRow++;
+            if (_curRow % 1000000 == 0) {
+              LOG(INFO) << "[GEOMCACHE] " << "@ row " << _curRow;
+            }
             _dangling = "";
             c++;
             continue;
@@ -148,13 +156,15 @@ void GeomCache::parseIds(const char* c, size_t size) {
     _curByte = (_curByte + 1) % 8;
 
     if (_curByte == 0) {
+      if (_curRow % 1000000 == 0) {
+        LOG(INFO) << "[GEOMCACHE] " << "@ row " << _curRow;
+      }
       if (_curRow < _qleverIdToInternalId.size() &&
           _qleverIdToInternalId[_curRow].first == 0) {
         _qleverIdToInternalId[_curRow].first = _curId.val;
       } else {
         LOG(WARN) << "The results for the binary IDs are out of sync.";
         LOG(WARN) << "_curRow: " << _curRow << " _qleverIdInt.size: " << _qleverIdToInternalId.size() << " cur val: " << _qleverIdToInternalId[_curRow].first;
-        exit(1);
       }
 
       // if a qlever entity contained multiple geometries (MULTILINESTRING,
@@ -177,6 +187,7 @@ void GeomCache::request() {
   _state = IN_HEADER;
   _points.clear();
   _lines.clear();
+  _curRow = 0;
   _dangling = "";
 
   LOG(INFO) << "[GEOMCACHE] Query is " << QUERY;
@@ -236,7 +247,7 @@ void GeomCache::requestIds() {
 
   // sorting by qlever id
   LOG(INFO) << "[GEOMCACHE] Sorting results by qlever ID...";
-  std::sort(_qleverIdToInternalId.begin(), _qleverIdToInternalId.end());
+  __gnu_parallel::sort(_qleverIdToInternalId.begin(), _qleverIdToInternalId.end());
   LOG(INFO) << "[GEOMCACHE] ... done";
 }
 

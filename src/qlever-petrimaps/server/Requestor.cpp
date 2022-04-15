@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <iostream>
+#include <parallel/algorithm>
 #include <regex>
 #include <sstream>
 
@@ -38,38 +39,46 @@ void Requestor::request(const std::string& qry) {
 
   // sort by qlever id
   LOG(INFO) << "[REQUESTOR] Sorting results by qlever ID...";
-  std::sort(reader.ids.begin(), reader.ids.end());
+  __gnu_parallel::sort(reader.ids.begin(), reader.ids.end());
   LOG(INFO) << "[REQUESTOR] ... done";
 
   LOG(INFO) << "[REQUESTOR] Retrieving geoms from cache...";
   // (geom id, result row)
-  const auto& geoms = _cache->getRelObjects(reader.ids);
-  LOG(INFO) << "[REQUESTOR] ... done, got " << geoms.size() << " geoms.";
+  _objects = _cache->getRelObjects(reader.ids);
+  LOG(INFO) << "[REQUESTOR] ... done, got " << _objects.size() << " objects.";
 
   LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";
-
+  size_t NUM_THREADS = 24;
+  std::vector<util::geo::FBox> bboxes(NUM_THREADS);
   util::geo::FBox bbox;
-  for (auto p : geoms) {
+
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
+  for (size_t i = 0; i < _objects.size(); i++) {
+    auto p = _objects[i];
     auto geomId = p.first;
     auto rowId = p.second;
 
     if (geomId < I_OFFSET) {
       auto pId = geomId;
-      _points.push_back({pId, rowId});
-      bbox = util::geo::extendBox(_cache->getPointBBox(pId), bbox);
+      bboxes[omp_get_thread_num()] = util::geo::extendBox(
+          _cache->getPointBBox(pId), bboxes[omp_get_thread_num()]);
     } else if (geomId < 2 * I_OFFSET) {
-      auto lId = geomId - I_OFFSET;
-      _lines.push_back({lId, rowId});
-      bbox = util::geo::extendBox(_cache->getLineBBox(lId), bbox);
+      auto lId = geomId;
+      bboxes[omp_get_thread_num()] = util::geo::extendBox(
+          _cache->getLineBBox(lId), bboxes[omp_get_thread_num()]);
     }
+  }
+
+  for (const auto& box : bboxes) {
+    bbox = util::geo::extendBox(box, bbox);
   }
 
   LOG(INFO) << "[REQUESTOR] ... done";
 
   LOG(INFO) << "[REQUESTOR] BBox: " << util::geo::getWKT(bbox);
-  LOG(INFO) << "[REQUESTOR] Starting building grid...";
+  LOG(INFO) << "[REQUESTOR] Building grid...";
 
-  double GRID_SIZE = 50000;
+  double GRID_SIZE = 100000;
 
   _pgrid = petrimaps::Grid<size_t, util::geo::Point, float>(GRID_SIZE,
                                                             GRID_SIZE, bbox);
@@ -78,15 +87,15 @@ void Requestor::request(const std::string& qry) {
   _lpgrid = petrimaps::Grid<util::geo::FPoint, util::geo::Point, float>(
       GRID_SIZE, GRID_SIZE, bbox);
 
-  LOG(INFO) << "[REQUESTOR] ...done init ...";
-
 #pragma omp parallel sections
   {
 #pragma omp section
     {
       size_t i = 0;
-      for (const auto& p : _points) {
-        _pgrid.add(_cache->getPoints()[p.first], _cache->getPointBBox(p.first),
+      for (const auto& p : _objects) {
+        auto geomId = p.first;
+        if (geomId >= I_OFFSET) continue;
+        _pgrid.add(_cache->getPoints()[geomId], _cache->getPointBBox(geomId),
                    i);
         i++;
       }
@@ -94,18 +103,14 @@ void Requestor::request(const std::string& qry) {
 #pragma omp section
     {
       size_t i = 0;
-      for (const auto& l : _lines) {
-        _lgrid.add(_cache->getLines()[l.first], _cache->getLineBBox(l.first),
-                   i);
-        i++;
-      }
-    }
-#pragma omp section
-    {
-      for (const auto& l : _lines) {
-        for (const auto& p : _cache->getLines()[l.first]) {
+      for (const auto& l : _objects) {
+        if (l.first < I_OFFSET) continue;
+        auto geomId = l.first - I_OFFSET;
+        _lgrid.add(_cache->getLines()[geomId], _cache->getLineBBox(geomId), i);
+        for (const auto& p : _cache->getLines()[geomId]) {
           _lpgrid.add(p, util::geo::getBoundingBox(p), p);
         }
+        i++;
       }
     }
   }
@@ -153,61 +158,69 @@ std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
 
 // _____________________________________________________________________________
 const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
-  // points
   auto box = pad(getBoundingBox(rp), rad);
-
-  std::unordered_set<size_t> ret;
-  _pgrid.get(box, &ret);
 
   size_t nearest = 0;
   double dBest = std::numeric_limits<double>::max();
-
-  for (const auto& i : ret) {
-    auto p = _cache->getPoints()[_points[i].first];
-    if (!util::geo::contains(p, box)) continue;
-
-    double d = util::geo::dist(p, rp);
-
-    if (d < dBest) {
-      nearest = i;
-      dBest = d;
-    }
-  }
-
-  // lines
   size_t nearestL = 0;
   double dBestL = std::numeric_limits<double>::max();
+#pragma omp parallel sections
+  {
+#pragma omp section
+    {
+      // points
 
-  std::unordered_set<size_t> retL;
-  _lgrid.get(box, &retL);
+      std::unordered_set<size_t> ret;
+      _pgrid.get(box, &ret);
 
-  for (const auto& i : retL) {
-    auto lBox = _cache->getLineBBox(_lines[i].first);
-    if (!util::geo::intersects(lBox, box)) continue;
+      for (const auto& i : ret) {
+        auto p = _cache->getPoints()[_objects[i].first];
+        if (!util::geo::contains(p, box)) continue;
 
-    auto l = _cache->getLines()[_lines[i].first];
+        double d = util::geo::dist(p, rp);
 
-    double d = util::geo::dist(l, rp);
+        if (d < dBest) {
+          nearest = i;
+          dBest = d;
+        }
+      }
+    }
 
-    if (d < dBestL) {
-      nearestL = i;
-      dBestL = d;
+#pragma omp section
+    {
+      // lines
+      std::unordered_set<size_t> retL;
+      _lgrid.get(box, &retL);
+
+      for (const auto& i : retL) {
+        auto lBox = _cache->getLineBBox(_objects[i].first - I_OFFSET);
+        if (!util::geo::intersects(lBox, box)) continue;
+
+        auto l = _cache->getLines()[_objects[i].first - I_OFFSET];
+
+        double d = util::geo::dist(l, rp);
+
+        if (d < dBestL) {
+          nearestL = i;
+          dBestL = d;
+        }
+      }
     }
   }
 
-  if (dBest < rad && dBest < dBestL) {
-    return {true, _cache->getPoints()[_points[nearest].first],
-            requestRow(_points[nearest].second)};
-  }
+    if (dBest < rad && dBest < dBestL) {
+      return {true, _cache->getPoints()[_points[nearest].first],
+              requestRow(_points[nearest].second)};
+    }
 
-  if (dBestL < rad && dBestL < dBest) {
-    return {
-        true,
-        util::geo::PolyLine<float>(_cache->getLines()[_lines[nearestL].first])
-            .projectOn(rp)
-            .p,
-        requestRow(_lines[nearestL].second)};
-  }
+    if (dBestL < rad && dBestL < dBest) {
+      return {true,
+              util::geo::PolyLine<float>(
+                  _cache->getLines()[_objects[nearestL].first - I_OFFSET])
+                  .projectOn(rp)
+                  .p,
+              requestRow(_objects[nearestL].second)};
+    }
 
-  return {false, {0, 0}, {}};
-}
+    return {false, {0, 0}, {}};
+  }
