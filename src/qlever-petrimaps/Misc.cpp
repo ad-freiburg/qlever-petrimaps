@@ -5,10 +5,10 @@
 #include <string>
 #include <vector>
 #include <stdint.h>
-#include "qlever-mapui/Misc.h"
+#include "qlever-petrimaps/Misc.h"
 #include "util/log/Log.h"
 
-using mapui::RequestReader;
+using petrimaps::RequestReader;
 
 // _____________________________________________________________________________
 void RequestReader::requestIds(const std::string& query) {
@@ -26,6 +26,8 @@ void RequestReader::requestIds(const std::string& query) {
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_perform(_curl);
+  } else {
+    LOG(ERROR) << "[REQUESTREADER] Failed to perform curl request.";
   }
 }
 
@@ -45,6 +47,8 @@ void RequestReader::requestRows(const std::string& query) {
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_perform(_curl);
+  } else {
+    LOG(ERROR) << "[REQUESTREADER] Failed to perform curl request.";
   }
 }
 

@@ -2,19 +2,19 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
-#ifndef MAPUI_SERVER_REQUESTOR_H_
-#define MAPUI_SERVER_REQUESTOR_H_
+#ifndef PETRIMAPS_SERVER_REQUESTOR_H_
+#define PETRIMAPS_SERVER_REQUESTOR_H_
 
 #include <map>
 #include <mutex>
 #include <string>
 #include <vector>
-#include "qlever-mapui/GeomCache.h"
-#include "qlever-mapui/Grid.h"
-#include "qlever-mapui/Misc.h"
+#include "qlever-petrimaps/GeomCache.h"
+#include "qlever-petrimaps/Grid.h"
+#include "qlever-petrimaps/Misc.h"
 #include "util/geo/Geo.h"
 
-namespace mapui {
+namespace petrimaps {
 
 struct ResObj {
   bool has;
@@ -34,15 +34,15 @@ class Requestor {
 
   size_t size() const { return _points.size(); }
 
-  const mapui::Grid<size_t, util::geo::Point, float>& getPointGrid() const {
+  const petrimaps::Grid<size_t, util::geo::Point, float>& getPointGrid() const {
     return _pgrid;
   }
 
-  const mapui::Grid<size_t, util::geo::Line, float>& getLineGrid() const {
+  const petrimaps::Grid<size_t, util::geo::Line, float>& getLineGrid() const {
     return _lgrid;
   }
 
-  const mapui::Grid<util::geo::FPoint, util::geo::Point, float>&
+  const petrimaps::Grid<util::geo::FPoint, util::geo::Point, float>&
   getLinePointGrid() const {
     return _lpgrid;
   }
@@ -86,10 +86,10 @@ class Requestor {
   std::vector<std::pair<uint64_t, uint64_t>> _points;
   std::vector<std::pair<uint64_t, uint64_t>> _lines;
 
-  mapui::Grid<size_t, util::geo::Point, float> _pgrid;
-  mapui::Grid<size_t, util::geo::Line, float> _lgrid;
-  mapui::Grid<util::geo::FPoint, util::geo::Point, float> _lpgrid;
+  petrimaps::Grid<size_t, util::geo::Point, float> _pgrid;
+  petrimaps::Grid<size_t, util::geo::Line, float> _lgrid;
+  petrimaps::Grid<util::geo::FPoint, util::geo::Point, float> _lpgrid;
 };
-}  // namespace mapui
+}  // namespace petrimaps
 
 #endif  // MAPUI_SERVER_REQUESTOR_H_

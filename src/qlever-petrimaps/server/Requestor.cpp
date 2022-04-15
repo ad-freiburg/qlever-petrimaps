@@ -6,18 +6,18 @@
 #include <iostream>
 #include <regex>
 #include <sstream>
-#include "qlever-mapui/Misc.h"
-#include "qlever-mapui/server/Requestor.h"
+
+#include "qlever-petrimaps/Misc.h"
+#include "qlever-petrimaps/server/Requestor.h"
 #include "util/Misc.h"
 #include "util/geo/Geo.h"
 #include "util/geo/PolyLine.h"
 #include "util/log/Log.h"
 
-using mapui::GeomCache;
-using mapui::Requestor;
-using mapui::ResObj;
-using mapui::RequestReader;
-
+using petrimaps::GeomCache;
+using petrimaps::Requestor;
+using petrimaps::RequestReader;
+using petrimaps::ResObj;
 
 // _____________________________________________________________________________
 void Requestor::request(const std::string& qry) {
@@ -28,24 +28,25 @@ void Requestor::request(const std::string& qry) {
   RequestReader reader(_cache->getBackendURL());
   _query = qry;
 
-  LOG(INFO) << "Requesting IDs for query " << qry;
+  LOG(INFO) << "[REQUESTOR] Requesting IDs for query " << qry;
   reader.requestIds(prepQuery(qry));
 
-  LOG(INFO) << "Done, have " << reader.ids.size() << " ids in total.";
+  LOG(INFO) << "[REQUESTOR] Done, have " << reader.ids.size()
+            << " ids in total.";
 
   // join with geoms from GeomCache
 
   // sort by qlever id
-  LOG(INFO) << "Sorting results by qlever ID...";
+  LOG(INFO) << "[REQUESTOR] Sorting results by qlever ID...";
   std::sort(reader.ids.begin(), reader.ids.end());
-  LOG(INFO) << "... done";
+  LOG(INFO) << "[REQUESTOR] ... done";
 
-  LOG(INFO) << "Retrieving geoms from cache...";
+  LOG(INFO) << "[REQUESTOR] Retrieving geoms from cache...";
   // (geom id, result row)
   const auto& geoms = _cache->getRelObjects(reader.ids);
-  LOG(INFO) << "... done, got " << geoms.size() << " geoms.";
+  LOG(INFO) << "[REQUESTOR] ... done, got " << geoms.size() << " geoms.";
 
-  LOG(INFO) << "Calculating bounding box of result...";
+  LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";
 
   util::geo::FBox bbox;
   for (auto p : geoms) {
@@ -63,21 +64,21 @@ void Requestor::request(const std::string& qry) {
     }
   }
 
-  LOG(INFO) << "... done";
+  LOG(INFO) << "[REQUESTOR] ... done";
 
-  LOG(INFO) << "BBox: " << util::geo::getWKT(bbox);
-  LOG(INFO) << "Starting building grid...";
+  LOG(INFO) << "[REQUESTOR] BBox: " << util::geo::getWKT(bbox);
+  LOG(INFO) << "[REQUESTOR] Starting building grid...";
 
   double GRID_SIZE = 50000;
 
-  _pgrid =
-      mapui::Grid<size_t, util::geo::Point, float>(GRID_SIZE, GRID_SIZE, bbox);
-  _lgrid =
-      mapui::Grid<size_t, util::geo::Line, float>(GRID_SIZE, GRID_SIZE, bbox);
-  _lpgrid = mapui::Grid<util::geo::FPoint, util::geo::Point, float>(
+  _pgrid = petrimaps::Grid<size_t, util::geo::Point, float>(GRID_SIZE,
+                                                            GRID_SIZE, bbox);
+  _lgrid = petrimaps::Grid<size_t, util::geo::Line, float>(GRID_SIZE, GRID_SIZE,
+                                                           bbox);
+  _lpgrid = petrimaps::Grid<util::geo::FPoint, util::geo::Point, float>(
       GRID_SIZE, GRID_SIZE, bbox);
 
-  LOG(INFO) << "...done init ...";
+  LOG(INFO) << "[REQUESTOR] ...done init ...";
 
 #pragma omp parallel sections
   {
@@ -109,13 +110,15 @@ void Requestor::request(const std::string& qry) {
     }
   }
 
-  LOG(INFO) << "...done";
+  LOG(INFO) << "[REQUESTOR] ...done";
 }
 
 // _____________________________________________________________________________
 std::vector<std::pair<std::string, std::string>> Requestor::requestRow(
     uint64_t row) const {
   RequestReader reader(_cache->getBackendURL());
+  LOG(INFO) << "[REQUESTOR] Requesting single row " << row << " for query "
+            << _query;
   auto query = prepQueryRow(_query, row);
 
   reader.requestRows(query);

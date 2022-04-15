@@ -8,25 +8,25 @@
 #include <iostream>
 #include <sstream>
 
-#include "qlever-mapui/GeomCache.h"
-#include "qlever-mapui/Misc.h"
-#include "qlever-mapui/server/Requestor.h"
+#include "qlever-petrimaps/GeomCache.h"
+#include "qlever-petrimaps/Misc.h"
+#include "qlever-petrimaps/server/Requestor.h"
 #include "util/Misc.h"
 #include "util/geo/Geo.h"
 #include "util/geo/PolyLine.h"
 #include "util/log/Log.h"
 
-using mapui::GeomCache;
+using petrimaps::GeomCache;
 
 const static char* QUERY =
     "SELECT ?geometry WHERE {"
     " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry"
-    " . ?osm_id <https://www.openstreetmap.org/wiki/Key:highway> ?a"
-    " . ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
-    "<https://www.openstreetmap.org/relation> ."
+    // " . ?osm_id <https://www.openstreetmap.org/wiki/Key:building> ?a"
+    // " . ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
+    // "<https://www.openstreetmap.org/relation> ."
     "} LIMIT "
-    // "18446744073709551615";
-    "1000";
+    "18446744073709551615";
+    // "100000";
 
 // _____________________________________________________________________________
 size_t GeomCache::writeCb(void* contents, size_t size, size_t nmemb,
@@ -69,23 +69,9 @@ void GeomCache::parse(const char* c, size_t size) {
           if (isGeom && p != std::string::npos) {
             p += 7;
             auto point = parsePoint(_dangling, p);
-            if (point.getY() > std::numeric_limits<float>::max()) {
-              continue;
-            }
-
-            if (point.getY() < std::numeric_limits<float>::lowest()) {
-              continue;
-            }
-
-            if (point.getX() > std::numeric_limits<float>::max()) {
-              continue;
-            }
-
-            if (point.getX() < std::numeric_limits<float>::lowest()) {
-              continue;
-            }
+            if (!pointValid(point)) continue;
             _points.push_back(point);
-            _qleverIdToInternalId.push_back({-1, _points.size() - 1});
+            _qleverIdToInternalId.push_back({0, _points.size() - 1});
           } else if (isGeom && (p = _dangling.rfind("\"LINESTRING(", 0)) !=
                                    std::string::npos) {
             p += 12;
@@ -162,15 +148,13 @@ void GeomCache::parseIds(const char* c, size_t size) {
     _curByte = (_curByte + 1) % 8;
 
     if (_curByte == 0) {
-      // it may be that the two requests don't match, for example if
-      // qlever is not running and we parse a 503 as a binary ID list
-
-      // this must also be a first geometry of a (possibly) multi-geometry,
-      // (indicated by a preliminary id of 0)
-      // otherwise we are out of sync with the non-ID query
       if (_curRow < _qleverIdToInternalId.size() &&
           _qleverIdToInternalId[_curRow].first == 0) {
         _qleverIdToInternalId[_curRow].first = _curId.val;
+      } else {
+        LOG(WARN) << "The results for the binary IDs are out of sync.";
+        LOG(WARN) << "_curRow: " << _curRow << " _qleverIdInt.size: " << _qleverIdToInternalId.size() << " cur val: " << _qleverIdToInternalId[_curRow].first;
+        exit(1);
       }
 
       // if a qlever entity contained multiple geometries (MULTILINESTRING,
@@ -195,6 +179,8 @@ void GeomCache::request() {
   _lines.clear();
   _dangling = "";
 
+  LOG(INFO) << "[GEOMCACHE] Query is " << QUERY;
+
   if (_curl) {
     auto qUrl = queryUrl(QUERY);
     LOG(INFO) << "[GEOMCACHE] Query URL is " << qUrl;
@@ -210,17 +196,21 @@ void GeomCache::request() {
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_perform(_curl);
+  } else {
+    LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request.";
   }
 
   LOG(INFO) << "[GEOMCACHE] Done";
-  LOG(INFO) << "[GEOMCACHE] Received " << _points.size() << " points and " << _lines.size()
-            << " lines";
+  LOG(INFO) << "[GEOMCACHE] Received " << _points.size() << " points and "
+            << _lines.size() << " lines";
 }
 
 // _____________________________________________________________________________
 void GeomCache::requestIds() {
   _curByte = 0;
   _curRow = 0;
+
+  LOG(INFO) << "[GEOMCACHE] Query is " << QUERY;
 
   if (_curl) {
     auto qUrl = queryUrl(QUERY);
@@ -237,6 +227,8 @@ void GeomCache::requestIds() {
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_perform(_curl);
+  } else {
+    LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request.";
   }
 
   LOG(INFO) << "[GEOMCACHE] Received " << _curRow << " rows";
@@ -253,15 +245,24 @@ std::string GeomCache::queryUrl(std::string query) const {
   std::stringstream ss;
 
   if (util::toLower(query).find("limit") == std::string::npos) {
-    query += " LIMIT 18446744073709551615";
+    query += " LIMIT " + std::to_string(MAXROWS);
   }
 
   auto esc = curl_easy_escape(_curl, query.c_str(), query.size());
 
-  ss << _backendUrl << "/?send=18446744073709551615"
-     << "&query=" << esc;
+  ss << _backendUrl << "/?send=" << std::to_string(MAXROWS) << "&query=" << esc;
 
   return ss.str();
+}
+
+// _____________________________________________________________________________
+bool GeomCache::pointValid(const util::geo::FPoint& p) {
+  if (p.getY() > std::numeric_limits<float>::max()) return false;
+  if (p.getY() < std::numeric_limits<float>::lowest()) return false;
+  if (p.getX() > std::numeric_limits<float>::max()) return false;
+  if (p.getX() < std::numeric_limits<float>::lowest()) return false;
+
+  return true;
 }
 
 // _____________________________________________________________________________
@@ -273,26 +274,12 @@ util::geo::FLine GeomCache::parseLineString(const std::string& a,
   while (true) {
     auto point = util::geo::latLngToWebMerc(util::geo::FPoint(
         util::atof(a.c_str() + p, 10),
-        util::atof(static_cast<const char*>(
-                       memchr(a.c_str() + p, ' ', a.size() - p)) + 1,
-                   10)));
+        util::atof(
+            static_cast<const char*>(memchr(a.c_str() + p, ' ', a.size() - p)) +
+                1,
+            10)));
 
-    if (point.getY() > std::numeric_limits<float>::max()) {
-      continue;
-    }
-
-    if (point.getY() < std::numeric_limits<float>::lowest()) {
-      continue;
-    }
-
-    if (point.getX() > std::numeric_limits<float>::max()) {
-      continue;
-    }
-
-    if (point.getX() < std::numeric_limits<float>::lowest()) {
-      continue;
-    }
-
+    if (!pointValid(point)) continue;
     line.push_back(point);
 
     auto n = memchr(a.c_str() + p, ',', a.size() - p);
@@ -307,9 +294,10 @@ util::geo::FLine GeomCache::parseLineString(const std::string& a,
 util::geo::FPoint GeomCache::parsePoint(const std::string& a, size_t p) const {
   auto point = util::geo::latLngToWebMerc(util::geo::FPoint(
       util::atof(a.c_str() + p, 10),
-      util::atof(static_cast<const char*>(
-                     memchr(a.c_str() + p, ' ', a.size() - p)) + 1,
-                 10)));
+      util::atof(
+          static_cast<const char*>(memchr(a.c_str() + p, ' ', a.size() - p)) +
+              1,
+          10)));
 
   return point;
 }
@@ -319,6 +307,9 @@ std::vector<std::pair<size_t, size_t>> GeomCache::getRelObjects(
     const std::vector<std::pair<uint64_t, uint64_t>>& ids) const {
   // (geom id, result row)
   std::vector<std::pair<size_t, size_t>> ret;
+
+  // in most cases, the return size will be exactly the size of the ids set
+  ret.reserve(ids.size());
 
   size_t i = 0;
   size_t j = 0;

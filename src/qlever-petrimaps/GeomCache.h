@@ -2,19 +2,21 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
-#ifndef MAPUI_GEOMCACHE_H_
-#define MAPUI_GEOMCACHE_H_
+#ifndef PETRIMAPS_GEOMCACHE_H_
+#define PETRIMAPS_GEOMCACHE_H_
 
 #include <curl/curl.h>
+
 #include <map>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "qlever-mapui/Misc.h"
+
+#include "qlever-petrimaps/Misc.h"
 #include "util/geo/Geo.h"
 
-namespace mapui {
+namespace petrimaps {
 
 class GeomCache {
  public:
@@ -74,6 +76,8 @@ class GeomCache {
   util::geo::FLine parseLineString(const std::string& a, size_t p) const;
   util::geo::FPoint parsePoint(const std::string& a, size_t p) const;
 
+  static bool pointValid(const util::geo::FPoint& p);
+
   std::vector<util::geo::FPoint> _points;
   std::vector<util::geo::FLine> _lines;
   std::vector<util::geo::FPolygon> _polygons;
@@ -85,6 +89,6 @@ class GeomCache {
   std::string _dangling;
   ParseState _state;
 };
-}  // namespace mapui
+}  // namespace petrimaps
 
-#endif  // MAPUI_GEOMCACHE_H_
+#endif  // PETRIMAPS_GEOMCACHE_H_

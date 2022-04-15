@@ -10,6 +10,14 @@ L.tileLayer('https://stamen-tiles-{s}.a.ssl.fastly.net/toner-lite/{z}/{x}/{y}.pn
     attribution: '&copy; <a rel="noreferrer" target="_blank" href="#">OpenStreetMap</a>'
 }).addTo(map);
 
+function trimStr(str) {
+    if (str.length > 100) {
+        return str.substring(0, 100) + " [...]";
+    }
+
+    return str;
+}
+
 function openPopup(data) {
     if (data.length > 0) {
         var content = "<table>";
@@ -17,7 +25,7 @@ function openPopup(data) {
 
         for (var i in data[0]["attrs"]) {
             content += "<tr>";
-            content += "<td style='white-space:nowrap;'>" + data[0]["attrs"][i][0] + "</td><td>" + data[0]["attrs"][i][1].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') + "</td>";
+            content += "<td style='white-space:nowrap;'>" + data[0]["attrs"][i][0] + "</td><td>" + trimStr(data[0]["attrs"][i][1].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')) + "</td>";
             content += "</tr>";
         }
 

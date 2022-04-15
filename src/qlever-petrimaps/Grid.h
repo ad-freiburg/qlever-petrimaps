@@ -2,15 +2,15 @@
 // Chair of Algorithms and Data Structures.
 // Author: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
-#ifndef MAPUI_GRID_H_
-#define MAPUI_GRID_H_
+#ifndef PETRIMAPS_GRID_H_
+#define PETRIMAPS_GRID_H_
 
 #include <map>
 #include <unordered_set>
 #include <vector>
 #include "util/geo/Geo.h"
 
-namespace mapui {
+namespace petrimaps {
 
 class GridException : public std::runtime_error {
  public:
@@ -99,8 +99,8 @@ class Grid {
   std::vector<V>** _grid;
 };
 
-#include "qlever-mapui/Grid.tpp"
+#include "qlever-petrimaps/Grid.tpp"
 
-}  // namespace mapui
+}  // namespace petrimaps
 
-#endif  // MAPUI_GRID_H_
+#endif  // PETRIMAPS_GRID_H_

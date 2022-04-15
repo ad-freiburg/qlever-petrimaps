@@ -2,14 +2,16 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
-#include <iostream>
 #include <curl/curl.h>
-#include "qlever-mapui/server/Server.h"
+
+#include <iostream>
+
+#include "qlever-petrimaps/server/Server.h"
 #include "util/Misc.h"
 #include "util/http/Server.h"
 #include "util/log/Log.h"
 
-using mapui::Server;
+using petrimaps::Server;
 
 // _____________________________________________________________________________
 void printHelp(int argc, char** argv) {
@@ -29,8 +31,9 @@ int main(int argc, char** argv) {
   srand(time(NULL) + rand());  // NOLINT
 
   // init CURL
-   curl_global_init(CURL_GLOBAL_DEFAULT);
+  curl_global_init(CURL_GLOBAL_DEFAULT);
 
+  // default port
   int port = 9090;
 
   for (int i = 1; i < argc; i++) {

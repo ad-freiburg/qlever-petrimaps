@@ -2,18 +2,18 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
-#ifndef MAPUI_SERVER_SERVER_H_
-#define MAPUI_SERVER_SERVER_H_
+#ifndef PETRIMAPS_SERVER_SERVER_H_
+#define PETRIMAPS_SERVER_SERVER_H_
 
 #include <map>
 #include <thread>
 #include <mutex>
 #include <string>
-#include "qlever-mapui/server/Requestor.h"
-#include "qlever-mapui/GeomCache.h"
+#include "qlever-petrimaps/server/Requestor.h"
+#include "qlever-petrimaps/GeomCache.h"
 #include "util/http/Server.h"
 
-namespace mapui {
+namespace petrimaps {
 
 typedef std::map<std::string, std::string> Params;
 
@@ -45,6 +45,6 @@ class Server : public util::http::Handler {
   mutable std::map<std::string, Requestor*> _rs;
   mutable std::map<std::string, std::string> _queryCache;
 };
-}  // namespace mapui
+}  // namespace petrimaps
 
-#endif  // MAPUI_SERVER_SERVER_H_
+#endif  // PETRIMAPS_SERVER_SERVER_H_

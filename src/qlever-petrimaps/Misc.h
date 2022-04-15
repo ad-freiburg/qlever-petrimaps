@@ -7,12 +7,13 @@
 #include <string>
 #include <vector>
 
-#ifndef MAPUI_MISC_H_
-#define MAPUI_MISC_H_
+#ifndef PETRIMAPS_MISC_H_
+#define PETRIMAPS_MISC_H_
 
 const static size_t I_OFFSET = 4611686018427387904;
+const static size_t MAXROWS = 18446744073709551615u;
 
-namespace mapui {
+namespace petrimaps {
 
 enum ParseState { IN_HEADER, IN_ROW };
 
@@ -57,6 +58,6 @@ struct RequestReader {
   std::vector<std::pair<uint64_t, uint64_t>> ids;
 };
 
-}  // namespace mapui
+}  // namespace petrimaps
 
-#endif  // MAPUI_MISC_H_
+#endif  // PETRIMAPS_MISC_H_

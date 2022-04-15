@@ -24,4 +24,4 @@ RUN mkdir build && cd build && cmake .. && make -j8
 
 WORKDIR /
 
-ENTRYPOINT ["./build/mapui"]
+ENTRYPOINT ["./build/petrimaps"]
