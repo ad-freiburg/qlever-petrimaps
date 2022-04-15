@@ -94,9 +94,10 @@ void Requestor::request(const std::string& qry) {
       size_t i = 0;
       for (const auto& p : _objects) {
         auto geomId = p.first;
-        if (geomId >= I_OFFSET) continue;
-        _pgrid.add(_cache->getPoints()[geomId], _cache->getPointBBox(geomId),
-                   i);
+        if (geomId < I_OFFSET) {
+          _pgrid.add(_cache->getPoints()[geomId], _cache->getPointBBox(geomId),
+                     i);
+        }
         i++;
       }
     }
@@ -104,11 +105,12 @@ void Requestor::request(const std::string& qry) {
     {
       size_t i = 0;
       for (const auto& l : _objects) {
-        if (l.first < I_OFFSET) continue;
-        auto geomId = l.first - I_OFFSET;
-        _lgrid.add(_cache->getLines()[geomId], _cache->getLineBBox(geomId), i);
-        for (const auto& p : _cache->getLines()[geomId]) {
-          _lpgrid.add(p, util::geo::getBoundingBox(p), p);
+        if (l.first >= I_OFFSET) {
+          auto geomId = l.first - I_OFFSET;
+          _lgrid.add(_cache->getLines()[geomId], _cache->getLineBBox(geomId), i);
+          for (const auto& p : _cache->getLines()[geomId]) {
+            _lpgrid.add(p, util::geo::getBoundingBox(p), p);
+          }
         }
         i++;
       }

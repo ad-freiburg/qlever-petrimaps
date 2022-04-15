@@ -146,7 +146,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
     LOG(INFO) << "[SERVER] ... done";
 
     for (size_t i : ret) {
-      const auto& p = r.getPoint(r.getPoints()[i].first);
+      const auto& p = r.getPoint(r.getObjects()[i].first);
       if (!util::geo::contains(p, bbox)) continue;
 
       points[0].push_back(
@@ -182,7 +182,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
           subCellCount[omp_get_thread_num()][0] = cell.size();
         } else {
           for (const auto& i : cell) {
-            const auto& p = r.getPoint(r.getPoints()[i].first);
+            const auto& p = r.getPoint(r.getObjects()[i].first);
             float dx = p.getX() - cellBox.getLowerLeft().getX();
             size_t virtX = floor(dx / virtCellSize);
 
