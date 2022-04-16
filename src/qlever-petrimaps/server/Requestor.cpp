@@ -25,6 +25,7 @@ void Requestor::request(const std::string& qry) {
   _query = qry;
   _points.clear();
   _lines.clear();
+  _objects.clear();
 
   RequestReader reader(_cache->getBackendURL());
   _query = qry;
@@ -211,8 +212,8 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
   }
 
     if (dBest < rad && dBest < dBestL) {
-      return {true, _cache->getPoints()[_points[nearest].first],
-              requestRow(_points[nearest].second)};
+      return {true, _cache->getPoints()[_objects[nearest].first],
+              requestRow(_objects[nearest].second)};
     }
 
     if (dBestL < rad && dBestL < dBest) {
