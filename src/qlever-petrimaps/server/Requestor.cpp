@@ -106,9 +106,10 @@ void Requestor::request(const std::string& qry) {
     {
       size_t i = 0;
       for (const auto& l : _objects) {
-        if (l.first >= I_OFFSET) {
+        if (l.first >= I_OFFSET && l.first < I_OFFSET * 2) {
           auto geomId = l.first - I_OFFSET;
-          _lgrid.add(_cache->getLines()[geomId], _cache->getLineBBox(geomId), i);
+          _lgrid.add(_cache->getLines()[geomId], _cache->getLineBBox(geomId),
+                     i);
           for (const auto& p : _cache->getLines()[geomId]) {
             _lpgrid.add(p, util::geo::getBoundingBox(p), p);
           }
@@ -211,19 +212,19 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
     }
   }
 
-    if (dBest < rad && dBest < dBestL) {
-      return {true, _cache->getPoints()[_objects[nearest].first],
-              requestRow(_objects[nearest].second)};
-    }
-
-    if (dBestL < rad && dBestL < dBest) {
-      return {true,
-              util::geo::PolyLine<float>(
-                  _cache->getLines()[_objects[nearestL].first - I_OFFSET])
-                  .projectOn(rp)
-                  .p,
-              requestRow(_objects[nearestL].second)};
-    }
-
-    return {false, {0, 0}, {}};
+  if (dBest < rad && dBest < dBestL) {
+    return {true, _cache->getPoints()[_objects[nearest].first],
+            requestRow(_objects[nearest].second)};
   }
+
+  if (dBestL < rad && dBestL < dBest) {
+    return {true,
+            util::geo::PolyLine<float>(
+                _cache->getLines()[_objects[nearestL].first - I_OFFSET])
+                .projectOn(rp)
+                .p,
+            requestRow(_objects[nearestL].second)};
+  }
+
+  return {false, {0, 0}, {}};
+}
