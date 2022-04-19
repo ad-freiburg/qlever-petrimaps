@@ -28,8 +28,8 @@ const static char* QUERY =
     "     { ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
     "<https://www.openstreetmap.org/way> }"
     " } LIMIT "
-    // "18446744073709551615";
-"100000";
+    "18446744073709551615";
+// "100000";
 
 // _____________________________________________________________________________
 size_t GeomCache::writeCb(void* contents, size_t size, size_t nmemb,
