@@ -198,12 +198,17 @@ void GeomCache::request() {
 
   LOG(INFO) << "[GEOMCACHE] Query is " << QUERY;
 
+  CURLcode res;
+  char errbuf[CURL_ERROR_SIZE];
+
   if (_curl) {
     auto qUrl = queryUrl(QUERY);
+
     LOG(INFO) << "[GEOMCACHE] Query URL is " << qUrl;
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
+    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
 
     // set headers
     struct curl_slist* headers = 0;
@@ -212,14 +217,25 @@ void GeomCache::request() {
 
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
-    curl_easy_perform(_curl);
+    res = curl_easy_perform(_curl);
   } else {
     LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request.";
+    return;
   }
 
-  LOG(INFO) << "[GEOMCACHE] Done";
-  LOG(INFO) << "[GEOMCACHE] Received " << _points.size() << " points and "
-            << _lines.size() << " lines";
+  // check if there was an error
+  if (res != CURLE_OK) {
+    size_t len = strlen(errbuf);
+    if (len > 0) {
+      LOG(ERROR) << "[GEOMCACHE] " << errbuf;
+     } else {
+      LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
+    }
+  } else {
+    LOG(INFO) << "[GEOMCACHE] Done";
+    LOG(INFO) << "[GEOMCACHE] Received " << _points.size() << " points and "
+              << _lines.size() << " lines";
+  }
 }
 
 // _____________________________________________________________________________

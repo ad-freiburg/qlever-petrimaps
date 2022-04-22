@@ -3,6 +3,7 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <string>
+#include <cstring>
 #include <vector>
 #include <stdint.h>
 #include "qlever-petrimaps/Misc.h"
@@ -12,6 +13,9 @@ using petrimaps::RequestReader;
 
 // _____________________________________________________________________________
 void RequestReader::requestIds(const std::string& query) {
+  CURLcode res;
+  char errbuf[CURL_ERROR_SIZE];
+
   if (_curl) {
     auto url = queryUrl(query);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
@@ -25,14 +29,28 @@ void RequestReader::requestIds(const std::string& query) {
 
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
-    curl_easy_perform(_curl);
+    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
+    res = curl_easy_perform(_curl);
   } else {
     LOG(ERROR) << "[REQUESTREADER] Failed to perform curl request.";
+    return;
+  }
+
+  if (res != CURLE_OK) {
+    size_t len = strlen(errbuf);
+    if (len > 0) {
+      LOG(ERROR) << "[REQUESTREADER] " << errbuf;
+     } else {
+      LOG(ERROR) << "[REQUESTREADER] " << curl_easy_strerror(res);
+    }
   }
 }
 
 // _____________________________________________________________________________
 void RequestReader::requestRows(const std::string& query) {
+  CURLcode res;
+  char errbuf[CURL_ERROR_SIZE];
+
   if (_curl) {
     auto url = queryUrl(query);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
@@ -46,11 +64,23 @@ void RequestReader::requestRows(const std::string& query) {
 
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
-    curl_easy_perform(_curl);
+    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
+    res = curl_easy_perform(_curl);
   } else {
     LOG(ERROR) << "[REQUESTREADER] Failed to perform curl request.";
+    return;
+  }
+
+  if (res != CURLE_OK) {
+    size_t len = strlen(errbuf);
+    if (len > 0) {
+      LOG(ERROR) << "[REQUESTREADER] " << errbuf;
+     } else {
+      LOG(ERROR) << "[REQUESTREADER] " << curl_easy_strerror(res);
+    }
   }
 }
+
 
 // _____________________________________________________________________________
 std::string RequestReader::queryUrl(const std::string& query) const {
