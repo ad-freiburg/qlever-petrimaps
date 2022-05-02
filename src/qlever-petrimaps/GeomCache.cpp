@@ -18,6 +18,8 @@
 #include "util/log/Log.h"
 
 using petrimaps::GeomCache;
+using util::geo::FPoint;
+using util::geo::latLngToWebMerc;
 
 const static char* QUERY =
     "SELECT ?geometry WHERE {"
@@ -27,7 +29,7 @@ const static char* QUERY =
     " UNION"
     "     { ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
     "<https://www.openstreetmap.org/way> }"
-    " } LIMIT "
+    " } ORDER BY ?geometry LIMIT "
     "18446744073709551615";
 // "100000";
 
@@ -132,11 +134,11 @@ void GeomCache::parse(const char* c, size_t size) {
               LOG(INFO) << "[GEOMCACHE] "
                         << "@ row " << _curRow;
             }
-            _dangling = "";
+            _dangling.clear();
             c++;
             continue;
           } else {
-            _dangling = "";
+            _dangling.clear();
             c++;
             continue;
           }
@@ -194,7 +196,8 @@ void GeomCache::request() {
   _points.clear();
   _lines.clear();
   _curRow = 0;
-  _dangling = "";
+  _dangling.clear();
+  _dangling.reserve(10000);
 
   LOG(INFO) << "[GEOMCACHE] Query is " << QUERY;
 
@@ -211,7 +214,7 @@ void GeomCache::request() {
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
 
     // set headers
-    struct curl_slist* headers = 0;
+    struct curl_slist* headers;
     headers = curl_slist_append(headers, "Accept: text/tab-separated-values");
     curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
 
@@ -228,7 +231,7 @@ void GeomCache::request() {
     size_t len = strlen(errbuf);
     if (len > 0) {
       LOG(ERROR) << "[GEOMCACHE] " << errbuf;
-     } else {
+    } else {
       LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
     }
   } else {
@@ -290,7 +293,7 @@ std::string GeomCache::queryUrl(std::string query) const {
 }
 
 // _____________________________________________________________________________
-bool GeomCache::pointValid(const util::geo::FPoint& p) {
+bool GeomCache::pointValid(const FPoint& p) {
   if (p.getY() > std::numeric_limits<float>::max()) return false;
   if (p.getY() < std::numeric_limits<float>::lowest()) return false;
   if (p.getX() > std::numeric_limits<float>::max()) return false;
@@ -305,8 +308,9 @@ util::geo::FLine GeomCache::parseLineString(const std::string& a,
   util::geo::FLine line;
   auto end = memchr(a.c_str() + p, ')', a.size() - p);
   assert(end);
+
   while (true) {
-    auto point = util::geo::latLngToWebMerc(util::geo::FPoint(
+    auto point = latLngToWebMerc(FPoint(
         util::atof(a.c_str() + p, 10),
         util::atof(
             static_cast<const char*>(memchr(a.c_str() + p, ' ', a.size() - p)) +
@@ -326,7 +330,7 @@ util::geo::FLine GeomCache::parseLineString(const std::string& a,
 
 // _____________________________________________________________________________
 util::geo::FPoint GeomCache::parsePoint(const std::string& a, size_t p) const {
-  auto point = util::geo::latLngToWebMerc(util::geo::FPoint(
+  auto point = latLngToWebMerc(FPoint(
       util::atof(a.c_str() + p, 10),
       util::atof(
           static_cast<const char*>(memchr(a.c_str() + p, ' ', a.size() - p)) +
