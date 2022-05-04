@@ -12,8 +12,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "3rdparty/heatmap.h"
 #include "3rdparty/colorschemes/Spectral.h"
+#include "3rdparty/heatmap.h"
 #include "qlever-petrimaps/build.h"
 #include "qlever-petrimaps/index.h"
 #include "qlever-petrimaps/server/Requestor.h"
@@ -63,15 +63,12 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
     a = util::http::Answer("400 Bad Request", e.what());
   } catch (const std::invalid_argument& e) {
     a = util::http::Answer("400 Bad Request", e.what());
+  } catch (const std::exception& e) {
+    a = util::http::Answer("500 Internal Server Error", e.what());
+  } catch (...) {
+    a = util::http::Answer("500 Internal Server Error",
+                           "Internal Server Error.");
   }
-  // } catch (const std::exception& e) {
-  // a = util::http::Answer("500 Internal Server Error",
-  // e.what());
-  // }
-  // } catch (...) {
-  // a = util::http::Answer("500 Internal Server Error",
-  // "Internal Server Error.");
-  // }
 
   a.params["Access-Control-Allow-Origin"] = "*";
   a.params["Server"] = "qlever-petrimaps-middleend";
