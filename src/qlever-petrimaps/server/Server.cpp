@@ -12,8 +12,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "3rdparty/colorschemes/Spectral.h"
 #include "3rdparty/heatmap.h"
+#include "3rdparty/colorschemes/Spectral.h"
 #include "qlever-petrimaps/build.h"
 #include "qlever-petrimaps/index.h"
 #include "qlever-petrimaps/server/Requestor.h"

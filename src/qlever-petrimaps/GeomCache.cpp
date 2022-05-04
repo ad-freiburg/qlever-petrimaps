@@ -252,6 +252,8 @@ void GeomCache::request() {
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
 
     // set headers
     struct curl_slist* headers = 0;
@@ -296,6 +298,8 @@ void GeomCache::requestIds() {
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbIds);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
 
     // set headers
     struct curl_slist* headers = 0;

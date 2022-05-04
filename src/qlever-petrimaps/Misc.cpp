@@ -21,6 +21,8 @@ void RequestReader::requestIds(const std::string& query) {
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, RequestReader::writeCbIds);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
 
     // set headers
     struct curl_slist* headers = 0;
@@ -56,6 +58,8 @@ void RequestReader::requestRows(const std::string& query) {
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, RequestReader::writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
 
     // set headers
     struct curl_slist* headers = 0;
