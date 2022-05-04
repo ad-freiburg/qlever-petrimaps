@@ -10,7 +10,10 @@
 #ifndef PETRIMAPS_MISC_H_
 #define PETRIMAPS_MISC_H_
 
-const static size_t I_OFFSET = 4611686018427387904;
+#define ID_TYPE uint32_t
+#define QLEVER_ID_TYPE size_t
+
+const static ID_TYPE I_OFFSET = 500000000;
 const static size_t MAXROWS = 18446744073709551615u;
 
 namespace petrimaps {
@@ -21,7 +24,6 @@ union ID {
   uint64_t val;
   uint8_t bytes[8];
 };
-
 struct RequestReader {
   explicit RequestReader(const std::string& backendUrl)
       : _backendUrl(backendUrl), _curl(curl_easy_init()) {}
@@ -55,7 +57,7 @@ struct RequestReader {
   uint8_t _curByte = 0;
   ID _curId;
   size_t _received = 0;
-  std::vector<std::pair<uint64_t, uint64_t>> ids;
+  std::vector<std::pair<QLEVER_ID_TYPE, ID_TYPE>> ids;
 };
 
 }  // namespace petrimaps

@@ -112,10 +112,11 @@ void HttpServer::handle() {
       answ.gzip = gzipSupport(req);
     } catch (const HttpErr& err) {
       answ = Answer(err.what(), err.what());
-    } catch (...) {
-      // catch everything to make sure the server continues running
-      answ = Answer("500 Internal Server Error", "500 Internal Server Error");
     }
+    // catch (...) {
+      // // catch everything to make sure the server continues running
+      // answ = Answer("500 Internal Server Error", "500 Internal Server Error");
+    // }
 
     try {
       send(connection, &answ);

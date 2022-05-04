@@ -2045,9 +2045,9 @@ inline double accFrechetDistCHav(const Line<T>& a, const Line<T>& b, double d) {
 template <typename T>
 inline Point<T> latLngToWebMerc(double lat, double lng) {
   double x = 6378137.0 * lng * 0.017453292519943295;
-  double a = lat * 0.017453292519943295;
+  double sina = sin(lat * 0.017453292519943295);
 
-  double y = 3189068.5 * log((1.0 + sin(a)) / (1.0 - sin(a)));
+  double y = 3189068.5 * log((1.0 + sina) / (1.0 - sina));
   return Point<T>(x, y);
 }
 

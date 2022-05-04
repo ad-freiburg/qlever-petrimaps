@@ -34,11 +34,11 @@ class Requestor {
 
   size_t size() const { return _points.size(); }
 
-  const petrimaps::Grid<size_t, util::geo::Point, float>& getPointGrid() const {
+  const petrimaps::Grid<ID_TYPE, util::geo::Point, float>& getPointGrid() const {
     return _pgrid;
   }
 
-  const petrimaps::Grid<size_t, util::geo::Line, float>& getLineGrid() const {
+  const petrimaps::Grid<ID_TYPE, util::geo::Line, float>& getLineGrid() const {
     return _lgrid;
   }
 
@@ -47,27 +47,36 @@ class Requestor {
     return _lpgrid;
   }
 
-  const std::vector<std::pair<uint64_t, uint64_t>>& getPoints() const {
+  const std::vector<std::pair<ID_TYPE, ID_TYPE>>& getPoints() const {
     return _points;
   }
 
-  const std::vector<std::pair<uint64_t, uint64_t>>& getLines() const {
+  const std::vector<std::pair<ID_TYPE, ID_TYPE>>& getLines() const {
     return _lines;
   }
 
-  const std::vector<std::pair<uint64_t, uint64_t>>& getObjects() const {
+  const std::vector<std::pair<ID_TYPE, ID_TYPE>>& getObjects() const {
     return _objects;
   }
 
-  const util::geo::FPoint& getPoint(uint64_t id) const {
+  const util::geo::FPoint& getPoint(ID_TYPE id) const {
     return _cache->getPoints()[id];
   }
 
-  const util::geo::FLine& getLine(uint64_t id) const {
+  size_t getLine(ID_TYPE id) const {
     return _cache->getLines()[id];
   }
 
-  const util::geo::FBox& getLineBBox(uint64_t id) const {
+  size_t getLineEnd(ID_TYPE id) const {
+    return id + 1 < _cache->getLines().size() ? _cache->getLines()[id + 1] : _cache->getLinePoints().size();
+
+  }
+
+  const std::vector<util::geo::Point<int16_t>>& getLinePoints() const {
+    return _cache->getLinePoints();
+  }
+
+  const util::geo::FBox& getLineBBox(ID_TYPE id) const {
     return _cache->getLineBBox(id);
   }
 
@@ -87,12 +96,12 @@ class Requestor {
 
   mutable std::mutex _m;
 
-  std::vector<std::pair<uint64_t, uint64_t>> _points;
-  std::vector<std::pair<uint64_t, uint64_t>> _lines;
-  std::vector<std::pair<uint64_t, uint64_t>> _objects;
+  std::vector<std::pair<ID_TYPE, ID_TYPE>> _points;
+  std::vector<std::pair<ID_TYPE, ID_TYPE>> _lines;
+  std::vector<std::pair<ID_TYPE, ID_TYPE>> _objects;
 
-  petrimaps::Grid<size_t, util::geo::Point, float> _pgrid;
-  petrimaps::Grid<size_t, util::geo::Line, float> _lgrid;
+  petrimaps::Grid<ID_TYPE, util::geo::Point, float> _pgrid;
+  petrimaps::Grid<ID_TYPE, util::geo::Line, float> _lgrid;
   petrimaps::Grid<util::geo::FPoint, util::geo::Point, float> _lpgrid;
 };
 }  // namespace petrimaps

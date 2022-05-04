@@ -43,12 +43,12 @@ Grid<V, G, T>::Grid(double w, double h, const util::geo::Box<T>& bbox)
 // _____________________________________________________________________________
 template <typename V, template <typename> class G, typename T>
 void Grid<V, G, T>::add(const G<T>& geom, const V& val) {
-  add(geom, getBoundingBox(geom), val);
+  add(getBoundingBox(geom), val);
 }
 
 // _____________________________________________________________________________
 template <typename V, template <typename> class G, typename T>
-void Grid<V, G, T>::add(const G<T>& geom, const util::geo::Box<T>& box,
+void Grid<V, G, T>::add(const util::geo::Box<T>& box,
                         const V& val) {
   size_t swX = getCellXFromX(box.getLowerLeft().getX());
   size_t swY = getCellYFromY(box.getLowerLeft().getY());

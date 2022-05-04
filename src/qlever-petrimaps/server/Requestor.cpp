@@ -63,8 +63,8 @@ void Requestor::request(const std::string& qry) {
       auto pId = geomId;
       bboxes[omp_get_thread_num()] = util::geo::extendBox(
           _cache->getPointBBox(pId), bboxes[omp_get_thread_num()]);
-    } else if (geomId < 2 * I_OFFSET) {
-      auto lId = geomId;
+    } else if (geomId < std::numeric_limits<ID_TYPE>::max()) {
+      auto lId = geomId - I_OFFSET;
       bboxes[omp_get_thread_num()] = util::geo::extendBox(
           _cache->getLineBBox(lId), bboxes[omp_get_thread_num()]);
     }
@@ -81,10 +81,10 @@ void Requestor::request(const std::string& qry) {
 
   double GRID_SIZE = 100000;
 
-  _pgrid = petrimaps::Grid<size_t, util::geo::Point, float>(GRID_SIZE,
+  _pgrid = petrimaps::Grid<ID_TYPE, util::geo::Point, float>(GRID_SIZE,
+                                                             GRID_SIZE, bbox);
+  _lgrid = petrimaps::Grid<ID_TYPE, util::geo::Line, float>(GRID_SIZE,
                                                             GRID_SIZE, bbox);
-  _lgrid = petrimaps::Grid<size_t, util::geo::Line, float>(GRID_SIZE, GRID_SIZE,
-                                                           bbox);
   _lpgrid = petrimaps::Grid<util::geo::FPoint, util::geo::Point, float>(
       GRID_SIZE, GRID_SIZE, bbox);
 
@@ -96,8 +96,7 @@ void Requestor::request(const std::string& qry) {
       for (const auto& p : _objects) {
         auto geomId = p.first;
         if (geomId < I_OFFSET) {
-          _pgrid.add(_cache->getPoints()[geomId], _cache->getPointBBox(geomId),
-                     i);
+          _pgrid.add(_cache->getPointBBox(geomId), i);
         }
         i++;
       }
@@ -106,12 +105,31 @@ void Requestor::request(const std::string& qry) {
     {
       size_t i = 0;
       for (const auto& l : _objects) {
-        if (l.first >= I_OFFSET && l.first < I_OFFSET * 2) {
+        if (l.first >= I_OFFSET &&
+            l.first < std::numeric_limits<ID_TYPE>::max()) {
           auto geomId = l.first - I_OFFSET;
-          _lgrid.add(_cache->getLines()[geomId], _cache->getLineBBox(geomId),
-                     i);
-          for (const auto& p : _cache->getLines()[geomId]) {
-            _lpgrid.add(p, util::geo::getBoundingBox(p), p);
+          _lgrid.add(_cache->getLineBBox(geomId), i);
+
+          size_t start = _cache->getLines()[geomId];
+          size_t end = geomId + 1 < _cache->getLines().size()
+                           ? _cache->getLines()[geomId + 1]
+                           : _cache->getLinePoints().size();
+
+          double mainX = 0;
+          double mainY = 0;
+          for (size_t li = start; li < end; li++) {
+            const auto& cur = _cache->getLinePoints()[li];
+
+            if (cur.getX() >= 16384) {
+              mainX = cur.getX() - 16384;
+              mainY = cur.getY() - 16384;
+              continue;
+            }
+
+            // extract real geometry
+            util::geo::FPoint curP(mainX * 1000 + cur.getX(),
+                                   mainY * 1000 + cur.getY());
+            _lpgrid.add(util::geo::getBoundingBox(curP), curP);
           }
         }
         i++;
@@ -174,7 +192,7 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
     {
       // points
 
-      std::unordered_set<size_t> ret;
+      std::unordered_set<ID_TYPE> ret;
       _pgrid.get(box, &ret);
 
       for (const auto& i : ret) {
@@ -193,16 +211,61 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
 #pragma omp section
     {
       // lines
-      std::unordered_set<size_t> retL;
+      std::unordered_set<ID_TYPE> retL;
       _lgrid.get(box, &retL);
 
       for (const auto& i : retL) {
         auto lBox = _cache->getLineBBox(_objects[i].first - I_OFFSET);
         if (!util::geo::intersects(lBox, box)) continue;
 
-        auto l = _cache->getLines()[_objects[i].first - I_OFFSET];
+        size_t start = _cache->getLines()[_objects[i].first - I_OFFSET];
+        size_t end =
+            _objects[i].first - I_OFFSET + 1 < _cache->getLines().size()
+                ? _cache->getLines()[_objects[i].first - I_OFFSET + 1]
+                : _cache->getLinePoints().size();
+        // double d = util::geo::dist(l, rp);
 
-        double d = util::geo::dist(l, rp);
+        // TODO _____________________ own function
+        double d = std::numeric_limits<double>::infinity();
+
+        util::geo::FPoint curPa, curPb;
+        int s = 0;
+
+        double mainX = 0;
+        double mainY = 0;
+
+        for (size_t i = start; i < end; i++) {
+          // extract real geom
+          const auto& cur = _cache->getLinePoints()[i];
+
+          if (cur.getX() >= 16384) {
+            mainX = cur.getX() - 16384;
+            mainY = cur.getY() - 16384;
+            continue;
+          }
+
+          // extract real geometry
+          util::geo::FPoint curP(mainX * 1000 + cur.getX(),
+                                 mainY * 1000 + cur.getY());
+          if (s == 0) {
+            curPa = curP;
+            s++;
+          } else if (s == 1) {
+            curPb = curP;
+            s++;
+          }
+
+          if (s == 2) {
+            s = 0;
+            double dTmp = util::geo::distToSegment(curPa, curPb, rp);
+            if (dTmp < 0.0001) {
+              d = 0;
+              break;
+            }
+            if (dTmp < d) d = dTmp;
+          }
+        }
+        // TODO _____________________ own function
 
         if (d < dBestL) {
           nearestL = i;
@@ -218,11 +281,32 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
   }
 
   if (dBestL < rad && dBestL < dBest) {
-    return {true,
-            util::geo::PolyLine<float>(
-                _cache->getLines()[_objects[nearestL].first - I_OFFSET])
-                .projectOn(rp)
-                .p,
+    util::geo::FLine fline;
+    size_t lineId = _objects[nearestL].first - I_OFFSET;
+    size_t start = _cache->getLines()[lineId];
+    size_t end = lineId + 1 < _cache->getLines().size()
+                     ? _cache->getLines()[lineId + 1]
+                     : _cache->getLinePoints().size();
+
+    double mainX = 0;
+    double mainY = 0;
+
+    for (size_t i = start; i < end; i++) {
+      // extract real geom
+      const auto& cur = _cache->getLinePoints()[i];
+
+      if (cur.getX() >= 16384) {
+        mainX = cur.getX() - 16384;
+        mainY = cur.getY() - 16384;
+        continue;
+      }
+
+      util::geo::FPoint curP(mainX * 1000 + cur.getX(),
+                             mainY * 1000 + cur.getY());
+      fline.push_back(curP);
+    }
+
+    return {true, util::geo::PolyLine<float>(fline).projectOn(rp).p,
             requestRow(_objects[nearestL].second)};
   }
 

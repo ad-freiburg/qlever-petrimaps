@@ -63,10 +63,15 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
     a = util::http::Answer("400 Bad Request", e.what());
   } catch (const std::invalid_argument& e) {
     a = util::http::Answer("400 Bad Request", e.what());
-  } catch (...) {
-    a = util::http::Answer("500 Internal Server Error",
-                           "Internal Server Error.");
   }
+  // } catch (const std::exception& e) {
+  // a = util::http::Answer("500 Internal Server Error",
+  // e.what());
+  // }
+  // } catch (...) {
+  // a = util::http::Answer("500 Internal Server Error",
+  // "Internal Server Error.");
+  // }
 
   a.params["Access-Control-Allow-Origin"] = "*";
   a.params["Server"] = "qlever-petrimaps-middleend";
@@ -134,12 +139,13 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   LOG(INFO) << "[SERVER] Virt cell size: " << virtCellSize;
   LOG(INFO) << "[SERVER] Num virt cells: " << subCellSize * subCellSize;
 
-  std::vector<std::vector<std::pair<float, std::pair<float, float>>>> points(NUM_THREADS);
+  std::vector<std::vector<std::pair<float, std::pair<float, float>>>> points(
+      NUM_THREADS);
 
   double THRESHOLD = 50;
 
   if (res < THRESHOLD) {
-    std::unordered_set<size_t> ret;
+    std::unordered_set<ID_TYPE> ret;
 
     LOG(INFO) << "[SERVER] Looking up display points...";
     r.getPointGrid().get(bbox, &ret);
@@ -220,7 +226,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   // LINES
   if (res < THRESHOLD) {
-    std::unordered_set<size_t> ret;
+    std::unordered_set<ID_TYPE> ret;
 
     LOG(INFO) << "[SERVER] Looking up display lines...";
     r.getLineGrid().get(bbox, &ret);
@@ -230,10 +236,76 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
       auto lid = r.getObjects()[i].first;
       const auto& lbox = r.getLineBBox(lid - I_OFFSET);
       if (!util::geo::intersects(lbox, bbox)) continue;
-      const auto& l = r.getLine(lid - I_OFFSET);
-      if (!util::geo::intersects(l, bbox)) continue;
 
-      for (const auto& p : util::geo::densify(l, res)) {
+      size_t start = r.getLine(lid - I_OFFSET);
+      size_t end = r.getLineEnd(lid - I_OFFSET);
+
+      // ___________________________________
+      bool isects = false;
+
+      util::geo::FPoint curPa, curPb;
+      int s = 0;
+
+      double mainX = 0;
+      double mainY = 0;
+      for (size_t i = start; i < end; i++) {
+        // extract real geom
+        const auto& cur = r.getLinePoints()[i];
+
+        if (cur.getX() >= 16384) {
+          mainX = cur.getX() - 16384;
+          mainY = cur.getY() - 16384;
+          continue;
+        }
+
+        // extract real geometry
+        util::geo::FPoint curP(mainX * 1000 + cur.getX(),
+                               mainY * 1000 + cur.getY());
+        if (s == 0) {
+          curPa = curP;
+          s++;
+        } else if (s == 1) {
+          curPb = curP;
+          s++;
+        }
+
+        if (s == 2) {
+          s = 0;
+          if (util::geo::intersects(util::geo::LineSegment<float>(curPa, curPb),
+                                    bbox)) {
+            isects = true;
+            break;
+          }
+        }
+      }
+      // ___________________________________
+
+      if (!isects) continue;
+
+      mainX = 0;
+      mainY = 0;
+
+      util::geo::FLine extrLine;
+      extrLine.reserve(end - start);
+
+      for (size_t i = start; i < end; i++) {
+        // extract real geom
+        const auto& cur = r.getLinePoints()[i];
+
+        if (cur.getX() >= 16384) {
+          mainX = cur.getX() - 16384;
+          mainY = cur.getY() - 16384;
+          continue;
+        }
+
+        util::geo::FPoint p(mainX * 1000 + cur.getX(),
+                            mainY * 1000 + cur.getY());
+        extrLine.push_back(p);
+      }
+
+      const auto& denseLine = util::geo::densify(extrLine, res);
+
+      for (const auto& p : denseLine) {
         points[0].push_back(
             {1,
              {((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w,
