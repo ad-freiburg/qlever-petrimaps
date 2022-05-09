@@ -20,10 +20,22 @@ namespace petrimaps {
 
 enum ParseState { IN_HEADER, IN_ROW };
 
+struct IdMapping {
+  QLEVER_ID_TYPE qid;
+  ID_TYPE id;
+};
+
 union ID {
   uint64_t val;
   uint8_t bytes[8];
 };
+
+inline bool operator<(const IdMapping& lh, const IdMapping& rh) {
+  if (lh.qid < rh.qid) return true;
+  if (lh.qid == rh.qid && lh.id < rh.id) return true;
+  return false;
+}
+
 struct RequestReader {
   explicit RequestReader(const std::string& backendUrl)
       : _backendUrl(backendUrl), _curl(curl_easy_init()) {}
@@ -57,7 +69,7 @@ struct RequestReader {
   uint8_t _curByte = 0;
   ID _curId;
   size_t _received = 0;
-  std::vector<std::pair<QLEVER_ID_TYPE, ID_TYPE>> ids;
+  std::vector<IdMapping> ids;
 };
 
 }  // namespace petrimaps

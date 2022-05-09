@@ -47,7 +47,7 @@ class GeomCache {
   void parseIds(const char*, size_t size);
 
   std::vector<std::pair<ID_TYPE, ID_TYPE>> getRelObjects(
-      const std::vector<std::pair<QLEVER_ID_TYPE, ID_TYPE>>& id) const;
+      const std::vector<IdMapping>& id) const;
 
   const std::string& getBackendURL() const { return _backendUrl; }
 
@@ -60,14 +60,22 @@ class GeomCache {
   util::geo::FBox getPointBBox(size_t id) const {
     return util::geo::getBoundingBox(_points[id]);
   }
-  const util::geo::FBox& getLineBBox(size_t id) const { return _lineBoxes[id]; }
+  util::geo::FBox getLineBBox(size_t id) const;
 
- private:
+  size_t getLine(ID_TYPE id) const {
+    return _lines[id];
+  }
+
+  size_t getLineEnd(ID_TYPE id) const {
+    return id + 1 < _lines.size() ? _lines[id + 1] : _linePoints.size();
+  }
+private:
   std::string _backendUrl;
   CURL* _curl;
 
   uint8_t _curByte;
   ID _curId;
+  QLEVER_ID_TYPE _maxQid;
   size_t _curRow, _curUniqueGeom;
 
   static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
@@ -86,11 +94,8 @@ class GeomCache {
   std::vector<util::geo::FPoint> _points;
   std::vector<util::geo::Point<int16_t>> _linePoints;
   std::vector<size_t> _lines;
-  std::vector<util::geo::FPolygon> _polygons;
 
-  std::vector<util::geo::FBox> _lineBoxes;
-
-  std::vector<std::pair<QLEVER_ID_TYPE, ID_TYPE>> _qleverIdToInternalId;
+  std::vector<IdMapping> _qidToId;
 
   std::string _dangling, _prev;
   ParseState _state;

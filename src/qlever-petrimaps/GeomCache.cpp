@@ -72,18 +72,20 @@ void GeomCache::parse(const char* c, size_t size) {
 
           auto p = _dangling.rfind("\"POINT(", 0);
 
+
           if (isGeom && _prev == _dangling) {
-            _qleverIdToInternalId.push_back(
-                {0, _qleverIdToInternalId.back().second});
+            _qidToId.push_back(
+                {0, _qidToId.back().id});
           } else if (isGeom && p != std::string::npos) {
             _curUniqueGeom++;
             p += 7;
             auto point = parsePoint(_dangling, p);
             if (pointValid(point)) {
               _points.push_back(point);
-              _qleverIdToInternalId.push_back({0, _points.size() - 1});
+              assert(_points.size() - 1 < I_OFFSET);
+              _qidToId.push_back({0, _points.size() - 1});
             } else {
-              _qleverIdToInternalId.push_back(
+              _qidToId.push_back(
                   {0, std::numeric_limits<ID_TYPE>::max()});
             }
           } else if (isGeom && (p = _dangling.rfind("\"LINESTRING(", 0)) !=
@@ -92,13 +94,13 @@ void GeomCache::parse(const char* c, size_t size) {
             p += 12;
             const auto& line = parseLineString(_dangling, p);
             if (line.size() == 0) {
-              _qleverIdToInternalId.push_back(
+              _qidToId.push_back(
                   {0, std::numeric_limits<ID_TYPE>::max()});
             } else {
               _lines.push_back(_linePoints.size());
               insertLine(line);
-              _lineBoxes.push_back(util::geo::getBoundingBox(line));
-              _qleverIdToInternalId.push_back(
+              assert(_lines.size() - 1 < std::numeric_limits<ID_TYPE>::max() - I_OFFSET);
+              _qidToId.push_back(
                   {0, I_OFFSET + _lines.size() - 1});
             }
           } else if (isGeom && (p = _dangling.rfind("\"MULTILINESTRING(", 0)) !=
@@ -109,13 +111,13 @@ void GeomCache::parse(const char* c, size_t size) {
             while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
               const auto& line = parseLineString(_dangling, p + 1);
               if (line.size() == 0) {
-                _qleverIdToInternalId.push_back(
+                _qidToId.push_back(
                     {0, std::numeric_limits<ID_TYPE>::max()});
               } else {
                 _lines.push_back(_linePoints.size());
                 insertLine(line);
-                _lineBoxes.push_back(util::geo::getBoundingBox(line));
-                _qleverIdToInternalId.push_back(
+                assert(_lines.size() - 1 < std::numeric_limits<ID_TYPE>::max() - I_OFFSET);
+                _qidToId.push_back(
                     {i == 0 ? 0 : 1, I_OFFSET + _lines.size() - 1});
               }
               i++;
@@ -129,8 +131,8 @@ void GeomCache::parse(const char* c, size_t size) {
               const auto& line = parseLineString(_dangling, p + 1);
               _lines.push_back(_linePoints.size());
               insertLine(line);
-              _lineBoxes.push_back(util::geo::getBoundingBox(line));
-              _qleverIdToInternalId.push_back(
+              assert(_lines.size() - 1 < std::numeric_limits<ID_TYPE>::max() - I_OFFSET);
+              _qidToId.push_back(
                   {i == 0 ? 0 : 1, I_OFFSET + _lines.size() - 1});
               i++;
             }
@@ -144,13 +146,13 @@ void GeomCache::parse(const char* c, size_t size) {
               const auto& line = parseLineString(_dangling, p + 1);
               _lines.push_back(_linePoints.size());
               insertLine(line);
-              _lineBoxes.push_back(util::geo::getBoundingBox(line));
-              _qleverIdToInternalId.push_back(
+              assert(_lines.size() - 1 < std::numeric_limits<ID_TYPE>::max() - I_OFFSET);
+              _qidToId.push_back(
                   {i == 0 ? 0 : 1, I_OFFSET + _lines.size() - 1});
               i++;
             }
           } else {
-            _qleverIdToInternalId.push_back(
+            _qidToId.push_back(
                 {0, std::numeric_limits<ID_TYPE>::max()});
           }
 
@@ -159,8 +161,7 @@ void GeomCache::parse(const char* c, size_t size) {
             if (_curRow % 1000000 == 0) {
               LOG(INFO) << "[GEOMCACHE] "
                         << "@ row " << _curRow << " (" << _points.size()
-                        << " points, " << _lines.size() << " lines, "
-                        << _polygons.size() << " polygons)";
+                        << " points, " << _lines.size() << " (open) polygons)";
             }
             _prev = _dangling;
             _dangling.clear();
@@ -195,24 +196,25 @@ void GeomCache::parseIds(const char* c, size_t size) {
         LOG(INFO) << "[GEOMCACHE] "
                   << "@ row " << _curRow;
       }
-      if (_curRow < _qleverIdToInternalId.size() &&
-          _qleverIdToInternalId[_curRow].first == 0) {
-        _qleverIdToInternalId[_curRow].first = _curId.val;
+      if (_curRow < _qidToId.size() &&
+          _qidToId[_curRow].qid == 0) {
+        _qidToId[_curRow].qid = _curId.val;
+        if (_curId.val > _maxQid) _maxQid = _curId.val;
       } else {
         LOG(WARN) << "The results for the binary IDs are out of sync.";
         LOG(WARN) << "_curRow: " << _curRow
-                  << " _qleverIdInt.size: " << _qleverIdToInternalId.size()
-                  << " cur val: " << _qleverIdToInternalId[_curRow].first;
+                  << " _qleverIdInt.size: " << _qidToId.size()
+                  << " cur val: " << _qidToId[_curRow].qid;
       }
 
       // if a qlever entity contained multiple geometries (MULTILINESTRING,
       // MULTIPOLYGON, MULTIPOIN), they appear consecutively in
-      // _qleverIdToInternalId; continuation geometries are marked by a
+      // _qidToId; continuation geometries are marked by a
       // preliminary qlever ID of 1, while the first geometry always has a
       // preliminary id of 0
-      while (_curRow < _qleverIdToInternalId.size() - 1 &&
-             _qleverIdToInternalId[_curRow + 1].first == 1) {
-        _qleverIdToInternalId[++_curRow].first = _curId.val;
+      while (_curRow < _qidToId.size() - 1 &&
+             _qidToId[_curRow + 1].qid == 1) {
+        _qidToId[++_curRow].qid = _curId.val;
       }
 
       _curRow++;
@@ -226,7 +228,7 @@ void GeomCache::request() {
   _points.clear();
   _lines.clear();
   _linePoints.clear();
-  _qleverIdToInternalId.clear();
+  _qidToId.clear();
   _curRow = 0;
   _curUniqueGeom = 0;
   _dangling.clear();
@@ -234,9 +236,8 @@ void GeomCache::request() {
 
   LOG(INFO) << "[GEOMCACHE] Allocating memory... ";
 
-  _qleverIdToInternalId.reserve(1600000000);
+  _qidToId.reserve(1600000000);
   _linePoints.reserve(15000000000);
-  _lineBoxes.reserve(1500000000);
   _points.reserve(200000000);
 
   LOG(INFO) << "[GEOMCACHE] Query is " << QUERY;
@@ -289,6 +290,7 @@ void GeomCache::requestIds() {
   _curByte = 0;
   _curRow = 0;
   _curUniqueGeom = 0;
+  _maxQid = 0;
 
   LOG(INFO) << "[GEOMCACHE] Query is " << QUERY;
 
@@ -314,12 +316,13 @@ void GeomCache::requestIds() {
   }
 
   LOG(INFO) << "[GEOMCACHE] Received " << _curRow << " rows";
+  LOG(INFO) << "[GEOMCACHE] Max QLever id was " << _maxQid;
   LOG(INFO) << "[GEOMCACHE] Done";
 
   // sorting by qlever id
   LOG(INFO) << "[GEOMCACHE] Sorting results by qlever ID...";
-  __gnu_parallel::sort(_qleverIdToInternalId.begin(),
-                       _qleverIdToInternalId.end());
+  std::sort(_qidToId.begin(),
+                       _qidToId.end());
   LOG(INFO) << "[GEOMCACHE] ... done";
 }
 
@@ -388,7 +391,7 @@ util::geo::FPoint GeomCache::parsePoint(const std::string& a, size_t p) const {
 
 // _____________________________________________________________________________
 std::vector<std::pair<ID_TYPE, ID_TYPE>> GeomCache::getRelObjects(
-    const std::vector<std::pair<QLEVER_ID_TYPE, ID_TYPE>>& ids) const {
+    const std::vector<IdMapping>& ids) const {
   // (geom id, result row)
   std::vector<std::pair<ID_TYPE, ID_TYPE>> ret;
 
@@ -398,11 +401,11 @@ std::vector<std::pair<ID_TYPE, ID_TYPE>> GeomCache::getRelObjects(
   size_t i = 0;
   size_t j = 0;
 
-  while (i < ids.size() && j < _qleverIdToInternalId.size()) {
-    if (ids[i].first == _qleverIdToInternalId[j].first) {
-      ret.push_back({_qleverIdToInternalId[j].second, ids[i].second});
+  while (i < ids.size() && j < _qidToId.size()) {
+    if (ids[i].qid == _qidToId[j].qid) {
+      ret.push_back({_qidToId[j].id, ids[i].id});
       j++;
-    } else if (ids[i].first < _qleverIdToInternalId[j].first) {
+    } else if (ids[i].qid < _qidToId[j].qid) {
       i++;
     } else {
       j++;
@@ -414,20 +417,40 @@ std::vector<std::pair<ID_TYPE, ID_TYPE>> GeomCache::getRelObjects(
 
 // _____________________________________________________________________________
 void GeomCache::insertLine(const util::geo::FLine& l) {
-  int16_t mainX = l.front().getX() / 1000;
-  int16_t mainY = l.front().getY() / 1000;
+  // we also add the line's bounding box here to also
+  // compress that
+  const auto& bbox = util::geo::getBoundingBox(l);
+
+  int16_t mainX = bbox.getLowerLeft().getX() / 1000;
+  int16_t mainY = bbox.getLowerLeft().getY() / 1000;
 
   if (mainX != 0 || mainY != 0)
     _linePoints.push_back({mainX + 16384, mainY + 16384});
 
-  int i = 1;
+  // add bounding box lower left
+  int16_t minorXLoc = bbox.getLowerLeft().getX() - mainX * 1000;
+  int16_t minorYLoc = bbox.getLowerLeft().getY() - mainY * 1000;
+  _linePoints.push_back({minorXLoc, minorYLoc});
 
+  // add bounding box upper left
+  int16_t mainXLoc = bbox.getUpperRight().getX() / 1000;
+  int16_t mainYLoc = bbox.getUpperRight().getY() / 1000;
+  minorXLoc = bbox.getUpperRight().getX() - mainXLoc * 1000;
+  minorYLoc = bbox.getUpperRight().getY() - mainYLoc * 1000;
+  if (mainXLoc != mainX || mainYLoc != mainY) {
+    mainX = mainXLoc;
+    mainY = mainYLoc;
+
+    _linePoints.push_back({mainX + 16384, mainY + 16384});
+  }
+  _linePoints.push_back({minorXLoc, minorYLoc});
+
+  // add line points
   for (const auto& p : l) {
-    int16_t mainXLoc = p.getX() / 1000;
-    int16_t mainYLoc = p.getY() / 1000;
+    mainXLoc = p.getX() / 1000;
+    mainYLoc = p.getY() / 1000;
 
     if (mainXLoc != mainX || mainYLoc != mainY) {
-      i++;
       mainX = mainXLoc;
       mainY = mainYLoc;
 
@@ -439,4 +462,38 @@ void GeomCache::insertLine(const util::geo::FLine& l) {
 
     _linePoints.push_back({minorXLoc, minorYLoc});
   }
+}
+
+// _____________________________________________________________________________
+util::geo::FBox GeomCache::getLineBBox(size_t lid) const {
+  util::geo::FBox ret;
+  size_t start = getLine(lid);
+
+  bool s = false;
+
+  double mainX = 0;
+  double mainY = 0;
+  for (size_t i = start; i < start + 4; i++) {
+    // extract real geom
+    const auto& cur = _linePoints[i];
+
+    if (cur.getX() >= 16384) {
+      mainX = cur.getX() - 16384;
+      mainY = cur.getY() - 16384;
+      continue;
+    }
+
+    util::geo::FPoint curP(mainX * 1000 + cur.getX(),
+                           mainY * 1000 + cur.getY());
+
+    if (!s) {
+      ret.setLowerLeft(curP);
+      s = true;
+    } else {
+      ret.setUpperRight(curP);
+      return ret;
+    }
+  }
+
+  return ret;
 }

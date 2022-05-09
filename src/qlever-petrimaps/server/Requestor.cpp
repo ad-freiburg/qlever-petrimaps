@@ -57,7 +57,6 @@ void Requestor::request(const std::string& qry) {
   for (size_t i = 0; i < _objects.size(); i++) {
     auto p = _objects[i];
     auto geomId = p.first;
-    auto rowId = p.second;
 
     if (geomId < I_OFFSET) {
       auto pId = geomId;
@@ -110,13 +109,14 @@ void Requestor::request(const std::string& qry) {
           auto geomId = l.first - I_OFFSET;
           _lgrid.add(_cache->getLineBBox(geomId), i);
 
-          size_t start = _cache->getLines()[geomId];
-          size_t end = geomId + 1 < _cache->getLines().size()
-                           ? _cache->getLines()[geomId + 1]
-                           : _cache->getLinePoints().size();
+          size_t start = _cache->getLine(geomId);
+          size_t end = _cache->getLineEnd(geomId);
 
           double mainX = 0;
           double mainY = 0;
+
+          size_t gi = 0;
+
           for (size_t li = start; li < end; li++) {
             const auto& cur = _cache->getLinePoints()[li];
 
@@ -125,6 +125,10 @@ void Requestor::request(const std::string& qry) {
               mainY = cur.getY() - 16384;
               continue;
             }
+
+            // skip bounding box at beginning
+            gi++;
+            if (gi < 3) continue;
 
             // extract real geometry
             util::geo::FPoint curP(mainX * 1000 + cur.getX(),
@@ -218,18 +222,16 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
         auto lBox = _cache->getLineBBox(_objects[i].first - I_OFFSET);
         if (!util::geo::intersects(lBox, box)) continue;
 
-        size_t start = _cache->getLines()[_objects[i].first - I_OFFSET];
-        size_t end =
-            _objects[i].first - I_OFFSET + 1 < _cache->getLines().size()
-                ? _cache->getLines()[_objects[i].first - I_OFFSET + 1]
-                : _cache->getLinePoints().size();
-        // double d = util::geo::dist(l, rp);
+        size_t start = _cache->getLine(_objects[i].first - I_OFFSET);
+        size_t end =_cache->getLineEnd(_objects[i].first - I_OFFSET);
 
         // TODO _____________________ own function
         double d = std::numeric_limits<double>::infinity();
 
         util::geo::FPoint curPa, curPb;
         int s = 0;
+
+        size_t gi = 0;
 
         double mainX = 0;
         double mainY = 0;
@@ -243,6 +245,10 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
             mainY = cur.getY() - 16384;
             continue;
           }
+
+          // skip bounding box at beginning
+          gi++;
+          if (gi < 3) continue;
 
           // extract real geometry
           util::geo::FPoint curP(mainX * 1000 + cur.getX(),
@@ -283,13 +289,13 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
   if (dBestL < rad && dBestL < dBest) {
     util::geo::FLine fline;
     size_t lineId = _objects[nearestL].first - I_OFFSET;
-    size_t start = _cache->getLines()[lineId];
-    size_t end = lineId + 1 < _cache->getLines().size()
-                     ? _cache->getLines()[lineId + 1]
-                     : _cache->getLinePoints().size();
+    size_t start = _cache->getLine(lineId);
+    size_t end = _cache->getLineEnd(lineId);
 
     double mainX = 0;
     double mainY = 0;
+
+    size_t gi = 0;
 
     for (size_t i = start; i < end; i++) {
       // extract real geom
@@ -300,6 +306,10 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
         mainY = cur.getY() - 16384;
         continue;
       }
+
+      // skip bounding box at beginning
+      gi++;
+      if (gi < 3) continue;
 
       util::geo::FPoint curP(mainX * 1000 + cur.getX(),
                              mainY * 1000 + cur.getY());

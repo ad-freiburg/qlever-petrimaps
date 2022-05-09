@@ -64,19 +64,18 @@ class Requestor {
   }
 
   size_t getLine(ID_TYPE id) const {
-    return _cache->getLines()[id];
+    return _cache->getLine(id);
   }
 
   size_t getLineEnd(ID_TYPE id) const {
-    return id + 1 < _cache->getLines().size() ? _cache->getLines()[id + 1] : _cache->getLinePoints().size();
-
+    return _cache->getLineEnd(id);
   }
 
   const std::vector<util::geo::Point<int16_t>>& getLinePoints() const {
     return _cache->getLinePoints();
   }
 
-  const util::geo::FBox& getLineBBox(ID_TYPE id) const {
+  util::geo::FBox getLineBBox(ID_TYPE id) const {
     return _cache->getLineBBox(id);
   }
 

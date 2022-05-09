@@ -186,12 +186,17 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         } else {
           for (const auto& i : cell) {
             const auto& p = r.getPoint(r.getObjects()[i].first);
-            float dx = p.getX() - cellBox.getLowerLeft().getX();
+
+            float dx = fmax(0, p.getX() - cellBox.getLowerLeft().getX());
             size_t virtX = floor(dx / virtCellSize);
 
-            float dy = p.getY() - cellBox.getLowerLeft().getY();
+            float dy = fmax(0, p.getY() - cellBox.getLowerLeft().getY());
             size_t virtY = floor(dy / virtCellSize);
 
+            if (virtX >= subCellSize) virtX = subCellSize - 1;
+            if (virtY >= subCellSize) virtY = subCellSize - 1;
+
+            assert(virtX * subCellSize + virtY < subCellSize * subCellSize);
             subCellCount[omp_get_thread_num()][virtX * subCellSize + virtY] +=
                 1;
           }
@@ -234,6 +239,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
       const auto& lbox = r.getLineBBox(lid - I_OFFSET);
       if (!util::geo::intersects(lbox, bbox)) continue;
 
+      uint8_t gi = 0;
+
       size_t start = r.getLine(lid - I_OFFSET);
       size_t end = r.getLineEnd(lid - I_OFFSET);
 
@@ -254,6 +261,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
           mainY = cur.getY() - 16384;
           continue;
         }
+
+        // skip bounding box at beginning
+        gi++;
+        if (gi < 3) continue;
 
         // extract real geometry
         util::geo::FPoint curP(mainX * 1000 + cur.getX(),
@@ -285,6 +296,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
       util::geo::FLine extrLine;
       extrLine.reserve(end - start);
 
+      gi = 0;
+
       for (size_t i = start; i < end; i++) {
         // extract real geom
         const auto& cur = r.getLinePoints()[i];
@@ -294,6 +307,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
           mainY = cur.getY() - 16384;
           continue;
         }
+
+        // skip bounding box at beginning
+        gi++;
+        if (gi < 3) continue;
 
         util::geo::FPoint p(mainX * 1000 + cur.getX(),
                             mainY * 1000 + cur.getY());
@@ -314,6 +331,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
     for (size_t i = 0; i < NUM_THREADS; i++) {
       subCellCount[i] = new size_t[subCellSize * subCellSize];
     }
+
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
     for (size_t x =
              r.getLinePointGrid().getCellXFromX(bbox.getLowerLeft().getX());
@@ -338,12 +356,16 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         } else {
           for (const auto& p : cell) {
             if (!util::geo::contains(p, cellBox)) continue;
-            float dx = p.getX() - cellBox.getLowerLeft().getX();
+            float dx = fmax(0, p.getX() - cellBox.getLowerLeft().getX());
             size_t virtX = floor(dx / virtCellSize);
 
-            float dy = p.getY() - cellBox.getLowerLeft().getY();
+            float dy = fmax(0, p.getY() - cellBox.getLowerLeft().getY());
             size_t virtY = floor(dy / virtCellSize);
 
+            if (virtX >= subCellSize) virtX = subCellSize - 1;
+            if (virtY >= subCellSize) virtY = subCellSize - 1;
+
+            assert(virtX * subCellSize + virtY < subCellSize * subCellSize);
             subCellCount[omp_get_thread_num()][virtX * subCellSize + virtY] +=
                 1;
           }
