@@ -37,17 +37,17 @@ inline bool operator<(const IdMapping& lh, const IdMapping& rh) {
   return false;
 }
 
-inline int16_t mCord(int16_t c) {
+inline int16_t mCoord(int16_t c) {
   if (c < 0) return c - 16384;
   return c + 16384;
 }
 
-inline int16_t rmCord(int16_t c) {
+inline int16_t rmCoord(int16_t c) {
   if (c < -16384) return c + 16384;
   return c - 16384;
 }
 
-inline int16_t isMCord(int16_t c) {
+inline int16_t isMCoord(int16_t c) {
   return c < -16384 || c >= 16384;
 }
 

@@ -123,9 +123,9 @@ void Requestor::request(const std::string& qry) {
           for (size_t li = start; li < end; li++) {
             const auto& cur = _cache->getLinePoints()[li];
 
-            if (isMCord(cur.getX())) {
-              mainX = rmCord(cur.getX());
-              mainY = rmCord(cur.getY());
+            if (isMCoord(cur.getX())) {
+              mainX = rmCoord(cur.getX());
+              mainY = rmCoord(cur.getY());
               continue;
             }
 
@@ -243,9 +243,9 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
           // extract real geom
           const auto& cur = _cache->getLinePoints()[i];
 
-          if (isMCord(cur.getX())) {
-            mainX = rmCord(cur.getX());
-            mainY = rmCord(cur.getY());
+          if (isMCoord(cur.getX())) {
+            mainX = rmCoord(cur.getX());
+            mainY = rmCoord(cur.getY());
             continue;
           }
 
@@ -304,9 +304,9 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
       // extract real geom
       const auto& cur = _cache->getLinePoints()[i];
 
-      if (isMCord(cur.getX())) {
-        mainX = rmCord(cur.getX());
-        mainY = rmCord(cur.getY());
+      if (isMCoord(cur.getX())) {
+        mainX = rmCoord(cur.getX());
+        mainY = rmCoord(cur.getY());
         continue;
       }
 

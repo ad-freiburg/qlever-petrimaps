@@ -256,9 +256,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         // extract real geom
         const auto& cur = r.getLinePoints()[i];
 
-        if (isMCord(cur.getX())) {
-          mainX = rmCord(cur.getX());
-          mainY = rmCord(cur.getY());
+        if (isMCoord(cur.getX())) {
+          mainX = rmCoord(cur.getX());
+          mainY = rmCoord(cur.getY());
           continue;
         }
 
@@ -302,9 +302,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         // extract real geom
         const auto& cur = r.getLinePoints()[i];
 
-        if (isMCord(cur.getX())) {
-          mainX = rmCord(cur.getX());
-          mainY = rmCord(cur.getY());
+        if (isMCoord(cur.getX())) {
+          mainX = rmCoord(cur.getX());
+          mainY = rmCoord(cur.getY());
           continue;
         }
 

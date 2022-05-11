@@ -473,7 +473,7 @@ void GeomCache::insertLine(const util::geo::FLine& l) {
   int16_t mainY = bbox.getLowerLeft().getY() / 1000;
 
   if (mainX != 0 || mainY != 0)
-    _linePoints.push_back({mCord(mainX), mCord(mainY)});
+    _linePoints.push_back({mCoord(mainX), mCoord(mainY)});
 
   // add bounding box lower left
   int16_t minorXLoc = bbox.getLowerLeft().getX() - mainX * 1000;
@@ -489,7 +489,7 @@ void GeomCache::insertLine(const util::geo::FLine& l) {
     mainX = mainXLoc;
     mainY = mainYLoc;
 
-    _linePoints.push_back({mCord(mainX), mCord(mainY)});
+    _linePoints.push_back({mCoord(mainX), mCoord(mainY)});
   }
   _linePoints.push_back({minorXLoc, minorYLoc});
 
@@ -502,7 +502,7 @@ void GeomCache::insertLine(const util::geo::FLine& l) {
       mainX = mainXLoc;
       mainY = mainYLoc;
 
-      _linePoints.push_back({mCord(mainX), mCord(mainY)});
+      _linePoints.push_back({mCoord(mainX), mCoord(mainY)});
     }
 
     int16_t minorXLoc = p.getX() - mainXLoc * 1000;
@@ -525,9 +525,9 @@ util::geo::FBox GeomCache::getLineBBox(size_t lid) const {
     // extract real geom
     const auto& cur = _linePoints[i];
 
-    if (isMCord(cur.getX())) {
-      mainX = rmCord(cur.getX());
-      mainY = rmCord(cur.getY());
+    if (isMCoord(cur.getX())) {
+      mainX = rmCoord(cur.getX());
+      mainY = rmCoord(cur.getY());
       continue;
     }
 
