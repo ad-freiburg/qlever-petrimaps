@@ -21,16 +21,47 @@ using petrimaps::GeomCache;
 using util::geo::FPoint;
 using util::geo::latLngToWebMerc;
 
+// const static char* QUERY =
+// "SELECT ?geometry WHERE {"
+// " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry ."
+// "   { ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
+// "<https://www.openstreetmap.org/node> }"
+// " UNION"
+// "     { ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
+// "<https://www.openstreetmap.org/relation> }"
+// " } ORDER BY ?geometry LIMIT "
+// "18446744073709551615";
+//
+// const static char* QUERY = "PREFIX osmway:
+// <https://www.openstreetmap.org/way/>" " PREFIX geo:
+// <http://www.opengis.net/ont/geosparql#> " " PREFIX osmrel:
+// <https://www.openstreetmap.org/relation/> " " SELECT ?geom WHERE {
+// osmway:108522418 geo:hasGeometry ?geom } ";
+
+// const static char* QUERY =
+// "SELECT ?geometry WHERE {"
+// " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry ."
+// "      ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
+// "<https://www.openstreetmap.org/way>"
+// " } ORDER BY ?geometry LIMIT "
+// "18446744073709551615";
+
 const static char* QUERY =
     "SELECT ?geometry WHERE {"
-    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry ."
-    "   { ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
-    "<https://www.openstreetmap.org/node> }"
-    " UNION"
-    "     { ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
-    "<https://www.openstreetmap.org/way> }"
+    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
     " } ORDER BY ?geometry LIMIT "
     "18446744073709551615";
+
+// const static char* QUERY = "PREFIX osmnode:
+// <https://www.openstreetmap.org/node/> " " PREFIX osm:
+// <https://www.openstreetmap.org/> " " PREFIX osmrel:
+// <https://www.openstreetmap.org/relation/> " " PREFIX geo:
+// <http://www.opengis.net/ont/geosparql#> " " PREFIX osmkey:
+// <https://www.openstreetmap.org/wiki/Key:> " " SELECT ?geometry WHERE { " "
+// ?osmid geo:hasGeometry ?geometry . " "   ?osmid
+// <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
+// "<https://www.openstreetmap.org/node>"
+// "}";
 
 // _____________________________________________________________________________
 size_t GeomCache::writeCb(void* contents, size_t size, size_t nmemb,
@@ -72,10 +103,10 @@ void GeomCache::parse(const char* c, size_t size) {
 
           auto p = _dangling.rfind("\"POINT(", 0);
 
-
-          if (isGeom && _prev == _dangling) {
-            _qidToId.push_back(
-                {0, _qidToId.back().id});
+          // if the previous was not a multi geometry, and if the strings
+          // match exactly, re-use the geometry
+          if (isGeom && _prev == _dangling && _qidToId.back().qid == 0) {
+            _qidToId.push_back({0, _qidToId.back().id});
           } else if (isGeom && p != std::string::npos) {
             _curUniqueGeom++;
             p += 7;
@@ -85,8 +116,7 @@ void GeomCache::parse(const char* c, size_t size) {
               assert(_points.size() - 1 < I_OFFSET);
               _qidToId.push_back({0, _points.size() - 1});
             } else {
-              _qidToId.push_back(
-                  {0, std::numeric_limits<ID_TYPE>::max()});
+              _qidToId.push_back({0, std::numeric_limits<ID_TYPE>::max()});
             }
           } else if (isGeom && (p = _dangling.rfind("\"LINESTRING(", 0)) !=
                                    std::string::npos) {
@@ -94,14 +124,13 @@ void GeomCache::parse(const char* c, size_t size) {
             p += 12;
             const auto& line = parseLineString(_dangling, p);
             if (line.size() == 0) {
-              _qidToId.push_back(
-                  {0, std::numeric_limits<ID_TYPE>::max()});
+              _qidToId.push_back({0, std::numeric_limits<ID_TYPE>::max()});
             } else {
               _lines.push_back(_linePoints.size());
               insertLine(line);
-              assert(_lines.size() - 1 < std::numeric_limits<ID_TYPE>::max() - I_OFFSET);
-              _qidToId.push_back(
-                  {0, I_OFFSET + _lines.size() - 1});
+              assert(_lines.size() - 1 <
+                     std::numeric_limits<ID_TYPE>::max() - I_OFFSET);
+              _qidToId.push_back({0, I_OFFSET + _lines.size() - 1});
             }
           } else if (isGeom && (p = _dangling.rfind("\"MULTILINESTRING(", 0)) !=
                                    std::string::npos) {
@@ -111,17 +140,21 @@ void GeomCache::parse(const char* c, size_t size) {
             while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
               const auto& line = parseLineString(_dangling, p + 1);
               if (line.size() == 0) {
-                _qidToId.push_back(
-                    {0, std::numeric_limits<ID_TYPE>::max()});
+                if (i == 0) {
+                  _qidToId.push_back({0, std::numeric_limits<ID_TYPE>::max()});
+                }
               } else {
                 _lines.push_back(_linePoints.size());
                 insertLine(line);
-                assert(_lines.size() - 1 < std::numeric_limits<ID_TYPE>::max() - I_OFFSET);
+                assert(_lines.size() - 1 <
+                       std::numeric_limits<ID_TYPE>::max() - I_OFFSET);
                 _qidToId.push_back(
                     {i == 0 ? 0 : 1, I_OFFSET + _lines.size() - 1});
               }
               i++;
             }
+            if (i == 0)
+              _qidToId.push_back({0, std::numeric_limits<ID_TYPE>::max()});
           } else if (isGeom && (p = _dangling.rfind("\"POLYGON(", 0)) !=
                                    std::string::npos) {
             _curUniqueGeom++;
@@ -129,13 +162,22 @@ void GeomCache::parse(const char* c, size_t size) {
             size_t i = 0;
             while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
               const auto& line = parseLineString(_dangling, p + 1);
-              _lines.push_back(_linePoints.size());
-              insertLine(line);
-              assert(_lines.size() - 1 < std::numeric_limits<ID_TYPE>::max() - I_OFFSET);
-              _qidToId.push_back(
-                  {i == 0 ? 0 : 1, I_OFFSET + _lines.size() - 1});
+              if (line.size() == 0) {
+                if (i == 0) {
+                  _qidToId.push_back({0, std::numeric_limits<ID_TYPE>::max()});
+                }
+              } else {
+                _lines.push_back(_linePoints.size());
+                insertLine(line);
+                assert(_lines.size() - 1 <
+                       std::numeric_limits<ID_TYPE>::max() - I_OFFSET);
+                _qidToId.push_back(
+                    {i == 0 ? 0 : 1, I_OFFSET + _lines.size() - 1});
+              }
               i++;
             }
+            if (i == 0)
+              _qidToId.push_back({0, std::numeric_limits<ID_TYPE>::max()});
           } else if (isGeom && (p = _dangling.rfind("\"MULTIPOLYGON(", 0)) !=
                                    std::string::npos) {
             _curUniqueGeom++;
@@ -144,16 +186,24 @@ void GeomCache::parse(const char* c, size_t size) {
             while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
               if (_dangling[p + 1] == '(') p++;
               const auto& line = parseLineString(_dangling, p + 1);
-              _lines.push_back(_linePoints.size());
-              insertLine(line);
-              assert(_lines.size() - 1 < std::numeric_limits<ID_TYPE>::max() - I_OFFSET);
-              _qidToId.push_back(
-                  {i == 0 ? 0 : 1, I_OFFSET + _lines.size() - 1});
+              if (line.size() == 0) {
+                if (i == 0) {
+                  _qidToId.push_back({0, std::numeric_limits<ID_TYPE>::max()});
+                }
+              } else {
+                _lines.push_back(_linePoints.size());
+                insertLine(line);
+                assert(_lines.size() - 1 <
+                       std::numeric_limits<ID_TYPE>::max() - I_OFFSET);
+                _qidToId.push_back(
+                    {i == 0 ? 0 : 1, I_OFFSET + _lines.size() - 1});
+              }
               i++;
             }
+            if (i == 0)
+              _qidToId.push_back({0, std::numeric_limits<ID_TYPE>::max()});
           } else {
-            _qidToId.push_back(
-                {0, std::numeric_limits<ID_TYPE>::max()});
+            _qidToId.push_back({0, std::numeric_limits<ID_TYPE>::max()});
           }
 
           if (*c == '\n') {
@@ -196,8 +246,8 @@ void GeomCache::parseIds(const char* c, size_t size) {
         LOG(INFO) << "[GEOMCACHE] "
                   << "@ row " << _curRow;
       }
-      if (_curRow < _qidToId.size() &&
-          _qidToId[_curRow].qid == 0) {
+
+      if (_curRow < _qidToId.size() && _qidToId[_curRow].qid == 0) {
         _qidToId[_curRow].qid = _curId.val;
         if (_curId.val > _maxQid) _maxQid = _curId.val;
       } else {
@@ -212,8 +262,7 @@ void GeomCache::parseIds(const char* c, size_t size) {
       // _qidToId; continuation geometries are marked by a
       // preliminary qlever ID of 1, while the first geometry always has a
       // preliminary id of 0
-      while (_curRow < _qidToId.size() - 1 &&
-             _qidToId[_curRow + 1].qid == 1) {
+      while (_curRow < _qidToId.size() - 1 && _qidToId[_curRow + 1].qid == 1) {
         _qidToId[++_curRow].qid = _curId.val;
       }
 
@@ -321,8 +370,7 @@ void GeomCache::requestIds() {
 
   // sorting by qlever id
   LOG(INFO) << "[GEOMCACHE] Sorting results by qlever ID...";
-  std::sort(_qidToId.begin(),
-                       _qidToId.end());
+  std::sort(_qidToId.begin(), _qidToId.end());
   LOG(INFO) << "[GEOMCACHE] ... done";
 }
 
@@ -425,7 +473,7 @@ void GeomCache::insertLine(const util::geo::FLine& l) {
   int16_t mainY = bbox.getLowerLeft().getY() / 1000;
 
   if (mainX != 0 || mainY != 0)
-    _linePoints.push_back({mainX + 16384, mainY + 16384});
+    _linePoints.push_back({mCord(mainX), mCord(mainY)});
 
   // add bounding box lower left
   int16_t minorXLoc = bbox.getLowerLeft().getX() - mainX * 1000;
@@ -441,7 +489,7 @@ void GeomCache::insertLine(const util::geo::FLine& l) {
     mainX = mainXLoc;
     mainY = mainYLoc;
 
-    _linePoints.push_back({mainX + 16384, mainY + 16384});
+    _linePoints.push_back({mCord(mainX), mCord(mainY)});
   }
   _linePoints.push_back({minorXLoc, minorYLoc});
 
@@ -454,7 +502,7 @@ void GeomCache::insertLine(const util::geo::FLine& l) {
       mainX = mainXLoc;
       mainY = mainYLoc;
 
-      _linePoints.push_back({mainX + 16384, mainY + 16384});
+      _linePoints.push_back({mCord(mainX), mCord(mainY)});
     }
 
     int16_t minorXLoc = p.getX() - mainXLoc * 1000;
@@ -477,9 +525,9 @@ util::geo::FBox GeomCache::getLineBBox(size_t lid) const {
     // extract real geom
     const auto& cur = _linePoints[i];
 
-    if (cur.getX() >= 16384) {
-      mainX = cur.getX() - 16384;
-      mainY = cur.getY() - 16384;
+    if (isMCord(cur.getX())) {
+      mainX = rmCord(cur.getX());
+      mainY = rmCord(cur.getY());
       continue;
     }
 

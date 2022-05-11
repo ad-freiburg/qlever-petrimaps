@@ -73,6 +73,9 @@ void Requestor::request(const std::string& qry) {
     bbox = util::geo::extendBox(box, bbox);
   }
 
+  // to avoid zero area boxes if only one point is requested
+  bbox = util::geo::pad(bbox, 1);
+
   LOG(INFO) << "[REQUESTOR] ... done";
 
   LOG(INFO) << "[REQUESTOR] BBox: " << util::geo::getWKT(bbox);
@@ -120,9 +123,9 @@ void Requestor::request(const std::string& qry) {
           for (size_t li = start; li < end; li++) {
             const auto& cur = _cache->getLinePoints()[li];
 
-            if (cur.getX() >= 16384) {
-              mainX = cur.getX() - 16384;
-              mainY = cur.getY() - 16384;
+            if (isMCord(cur.getX())) {
+              mainX = rmCord(cur.getX());
+              mainY = rmCord(cur.getY());
               continue;
             }
 
@@ -240,9 +243,9 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
           // extract real geom
           const auto& cur = _cache->getLinePoints()[i];
 
-          if (cur.getX() >= 16384) {
-            mainX = cur.getX() - 16384;
-            mainY = cur.getY() - 16384;
+          if (isMCord(cur.getX())) {
+            mainX = rmCord(cur.getX());
+            mainY = rmCord(cur.getY());
             continue;
           }
 
@@ -301,9 +304,9 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
       // extract real geom
       const auto& cur = _cache->getLinePoints()[i];
 
-      if (cur.getX() >= 16384) {
-        mainX = cur.getX() - 16384;
-        mainY = cur.getY() - 16384;
+      if (isMCord(cur.getX())) {
+        mainX = rmCord(cur.getX());
+        mainY = rmCord(cur.getY());
         continue;
       }
 

@@ -146,7 +146,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
     LOG(INFO) << "[SERVER] Looking up display points...";
     r.getPointGrid().get(bbox, &ret);
-    LOG(INFO) << "[SERVER] ... done";
+    LOG(INFO) << "[SERVER] ... done (" << ret.size() << " points)";
 
     for (size_t i : ret) {
       const auto& p = r.getPoint(r.getObjects()[i].first);
@@ -232,7 +232,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
     LOG(INFO) << "[SERVER] Looking up display lines...";
     r.getLineGrid().get(bbox, &ret);
-    LOG(INFO) << "[SERVER] ... done";
+    LOG(INFO) << "[SERVER] ... done (" << ret.size() << " lines)";
 
     for (size_t i : ret) {
       auto lid = r.getObjects()[i].first;
@@ -256,9 +256,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         // extract real geom
         const auto& cur = r.getLinePoints()[i];
 
-        if (cur.getX() >= 16384) {
-          mainX = cur.getX() - 16384;
-          mainY = cur.getY() - 16384;
+        if (isMCord(cur.getX())) {
+          mainX = rmCord(cur.getX());
+          mainY = rmCord(cur.getY());
           continue;
         }
 
@@ -302,9 +302,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         // extract real geom
         const auto& cur = r.getLinePoints()[i];
 
-        if (cur.getX() >= 16384) {
-          mainX = cur.getX() - 16384;
-          mainY = cur.getY() - 16384;
+        if (isMCord(cur.getX())) {
+          mainX = rmCord(cur.getX());
+          mainY = rmCord(cur.getY());
           continue;
         }
 

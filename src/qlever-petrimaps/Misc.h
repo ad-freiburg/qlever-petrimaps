@@ -11,7 +11,8 @@
 #define PETRIMAPS_MISC_H_
 
 #define ID_TYPE uint32_t
-#define QLEVER_ID_TYPE size_t
+//#define QLEVER_ID_TYPE size_t
+#define QLEVER_ID_TYPE uint32_t
 
 const static ID_TYPE I_OFFSET = 500000000;
 const static size_t MAXROWS = 18446744073709551615u;
@@ -34,6 +35,20 @@ inline bool operator<(const IdMapping& lh, const IdMapping& rh) {
   if (lh.qid < rh.qid) return true;
   if (lh.qid == rh.qid && lh.id < rh.id) return true;
   return false;
+}
+
+inline int16_t mCord(int16_t c) {
+  if (c < 0) return c - 16384;
+  return c + 16384;
+}
+
+inline int16_t rmCord(int16_t c) {
+  if (c < -16384) return c + 16384;
+  return c - 16384;
+}
+
+inline int16_t isMCord(int16_t c) {
+  return c < -16384 || c >= 16384;
 }
 
 struct RequestReader {
