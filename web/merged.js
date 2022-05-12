@@ -4117,12 +4117,11 @@
 
 var map = L.map('m', {
     renderer: L.canvas(),
-    maxZoom: 17
 }).setView([47.9965, 7.8469], 13);
 
-L.tileLayer('https://stamen-tiles-{s}.a.ssl.fastly.net/toner-lite/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a rel="noreferrer" target="_blank" href="#">OpenStreetMap</a>'
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a rel="noreferrer" target="_blank" href="#">OpenStreetMap</a>',
+    opacity:0.9
 }).addTo(map);
 
 function trimStr(str) {
@@ -4162,7 +4161,6 @@ function loadMap(id, bounds) {
     map.fitBounds(bounds);
     sessionId = id;
     L.nonTiledLayer.wms('heatmap', {
-        maxZoom: 19,
         minZoom: 0,
         opacity: 0.8,
         layers: id,
