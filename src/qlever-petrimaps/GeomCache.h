@@ -40,6 +40,7 @@ class GeomCache {
   }
 
   void request();
+  void requestPart(size_t offset);
 
   void requestIds();
 

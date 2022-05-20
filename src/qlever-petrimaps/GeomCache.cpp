@@ -49,8 +49,8 @@ using util::geo::latLngToWebMerc;
 const static char* QUERY =
     "SELECT ?geometry WHERE {"
     " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
-    " } ORDER BY ?geometry LIMIT "
-    "18446744073709551615";
+    " } ORDER BY ?geometry LIMIT 1000000";
+    // "18446744073709551615";
 
 // const static char* QUERY = "PREFIX osmnode:
 // <https://www.openstreetmap.org/node/> " " PREFIX osm:
@@ -272,32 +272,20 @@ void GeomCache::parseIds(const char* c, size_t size) {
 }
 
 // _____________________________________________________________________________
-void GeomCache::request() {
+void GeomCache::requestPart(size_t offset) {
+  auto partQuery = std::string(QUERY) + " OFFSET " + std::to_string(offset);
+  // LOG(INFO) << "[GEOMCACHE] Query is " << partQuery;
+
   _state = IN_HEADER;
-  _points.clear();
-  _lines.clear();
-  _linePoints.clear();
-  _qidToId.clear();
-  _curRow = 0;
-  _curUniqueGeom = 0;
   _dangling.clear();
   _dangling.reserve(10000);
-
-  LOG(INFO) << "[GEOMCACHE] Allocating memory... ";
-
-  _qidToId.reserve(1600000000);
-  _linePoints.reserve(15000000000);
-  _points.reserve(200000000);
-
-  LOG(INFO) << "[GEOMCACHE] Query is " << QUERY;
 
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    auto qUrl = queryUrl(QUERY);
+    auto qUrl = queryUrl(partQuery);
 
-    LOG(INFO) << "[GEOMCACHE] Query URL is " << qUrl;
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
@@ -328,10 +316,39 @@ void GeomCache::request() {
     }
   } else {
     LOG(INFO) << "[GEOMCACHE] Done";
-    LOG(INFO) << "[GEOMCACHE] Received " << _curUniqueGeom << " unique geoms";
-    LOG(INFO) << "[GEOMCACHE] Received " << _points.size() << " points and "
-              << _lines.size() << " lines";
   }
+}
+
+// _____________________________________________________________________________
+void GeomCache::request() {
+  _state = IN_HEADER;
+  _points.clear();
+  _lines.clear();
+  _linePoints.clear();
+  _qidToId.clear();
+  _curRow = 0;
+  _curUniqueGeom = 0;
+
+  size_t lastNum = -1;
+
+  LOG(INFO) << "[GEOMCACHE] Allocating memory... ";
+
+  _qidToId.reserve(1600000000);
+  _linePoints.reserve(15000000000);
+  _points.reserve(200000000);
+
+  LOG(INFO) << "[GEOMCACHE] Query is " << QUERY;
+
+  while (lastNum != 0) {
+    size_t offset = _curRow;
+    requestPart(offset);
+    lastNum = _curRow - offset;
+  }
+
+  LOG(INFO) << "[GEOMCACHE] Done";
+  LOG(INFO) << "[GEOMCACHE] Received " << _curUniqueGeom << " unique geoms";
+  LOG(INFO) << "[GEOMCACHE] Received " << _points.size() << " points and "
+            << _lines.size() << " lines";
 }
 
 // _____________________________________________________________________________
