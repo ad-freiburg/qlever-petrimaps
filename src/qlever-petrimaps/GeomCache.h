@@ -83,7 +83,7 @@ private:
   static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
                            void* userp);
 
-  std::string queryUrl(std::string query) const;
+  std::string queryUrl(std::string query, size_t offset, size_t limit) const;
 
   util::geo::FLine parseLineString(const std::string& a, size_t p) const;
   util::geo::FPoint parsePoint(const std::string& a, size_t p) const;

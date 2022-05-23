@@ -21,7 +21,7 @@ using petrimaps::GeomCache;
 using util::geo::FPoint;
 using util::geo::latLngToWebMerc;
 
-// const static char* QUERY =
+// const static std::string QUERY =
 // "SELECT ?geometry WHERE {"
 // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry ."
 // "   { ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
@@ -32,13 +32,13 @@ using util::geo::latLngToWebMerc;
 // " } ORDER BY ?geometry LIMIT "
 // "18446744073709551615";
 //
-// const static char* QUERY = "PREFIX osmway:
+// const static std::string QUERY = "PREFIX osmway:
 // <https://www.openstreetmap.org/way/>" " PREFIX geo:
 // <http://www.opengis.net/ont/geosparql#> " " PREFIX osmrel:
 // <https://www.openstreetmap.org/relation/> " " SELECT ?geom WHERE {
 // osmway:108522418 geo:hasGeometry ?geom } ";
 
-// const static char* QUERY =
+// const static std::string QUERY =
 // "SELECT ?geometry WHERE {"
 // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry ."
 // "      ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
@@ -46,13 +46,12 @@ using util::geo::latLngToWebMerc;
 // " } ORDER BY ?geometry LIMIT "
 // "18446744073709551615";
 
-const static char* QUERY =
+const static std::string QUERY =
     "SELECT ?geometry WHERE {"
     " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
-    " } ORDER BY ?geometry LIMIT 1000000";
-    // "18446744073709551615";
+    " } ORDER BY ?geometry";
 
-// const static char* QUERY = "PREFIX osmnode:
+// const static std::string  QUERY = "PREFIX osmnode:
 // <https://www.openstreetmap.org/node/> " " PREFIX osm:
 // <https://www.openstreetmap.org/> " " PREFIX osmrel:
 // <https://www.openstreetmap.org/relation/> " " PREFIX geo:
@@ -273,9 +272,6 @@ void GeomCache::parseIds(const char* c, size_t size) {
 
 // _____________________________________________________________________________
 void GeomCache::requestPart(size_t offset) {
-  auto partQuery = std::string(QUERY) + " OFFSET " + std::to_string(offset);
-  // LOG(INFO) << "[GEOMCACHE] Query is " << partQuery;
-
   _state = IN_HEADER;
   _dangling.clear();
   _dangling.reserve(10000);
@@ -284,7 +280,7 @@ void GeomCache::requestPart(size_t offset) {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    auto qUrl = queryUrl(partQuery);
+    auto qUrl = queryUrl(QUERY, offset, 1000000);
 
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
@@ -314,8 +310,6 @@ void GeomCache::requestPart(size_t offset) {
     } else {
       LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
     }
-  } else {
-    LOG(INFO) << "[GEOMCACHE] Done";
   }
 }
 
@@ -361,7 +355,7 @@ void GeomCache::requestIds() {
   LOG(INFO) << "[GEOMCACHE] Query is " << QUERY;
 
   if (_curl) {
-    auto qUrl = queryUrl(QUERY);
+    auto qUrl = queryUrl(QUERY, 0, MAXROWS);
     LOG(INFO) << "[GEOMCACHE] Binary ID query URL is " << qUrl;
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbIds);
@@ -392,11 +386,16 @@ void GeomCache::requestIds() {
 }
 
 // _____________________________________________________________________________
-std::string GeomCache::queryUrl(std::string query) const {
+std::string GeomCache::queryUrl(std::string query, size_t offset,
+                                size_t limit) const {
   std::stringstream ss;
 
   if (util::toLower(query).find("limit") == std::string::npos) {
-    query += " LIMIT " + std::to_string(MAXROWS);
+    query += " LIMIT " + std::to_string(limit);
+  }
+
+  if (util::toLower(query).find("offset") == std::string::npos) {
+    query += " OFFSET " + std::to_string(offset);
   }
 
   auto esc = curl_easy_escape(_curl, query.c_str(), query.size());
