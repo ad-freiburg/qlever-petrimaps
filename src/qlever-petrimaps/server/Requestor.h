@@ -24,8 +24,9 @@ struct ResObj {
 
 class Requestor {
  public:
-  Requestor() {}
-  Requestor(const GeomCache* cache) : _cache(cache) {}
+  Requestor() : _maxMemory(-1) {}
+  Requestor(const GeomCache* cache, size_t maxMemory)
+      : _cache(cache), _maxMemory(maxMemory) {}
 
   std::vector<std::pair<std::string, std::string>> requestRow(
       uint64_t row) const;
@@ -34,7 +35,8 @@ class Requestor {
 
   size_t size() const { return _points.size(); }
 
-  const petrimaps::Grid<ID_TYPE, util::geo::Point, float>& getPointGrid() const {
+  const petrimaps::Grid<ID_TYPE, util::geo::Point, float>& getPointGrid()
+      const {
     return _pgrid;
   }
 
@@ -63,13 +65,9 @@ class Requestor {
     return _cache->getPoints()[id];
   }
 
-  size_t getLine(ID_TYPE id) const {
-    return _cache->getLine(id);
-  }
+  size_t getLine(ID_TYPE id) const { return _cache->getLine(id); }
 
-  size_t getLineEnd(ID_TYPE id) const {
-    return _cache->getLineEnd(id);
-  }
+  size_t getLineEnd(ID_TYPE id) const { return _cache->getLineEnd(id); }
 
   const std::vector<util::geo::Point<int16_t>>& getLinePoints() const {
     return _cache->getLinePoints();
@@ -83,8 +81,12 @@ class Requestor {
 
   std::mutex& getMutex() const { return _m; }
 
+  bool ready() const { return _ready; }
+
  private:
   std::string _backendUrl;
+
+  size_t _maxMemory;
 
   const GeomCache* _cache;
 
@@ -102,6 +104,8 @@ class Requestor {
   petrimaps::Grid<ID_TYPE, util::geo::Point, float> _pgrid;
   petrimaps::Grid<ID_TYPE, util::geo::Line, float> _lgrid;
   petrimaps::Grid<util::geo::FPoint, util::geo::Point, float> _lpgrid;
+
+  bool _ready = false;
 };
 }  // namespace petrimaps
 

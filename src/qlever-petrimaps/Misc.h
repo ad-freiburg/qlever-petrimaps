@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include <string>
 #include <vector>
+#include <stdexcept>
+#include <sstream>
+#include "util/Misc.h"
 
 #ifndef PETRIMAPS_MISC_H_
 #define PETRIMAPS_MISC_H_
@@ -47,13 +50,37 @@ inline int16_t rmCoord(int16_t c) {
   return c - 16384;
 }
 
-inline int16_t isMCoord(int16_t c) {
-  return c < -16384 || c >= 16384;
+inline int16_t isMCoord(int16_t c) { return c < -16384 || c >= 16384; }
+
+class OutOfMemoryError : public std::exception {
+ public:
+  explicit OutOfMemoryError(size_t want, size_t have, size_t max) {
+    std::stringstream ss;
+    ss << "Out of memory, ";
+    ss << "want: " << want << " bytes, already used: " << have << " of " << max << " bytes";
+
+    _msg = ss.str();
+  }
+
+  const char* what() const noexcept {
+    return _msg.c_str();
+  }
+
+ private:
+  std::string _msg;
+};
+
+inline void checkMem(size_t want, size_t max) {
+  size_t currentSize = util::getCurrentRSS();
+
+  if (currentSize + want > max) {
+    throw OutOfMemoryError(want, currentSize, max);
+  }
 }
 
 struct RequestReader {
-  explicit RequestReader(const std::string& backendUrl)
-      : _backendUrl(backendUrl), _curl(curl_easy_init()) {}
+  explicit RequestReader(const std::string& backendUrl, size_t maxMemory)
+      : _backendUrl(backendUrl), _curl(curl_easy_init()), _maxMemory(maxMemory) {}
   ~RequestReader() {
     if (_curl) curl_easy_cleanup(_curl);
   }
@@ -85,6 +112,8 @@ struct RequestReader {
   ID _curId;
   size_t _received = 0;
   std::vector<IdMapping> ids;
+  size_t _maxMemory;
+  std::exception_ptr exceptionPtr;
 };
 
 }  // namespace petrimaps

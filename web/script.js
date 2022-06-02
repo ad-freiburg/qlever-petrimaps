@@ -37,6 +37,14 @@ function openPopup(data) {
     }
 }
 
+function showError(error) {
+    console.error(error);
+    document.getElementById("msg").style.display = "block";
+    document.getElementById("loader").style.display = "none";
+    document.getElementById("msg-inner").style.color = "red";
+    document.getElementById("msg-inner").innerHTML = error;
+}
+
 function loadMap(id, bounds) {
     console.log("Loading session " + id);
     document.getElementById("msg").style.display = "none";
@@ -65,5 +73,12 @@ function loadMap(id, bounds) {
 
 console.log("Loading data from QLever...");
 fetch('query' + window.location.search)
+  .then(response => {
+        if (!response.ok) {
+            return response.text().then(text => {throw new Error(text)});
+        }
+      return response;
+    })
   .then(response => response.json())
-  .then(data => loadMap(data["qid"], data["bounds"]));
+  .then(data => loadMap(data["qid"], data["bounds"]))
+  .catch(error => {showError(error);});

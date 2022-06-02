@@ -534,11 +534,21 @@ util::http::Answer Server::handleLoadReq(const Params& pars) const {
     return answ;
   }
 
-  auto cache = new GeomCache(backend);
+  auto cache = new GeomCache(backend, _maxMemory);
 
-  _caches[backend] = cache;
-  cache->request();
-  cache->requestIds();
+  try {
+    cache->request();
+    cache->requestIds();
+    _caches[backend] = cache;
+  } catch (OutOfMemoryError& ex) {
+    LOG(ERROR) << ex.what() << backend;
+    delete cache;
+    _m.unlock();
+    auto answ = util::http::Answer("406 Not Acceptable", ex.what());
+    answ.params["Content-Type"] = "application/json; charset=utf-8";
+    return answ;
+  }
+
   _m.unlock();
 
   auto answ = util::http::Answer("200 OK", "{}");
@@ -556,7 +566,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   auto backend = pars.find("backend")->second;
 
   LOG(INFO) << "[SERVER] Queried backend is " << backend;
-  LOG(INFO) << "[SERVER] Query is " << query;
+  LOG(INFO) << "[SERVER] Query is:\n" << query;
 
   std::string queryId = backend + "$" + query;
 
@@ -566,38 +576,51 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     auto reqor = _rs[id];
     _m.unlock();
 
-    reqor->getMutex().lock();
+    if (reqor->ready()) {
+      reqor->getMutex().lock();
 
-    auto bbox = reqor->getPointGrid().getBBox();
+      auto bbox = reqor->getPointGrid().getBBox();
 
-    auto ll = bbox.getLowerLeft();
-    auto ur = bbox.getUpperRight();
+      auto ll = bbox.getLowerLeft();
+      auto ur = bbox.getUpperRight();
 
-    double llX = ll.getX();
-    double llY = ll.getY();
-    double urX = ur.getX();
-    double urY = ur.getY();
+      double llX = ll.getX();
+      double llY = ll.getY();
+      double urX = ur.getX();
+      double urY = ur.getY();
 
-    std::stringstream json;
-    json << std::fixed << "{\"qid\" : \"" << id << "\",\"bounds\":[[" << llX
-         << "," << llY << "],[" << urX << "," << urY << "]]"
-         << "}";
+      std::stringstream json;
+      json << std::fixed << "{\"qid\" : \"" << id << "\",\"bounds\":[[" << llX
+           << "," << llY << "],[" << urX << "," << urY << "]]"
+           << "}";
 
-    auto answ = util::http::Answer("200 OK", json.str());
-    answ.params["Content-Type"] = "application/json; charset=utf-8";
-    reqor->getMutex().unlock();
+      auto answ = util::http::Answer("200 OK", json.str());
+      answ.params["Content-Type"] = "application/json; charset=utf-8";
+      reqor->getMutex().unlock();
 
-    return answ;
+      return answ;
+    }
+
+    // if not ready, lock global lock again
+    _m.lock();
   }
 
   if (_caches.count(backend) == 0) {
-    auto cache = new GeomCache(backend);
+    auto cache = new GeomCache(backend, _maxMemory);
 
-    _caches[backend] = cache;
-    cache->request();
-    cache->requestIds();
+    try {
+      cache->request();
+      cache->requestIds();
+      _caches[backend] = cache;
+    } catch (OutOfMemoryError& ex) {
+      LOG(ERROR) << ex.what() << backend;
+      delete cache;
+      _m.unlock();
+      auto answ = util::http::Answer("406 Not Acceptable", ex.what());
+      answ.params["Content-Type"] = "application/json; charset=utf-8";
+      return answ;
+    }
   }
-  _m.unlock();
 
   std::random_device dev;
   std::mt19937 rng(dev());
@@ -606,16 +629,27 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
 
   std::string id = std::to_string(d(rng));
 
-  auto reqor = new Requestor(_caches[backend]);
+  auto reqor = std::shared_ptr<Requestor>(new Requestor(_caches[backend], _maxMemory));
 
-  _m.lock();
   _rs[id] = reqor;
   _queryCache[queryId] = id;
+  reqor->getMutex().lock();
   _m.unlock();
 
   T_START(req);
-  reqor->getMutex().lock();
-  reqor->request(query);
+
+  try {
+    reqor->request(query);
+  } catch (OutOfMemoryError& ex) {
+    LOG(ERROR) << ex.what() << backend;
+    reqor->getMutex().unlock();
+
+    // delete cache, is now in unready state
+    clearSession(id);
+    auto answ = util::http::Answer("406 Not Acceptable", ex.what());
+    answ.params["Content-Type"] = "application/json; charset=utf-8";
+    return answ;
+  }
 
   LOG(INFO) << "[SERVER] ** TOTAL REQUEST TIME: " << T_STOP(req) << " ms";
 
@@ -717,8 +751,6 @@ std::string Server::writePNG(const unsigned char* data, size_t w, size_t h) {
 void Server::clearSession(const std::string& id) const {
   if (_rs.count(id)) {
     LOG(INFO) << "[SERVER] Clearing session " << id;
-    _rs[id]->getMutex().lock();
-    delete _rs[id];
     _rs.erase(id);
 
     for (auto it = _queryCache.cbegin(); it != _queryCache.cend();) {
@@ -733,12 +765,7 @@ void Server::clearSession(const std::string& id) const {
 
 // _____________________________________________________________________________
 void Server::clearSessions() const {
-  for (auto r : _rs) {
-    LOG(INFO) << "[SERVER] Clearing session " << r.first;
-    r.second->getMutex().lock();
-    delete r.second;
-  }
-
+  LOG(INFO) << "[SERVER] Clearing all sessions...";
   _rs.clear();
   _queryCache.clear();
 }

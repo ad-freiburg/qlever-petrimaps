@@ -66,8 +66,13 @@ const static std::string QUERY =
 size_t GeomCache::writeCb(void* contents, size_t size, size_t nmemb,
                           void* userp) {
   size_t realsize = size * nmemb;
+  try {
   static_cast<GeomCache*>(userp)->parse(static_cast<const char*>(contents),
                                         realsize);
+  } catch(...) {
+    static_cast<GeomCache*>(userp)->_exceptionPtr = std::current_exception();
+    return CURLE_WRITE_ERROR;
+  }
   return realsize;
 }
 
@@ -75,8 +80,13 @@ size_t GeomCache::writeCb(void* contents, size_t size, size_t nmemb,
 size_t GeomCache::writeCbIds(void* contents, size_t size, size_t nmemb,
                              void* userp) {
   size_t realsize = size * nmemb;
+  try {
   static_cast<GeomCache*>(userp)->parseIds(static_cast<const char*>(contents),
                                            realsize);
+  } catch(...) {
+    static_cast<GeomCache*>(userp)->_exceptionPtr = std::current_exception();
+    return CURLE_WRITE_ERROR;
+  }
   return realsize;
 }
 
@@ -297,6 +307,8 @@ void GeomCache::requestPart(size_t offset) {
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     res = curl_easy_perform(_curl);
+
+    if (_exceptionPtr) std::rethrow_exception(_exceptionPtr);
   } else {
     LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request.";
     return;
@@ -327,11 +339,17 @@ void GeomCache::request() {
 
   LOG(INFO) << "[GEOMCACHE] Allocating memory... ";
 
-  _qidToId.reserve(1600000000);
-  _linePoints.reserve(15000000000);
-  _points.reserve(200000000);
+  size_t NUM_QIDS = 1600000000;
+  size_t NUM_LINE_POINTS = 15000000000;
+  size_t NUM_POINTS = 200000000;
 
-  LOG(INFO) << "[GEOMCACHE] Query is " << QUERY;
+  // checkMem(NUM_QIDS * sizeof(IdMapping) + NUM_LINE_POINTS * sizeof(util::geo::Point<int16_t>) + NUM_POINTS * sizeof(util::geo::FPoint), _maxMemory);
+
+  _qidToId.reserve(NUM_QIDS);
+  _linePoints.reserve(NUM_LINE_POINTS);
+  _points.reserve(NUM_POINTS);
+
+  LOG(INFO) << "[GEOMCACHE] Query is:\n" << QUERY;
 
   while (lastNum != 0) {
     size_t offset = _curRow;
@@ -351,6 +369,7 @@ void GeomCache::requestIds() {
   _curRow = 0;
   _curUniqueGeom = 0;
   _maxQid = 0;
+  _exceptionPtr = 0;
 
   LOG(INFO) << "[GEOMCACHE] Query is " << QUERY;
 
@@ -371,6 +390,7 @@ void GeomCache::requestIds() {
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_perform(_curl);
+    if (_exceptionPtr) std::rethrow_exception(_exceptionPtr);
   } else {
     LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request.";
   }

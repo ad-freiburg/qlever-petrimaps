@@ -23,11 +23,12 @@ using petrimaps::ResObj;
 // _____________________________________________________________________________
 void Requestor::request(const std::string& qry) {
   _query = qry;
+  _ready = false;
   _points.clear();
   _lines.clear();
   _objects.clear();
 
-  RequestReader reader(_cache->getBackendURL());
+  RequestReader reader(_cache->getBackendURL(), _maxMemory);
   _query = qry;
 
   LOG(INFO) << "[REQUESTOR] Requesting IDs for query " << qry;
@@ -83,12 +84,23 @@ void Requestor::request(const std::string& qry) {
 
   double GRID_SIZE = 100000;
 
+  double w = bbox.getUpperRight().getX() - bbox.getLowerLeft().getX();
+  double h = bbox.getUpperRight().getY() - bbox.getLowerLeft().getY();
+
+  // estimate memory consumption of empty grid
+  double xWidth = ceil(w / GRID_SIZE);
+  double yHeight = ceil(h / GRID_SIZE);
+
+  checkMem(xWidth * 8 + xWidth * yHeight * sizeof(std::vector<ID_TYPE>), _maxMemory);
+
   _pgrid = petrimaps::Grid<ID_TYPE, util::geo::Point, float>(GRID_SIZE,
                                                              GRID_SIZE, bbox);
   _lgrid = petrimaps::Grid<ID_TYPE, util::geo::Line, float>(GRID_SIZE,
                                                             GRID_SIZE, bbox);
   _lpgrid = petrimaps::Grid<util::geo::FPoint, util::geo::Point, float>(
       GRID_SIZE, GRID_SIZE, bbox);
+
+  std::exception_ptr ePtr;
 
 #pragma omp parallel sections
   {
@@ -101,6 +113,17 @@ void Requestor::request(const std::string& qry) {
           _pgrid.add(_cache->getPointBBox(geomId), i);
         }
         i++;
+
+        // every 10000 objects, check memory...
+        try {
+          if (i % 10000) checkMem(1, _maxMemory);
+        } catch (...) {
+          #pragma omp critical
+          {
+            ePtr = std::current_exception();
+          }
+          break;
+        }
       }
     }
 #pragma omp section
@@ -140,9 +163,24 @@ void Requestor::request(const std::string& qry) {
           }
         }
         i++;
+
+        // every 10000 objects, check memory...
+        try {
+          if (i % 10000) checkMem(1, _maxMemory);
+        } catch (...) {
+          #pragma omp critical
+          {
+            ePtr = std::current_exception();
+          }
+          break;
+        }
       }
     }
   }
+
+  if (ePtr) std::rethrow_exception(ePtr);
+
+  _ready = true;
 
   LOG(INFO) << "[REQUESTOR] ...done";
 }
@@ -150,7 +188,7 @@ void Requestor::request(const std::string& qry) {
 // _____________________________________________________________________________
 std::vector<std::pair<std::string, std::string>> Requestor::requestRow(
     uint64_t row) const {
-  RequestReader reader(_cache->getBackendURL());
+  RequestReader reader(_cache->getBackendURL(), _maxMemory);
   LOG(INFO) << "[REQUESTOR] Requesting single row " << row << " for query "
             << _query;
   auto query = prepQueryRow(_query, row);

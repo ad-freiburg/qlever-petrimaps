@@ -19,7 +19,7 @@ typedef std::map<std::string, std::string> Params;
 
 class Server : public util::http::Handler {
  public:
-  explicit Server() {}
+  explicit Server(size_t maxMemory) : _maxMemory(maxMemory) {}
 
   virtual util::http::Answer handle(const util::http::Req& request,
                                     int connection) const;
@@ -39,10 +39,12 @@ class Server : public util::http::Handler {
 
   static std::string writePNG(const unsigned char* data, size_t w, size_t h);
 
+  size_t _maxMemory;
+
   mutable std::mutex _m;
 
   mutable std::map<std::string, GeomCache*> _caches;
-  mutable std::map<std::string, Requestor*> _rs;
+  mutable std::map<std::string, std::shared_ptr<Requestor>> _rs;
   mutable std::map<std::string, std::string> _queryCache;
 };
 }  // namespace petrimaps
