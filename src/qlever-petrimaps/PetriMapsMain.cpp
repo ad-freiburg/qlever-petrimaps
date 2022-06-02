@@ -16,11 +16,13 @@ using petrimaps::Server;
 // _____________________________________________________________________________
 void printHelp(int argc, char** argv) {
   UNUSED(argc);
-  std::cout << "Usage: " << argv[0] << " [-p <port>] [--help] [-h]"
+  std::cout << "Usage: " << argv[0]
+            << " [-p <port>] [-m <maxmemory>] [--help] [-h]"
             << "\n";
   std::cout
-      << "\nAllowed arguments:\n    -p <port>  Port for server to listen to\n"
-      << "\n    -m <memory>  Max memory in GB\n";
+      << "\nAllowed arguments:\n    -p <port>    Port for server to listen to "
+         "(default: 9090)"
+      << "\n    -m <memory>  Max memory in GB (default: 90% of system RAM)\n";
 }
 
 // _____________________________________________________________________________
@@ -36,7 +38,8 @@ int main(int argc, char** argv) {
 
   // default port
   int port = 9090;
-  double maxMemoryGB = (sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE) * 0.9) / 1000000000 ;
+  double maxMemoryGB =
+      (sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE) * 0.9) / 1000000000;
 
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];

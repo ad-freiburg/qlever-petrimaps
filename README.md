@@ -40,3 +40,13 @@ The QLever backend to use must be specified via the `?backend` get parameter.
       ?osm_id osmkey:building ?building .
       ?osm_id geo:hasGeometry ?geometry .
     }
+
+## Cache + Memory Management
+
+The tool caches query results and memory usage will thus slowly build up. There is a primitive memory limit which can be set via the `-m` parameter (in GB). By default, 90% of the available system memory are used.
+
+If a query runs out of memory, you can clear all existing caches by requesting
+
+    /clearsession
+
+`/clearsessions` will also work. Optionally, you can specify the session id via `?id=<SESSIONID>'.

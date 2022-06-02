@@ -44,6 +44,8 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
       a = handleQueryReq(params);
     } else if (cmd == "/clearsession") {
       a = handleClearSessReq(params);
+    } else if (cmd == "/clearsessions") {
+      a = handleClearSessReq(params);
     } else if (cmd == "/load") {
       a = handleLoadReq(params);
     } else if (cmd == "/pos") {

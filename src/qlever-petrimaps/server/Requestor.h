@@ -86,9 +86,9 @@ class Requestor {
  private:
   std::string _backendUrl;
 
-  size_t _maxMemory;
-
   const GeomCache* _cache;
+
+  size_t _maxMemory;
 
   std::string prepQuery(std::string query) const;
   std::string prepQueryRow(std::string query, uint64_t row) const;
