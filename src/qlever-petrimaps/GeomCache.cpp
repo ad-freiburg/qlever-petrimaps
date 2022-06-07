@@ -340,13 +340,9 @@ void GeomCache::request() {
 
   LOG(INFO) << "[GEOMCACHE] Allocating memory... ";
 
-  // size_t NUM_QIDS = 1600000000;
-  // size_t NUM_LINE_POINTS = 15000000000;
-  // size_t NUM_POINTS = 200000000;
-
-  size_t NUM_QIDS = 160000000;
-  size_t NUM_LINE_POINTS = 1500000000;
-  size_t NUM_POINTS = 20000000;
+  size_t NUM_QIDS = 1600000000;
+  size_t NUM_LINE_POINTS = 15000000000;
+  size_t NUM_POINTS = 200000000;
 
   // checkMem(NUM_QIDS * sizeof(IdMapping) + NUM_LINE_POINTS *
   // sizeof(util::geo::Point<int16_t>) + NUM_POINTS * sizeof(util::geo::FPoint),
