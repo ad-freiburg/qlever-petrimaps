@@ -27,7 +27,7 @@ via Docker:
 
 To start:
 
-    $ petrimaps [-p <port=9090>]
+    $ petrimaps [-p <port=9090>] [-m <memory limit] [-c <cache dir>]
 
 Requests can be send via the `?query` get parameter.
 The QLever backend to use must be specified via the `?backend` get parameter.
@@ -50,3 +50,7 @@ If a query runs out of memory, you can clear all existing caches by requesting
     /clearsession
 
 `/clearsessions` will also work. Optionally, you can specify the session id via `?id=<SESSIONID>'.
+
+## Disk Cache
+
+If `-c` specifies a serialization cache directory, the complete geometries downloaded from a QLever backend will be serialized to disk and re-used on later startups. This significantly speeds up the loading times.
