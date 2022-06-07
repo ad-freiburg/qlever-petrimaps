@@ -591,7 +591,6 @@ void GeomCache::fromDisk(const std::string& fname) {
   _linePoints.clear();
   _lines.clear();
 
-  // manual buffering
   std::ifstream f(fname, std::ios::binary);
 
   size_t numPoints;
