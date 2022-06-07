@@ -63,6 +63,10 @@ class GeomCache {
   }
   util::geo::FBox getLineBBox(size_t id) const;
 
+  void serializeToDisk(const std::string& fname) const;
+
+  void fromDisk(const std::string& fname);
+
   size_t getLine(ID_TYPE id) const {
     return _lines[id];
   }

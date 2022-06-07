@@ -539,8 +539,7 @@ util::http::Answer Server::handleLoadReq(const Params& pars) const {
   auto cache = new GeomCache(backend, _maxMemory);
 
   try {
-    cache->request();
-    cache->requestIds();
+    loadCache(cache);
     _caches[backend] = cache;
   } catch (OutOfMemoryError& ex) {
     LOG(ERROR) << ex.what() << backend;
@@ -611,8 +610,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     auto cache = new GeomCache(backend, _maxMemory);
 
     try {
-      cache->request();
-      cache->requestIds();
+      loadCache(cache);
       _caches[backend] = cache;
     } catch (OutOfMemoryError& ex) {
       LOG(ERROR) << ex.what() << backend;
@@ -631,7 +629,8 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
 
   std::string id = std::to_string(d(rng));
 
-  auto reqor = std::shared_ptr<Requestor>(new Requestor(_caches[backend], _maxMemory));
+  auto reqor =
+      std::shared_ptr<Requestor>(new Requestor(_caches[backend], _maxMemory));
 
   _rs[id] = reqor;
   _queryCache[queryId] = id;
@@ -775,4 +774,32 @@ void Server::clearSessions() const {
 // _____________________________________________________________________________
 void Server::clearOldSessions() const {
   // TODO
+}
+
+// _____________________________________________________________________________
+void Server::loadCache(GeomCache* cache) const {
+  if (_cacheDir.size()) {
+    std::string backend = cache->getBackendURL();
+    util::replaceAll(backend, "/", "_");
+    std::string cacheFile = _cacheDir + "/" + backend;
+    if (access(cacheFile.c_str(), F_OK) != -1) {
+      LOG(INFO) << "Reading from cache file " << cacheFile << "...";
+      cache->fromDisk(cacheFile);
+      LOG(INFO) << "done ...";
+    } else {
+      if (access(_cacheDir.c_str(), W_OK) != 0) {
+        std::stringstream ss;
+        ss << "No write access to cache dir " << _cacheDir;
+        throw std::runtime_error(ss.str());
+      }
+      cache->request();
+      cache->requestIds();
+      LOG(INFO) << "Serializing to cache file " << cacheFile << "...";
+      cache->serializeToDisk(cacheFile);
+      LOG(INFO) << "done ...";
+    }
+  } else {
+    cache->request();
+    cache->requestIds();
+  }
 }

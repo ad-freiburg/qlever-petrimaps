@@ -6,11 +6,11 @@
 #define PETRIMAPS_SERVER_SERVER_H_
 
 #include <map>
-#include <thread>
 #include <mutex>
 #include <string>
-#include "qlever-petrimaps/server/Requestor.h"
+#include <thread>
 #include "qlever-petrimaps/GeomCache.h"
+#include "qlever-petrimaps/server/Requestor.h"
 #include "util/http/Server.h"
 
 namespace petrimaps {
@@ -19,7 +19,8 @@ typedef std::map<std::string, std::string> Params;
 
 class Server : public util::http::Handler {
  public:
-  explicit Server(size_t maxMemory) : _maxMemory(maxMemory) {}
+  explicit Server(size_t maxMemory, const std::string& cacheDir)
+      : _maxMemory(maxMemory), _cacheDir(cacheDir) {}
 
   virtual util::http::Answer handle(const util::http::Req& request,
                                     int connection) const;
@@ -33,6 +34,8 @@ class Server : public util::http::Handler {
   util::http::Answer handlePosReq(const Params& pars) const;
   util::http::Answer handleLoadReq(const Params& pars) const;
 
+  void loadCache(GeomCache* c) const;
+
   void clearSession(const std::string& id) const;
   void clearSessions() const;
   void clearOldSessions() const;
@@ -40,6 +43,8 @@ class Server : public util::http::Handler {
   static std::string writePNG(const unsigned char* data, size_t w, size_t h);
 
   size_t _maxMemory;
+
+  std::string _cacheDir;
 
   mutable std::mutex _m;
 

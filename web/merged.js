@@ -4157,6 +4157,8 @@ function showError(error) {
     document.getElementById("msg").style.display = "block";
     document.getElementById("loader").style.display = "none";
     document.getElementById("msg-inner").style.color = "red";
+    document.getElementById("msg-inner").style.fontWeight = "bold";
+    document.getElementById("msg-inner").style.fontSize = "20px";
     document.getElementById("msg-inner").innerHTML = error;
 }
 

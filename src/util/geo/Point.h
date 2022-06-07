@@ -15,8 +15,8 @@ class Point {
  public:
   Point() : _x(0), _y(0) {}
   Point(T x, T y) : _x(x), _y(y) {}
-  T getX() const { return _x; }
-  T getY() const { return _y; }
+  const T& getX() const { return _x; }
+  const T& getY() const { return _y; }
 
   void setX(T x) { _x = x; }
   void setY(T y) { _y = y; }

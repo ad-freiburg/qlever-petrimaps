@@ -17,12 +17,13 @@ using petrimaps::Server;
 void printHelp(int argc, char** argv) {
   UNUSED(argc);
   std::cout << "Usage: " << argv[0]
-            << " [-p <port>] [-m <maxmemory>] [--help] [-h]"
+            << " [-p <port>] [-m <maxmemory>] [-c <cachedir>] [--help] [-h]"
             << "\n";
   std::cout
       << "\nAllowed arguments:\n    -p <port>    Port for server to listen to "
          "(default: 9090)"
-      << "\n    -m <memory>  Max memory in GB (default: 90% of system RAM)\n";
+      << "\n    -m <memory>  Max memory in GB (default: 90% of system RAM)"
+      << "\n    -c <dir>     cache dir (default: none)\n";
 }
 
 // _____________________________________________________________________________
@@ -40,6 +41,7 @@ int main(int argc, char** argv) {
   int port = 9090;
   double maxMemoryGB =
       (sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE) * 0.9) / 1000000000;
+  std::string cacheDir;
 
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
@@ -58,12 +60,24 @@ int main(int argc, char** argv) {
         exit(1);
       }
       maxMemoryGB = atof(argv[i]);
+    } else if (cur == "-c") {
+      if (++i >= argc) {
+        LOG(ERROR) << "Missing argument for cache dir (-c).";
+        exit(1);
+      }
+      cacheDir = argv[i];
     }
+  }
+
+  if (access(cacheDir.c_str(), W_OK) != 0) {
+    std::stringstream ss;
+    ss << "No write access to cache dir " << cacheDir;
+    throw std::runtime_error(ss.str());
   }
 
   LOG(INFO) << "Starting server...";
   LOG(INFO) << "Max memory is " << maxMemoryGB << " GB...";
-  Server serv(maxMemoryGB * 1000000000);
+  Server serv(maxMemoryGB * 1000000000, cacheDir);
 
   LOG(INFO) << "Listening on port " << port;
   util::http::HttpServer(port, &serv, std::thread::hardware_concurrency())

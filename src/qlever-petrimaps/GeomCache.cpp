@@ -5,6 +5,7 @@
 #include <curl/curl.h>
 
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <parallel/algorithm>
 #include <sstream>
@@ -67,9 +68,9 @@ size_t GeomCache::writeCb(void* contents, size_t size, size_t nmemb,
                           void* userp) {
   size_t realsize = size * nmemb;
   try {
-  static_cast<GeomCache*>(userp)->parse(static_cast<const char*>(contents),
-                                        realsize);
-  } catch(...) {
+    static_cast<GeomCache*>(userp)->parse(static_cast<const char*>(contents),
+                                          realsize);
+  } catch (...) {
     static_cast<GeomCache*>(userp)->_exceptionPtr = std::current_exception();
     return CURLE_WRITE_ERROR;
   }
@@ -81,9 +82,9 @@ size_t GeomCache::writeCbIds(void* contents, size_t size, size_t nmemb,
                              void* userp) {
   size_t realsize = size * nmemb;
   try {
-  static_cast<GeomCache*>(userp)->parseIds(static_cast<const char*>(contents),
-                                           realsize);
-  } catch(...) {
+    static_cast<GeomCache*>(userp)->parseIds(static_cast<const char*>(contents),
+                                             realsize);
+  } catch (...) {
     static_cast<GeomCache*>(userp)->_exceptionPtr = std::current_exception();
     return CURLE_WRITE_ERROR;
   }
@@ -339,11 +340,17 @@ void GeomCache::request() {
 
   LOG(INFO) << "[GEOMCACHE] Allocating memory... ";
 
-  size_t NUM_QIDS = 1600000000;
-  size_t NUM_LINE_POINTS = 15000000000;
-  size_t NUM_POINTS = 200000000;
+  // size_t NUM_QIDS = 1600000000;
+  // size_t NUM_LINE_POINTS = 15000000000;
+  // size_t NUM_POINTS = 200000000;
 
-  // checkMem(NUM_QIDS * sizeof(IdMapping) + NUM_LINE_POINTS * sizeof(util::geo::Point<int16_t>) + NUM_POINTS * sizeof(util::geo::FPoint), _maxMemory);
+  size_t NUM_QIDS = 160000000;
+  size_t NUM_LINE_POINTS = 1500000000;
+  size_t NUM_POINTS = 20000000;
+
+  // checkMem(NUM_QIDS * sizeof(IdMapping) + NUM_LINE_POINTS *
+  // sizeof(util::geo::Point<int16_t>) + NUM_POINTS * sizeof(util::geo::FPoint),
+  // _maxMemory);
 
   _qidToId.reserve(NUM_QIDS);
   _linePoints.reserve(NUM_LINE_POINTS);
@@ -580,4 +587,63 @@ util::geo::FBox GeomCache::getLineBBox(size_t lid) const {
   }
 
   return ret;
+}
+
+// _____________________________________________________________________________
+void GeomCache::fromDisk(const std::string& fname) {
+  _points.clear();
+  _linePoints.clear();
+  _lines.clear();
+
+  // manual buffering
+  std::ifstream f(fname, std::ios::binary);
+
+  size_t numPoints;
+  f.read(reinterpret_cast<char*>(&numPoints), sizeof(size_t));
+  _points.resize(numPoints);
+  f.read(reinterpret_cast<char*>(&_points[0]),
+         sizeof(util::geo::FPoint) * numPoints);
+
+  f.read(reinterpret_cast<char*>(&numPoints), sizeof(size_t));
+  _linePoints.resize(numPoints);
+  f.read(reinterpret_cast<char*>(&_linePoints[0]),
+         sizeof(util::geo::Point<int16_t>) * numPoints);
+
+  f.read(reinterpret_cast<char*>(&numPoints), sizeof(size_t));
+  _lines.resize(numPoints);
+  f.read(reinterpret_cast<char*>(&_lines[0]), sizeof(size_t) * numPoints);
+
+  f.read(reinterpret_cast<char*>(&numPoints), sizeof(size_t));
+  _qidToId.resize(numPoints);
+  f.read(reinterpret_cast<char*>(&_qidToId[0]), sizeof(IdMapping) * numPoints);
+
+  f.close();
+}
+
+// _____________________________________________________________________________
+void GeomCache::serializeToDisk(const std::string& fname) const {
+  std::ofstream f;
+  f.open(fname);
+
+  size_t numPoints = _points.size();
+  f.write(reinterpret_cast<const char*>(&numPoints), sizeof(size_t));
+  f.write(reinterpret_cast<const char*>(&_points[0]),
+          sizeof(util::geo::FPoint) * numPoints);
+
+  numPoints = _linePoints.size();
+  f.write(reinterpret_cast<const char*>(&numPoints), sizeof(size_t));
+  f.write(reinterpret_cast<const char*>(&_linePoints[0]),
+          sizeof(util::geo::Point<int16_t>) * numPoints);
+
+  numPoints = _lines.size();
+  f.write(reinterpret_cast<const char*>(&numPoints), sizeof(size_t));
+  f.write(reinterpret_cast<const char*>(&_lines[0]),
+          sizeof(size_t) * numPoints);
+
+  numPoints = _qidToId.size();
+  f.write(reinterpret_cast<const char*>(&numPoints), sizeof(size_t));
+  f.write(reinterpret_cast<const char*>(&_qidToId[0]),
+          sizeof(IdMapping) * numPoints);
+
+  f.close();
 }
