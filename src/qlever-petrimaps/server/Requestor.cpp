@@ -214,10 +214,6 @@ std::string Requestor::prepQuery(std::string query) const {
 
 // _____________________________________________________________________________
 std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
-  if (util::toLower(query).find("limit") == std::string::npos) {
-    query += " LIMIT 18446744073709551615";
-  }
-
   query += " OFFSET " + std::to_string(row) + " LIMIT 1";
 
   return query;
@@ -303,12 +299,13 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
           }
 
           if (s == 2) {
-            s = 0;
+            s = 1;
             double dTmp = util::geo::distToSegment(curPa, curPb, rp);
             if (dTmp < 0.0001) {
               d = 0;
               break;
             }
+            curPa = curPb;
             if (dTmp < d) d = dTmp;
           }
         }
@@ -322,12 +319,12 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
     }
   }
 
-  if (dBest < rad && dBest < dBestL) {
+  if (dBest < rad && dBest <= dBestL) {
     return {true, _cache->getPoints()[_objects[nearest].first],
             requestRow(_objects[nearest].second)};
   }
 
-  if (dBestL < rad && dBestL < dBest) {
+  if (dBestL < rad && dBestL <= dBest) {
     util::geo::FLine fline;
     size_t lineId = _objects[nearestL].first - I_OFFSET;
     size_t start = _cache->getLine(lineId);

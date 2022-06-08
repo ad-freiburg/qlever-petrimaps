@@ -280,12 +280,13 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         }
 
         if (s == 2) {
-          s = 0;
+          s = 1;
           if (util::geo::intersects(util::geo::LineSegment<float>(curPa, curPb),
                                     bbox)) {
             isects = true;
             break;
           }
+          curPa = curPb;
         }
       }
       // ___________________________________

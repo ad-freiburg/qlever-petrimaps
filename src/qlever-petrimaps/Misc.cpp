@@ -162,7 +162,7 @@ void RequestReader::parse(const char* c, size_t size) {
           _state = IN_ROW;
           c++;
         } else {
-          _dangling += *c;
+          if (*c != '\t') _dangling += *c;
           c++;
           continue;
         }
