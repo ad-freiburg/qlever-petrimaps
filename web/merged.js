@@ -4121,6 +4121,7 @@ var map = L.map('m', {
 
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a rel="noreferrer" target="_blank" href="#">OpenStreetMap</a>',
+    maxZoom: 19,
     opacity:0.9
 }).addTo(map);
 
@@ -4223,6 +4224,7 @@ function loadMap(id, bounds) {
     sessionId = id;
     L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
+        maxZoom: 19,
         opacity: 0.8,
         layers: id,
         format: 'image/png',

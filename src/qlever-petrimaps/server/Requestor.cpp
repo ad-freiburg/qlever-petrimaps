@@ -50,19 +50,18 @@ void Requestor::request(const std::string& qry) {
   LOG(INFO) << "[REQUESTOR] ... done, got " << _objects.size() << " objects.";
 
   LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";
-  size_t NUM_THREADS = 24;
+  size_t NUM_THREADS = std::thread::hardware_concurrency();
   std::vector<util::geo::FBox> bboxes(NUM_THREADS);
   util::geo::FBox bbox;
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
   for (size_t i = 0; i < _objects.size(); i++) {
-    auto p = _objects[i];
-    auto geomId = p.first;
+    auto geomId = _objects[i].first;
 
     if (geomId < I_OFFSET) {
       auto pId = geomId;
       bboxes[omp_get_thread_num()] = util::geo::extendBox(
-          _cache->getPointBBox(pId), bboxes[omp_get_thread_num()]);
+          _cache->getPoints()[pId], bboxes[omp_get_thread_num()]);
     } else if (geomId < std::numeric_limits<ID_TYPE>::max()) {
       auto lId = geomId - I_OFFSET;
       bboxes[omp_get_thread_num()] = util::geo::extendBox(
@@ -91,8 +90,10 @@ void Requestor::request(const std::string& qry) {
   double xWidth = ceil(w / GRID_SIZE);
   double yHeight = ceil(h / GRID_SIZE);
 
-  checkMem(xWidth * 8 + xWidth * yHeight * sizeof(std::vector<ID_TYPE>), _maxMemory);
+  checkMem(xWidth * 8 + xWidth * yHeight * sizeof(std::vector<ID_TYPE>),
+           _maxMemory);
 
+  LOG(INFO) << "[REQUESTOR] Allocating grids...";
   _pgrid = petrimaps::Grid<ID_TYPE, util::geo::Point, float>(GRID_SIZE,
                                                              GRID_SIZE, bbox);
   _lgrid = petrimaps::Grid<ID_TYPE, util::geo::Line, float>(GRID_SIZE,
@@ -100,33 +101,36 @@ void Requestor::request(const std::string& qry) {
   _lpgrid = petrimaps::Grid<util::geo::FPoint, util::geo::Point, float>(
       GRID_SIZE, GRID_SIZE, bbox);
 
+  LOG(INFO) << "[REQUESTOR] ...done";
+
   std::exception_ptr ePtr;
 
-#pragma omp parallel sections
+  #pragma omp parallel sections
   {
-#pragma omp section
+    #pragma omp section
     {
       size_t i = 0;
       for (const auto& p : _objects) {
         auto geomId = p.first;
         if (geomId < I_OFFSET) {
-          _pgrid.add(_cache->getPointBBox(geomId), i);
+          _pgrid.add(_cache->getPoints()[geomId], i);
         }
         i++;
 
-        // every 10000 objects, check memory...
-        try {
-          if (i % 10000) checkMem(1, _maxMemory);
-        } catch (...) {
-          #pragma omp critical
-          {
-            ePtr = std::current_exception();
+        // every 100000 objects, check memory...
+        if (i % 100000 == 0) {
+          try {
+            checkMem(1, _maxMemory);
+          } catch (...) {
+#pragma omp critical
+            { ePtr = std::current_exception(); }
+            break;
           }
-          break;
         }
       }
     }
-#pragma omp section
+
+    #pragma omp section
     {
       size_t i = 0;
       for (const auto& l : _objects) {
@@ -134,6 +138,29 @@ void Requestor::request(const std::string& qry) {
             l.first < std::numeric_limits<ID_TYPE>::max()) {
           auto geomId = l.first - I_OFFSET;
           _lgrid.add(_cache->getLineBBox(geomId), i);
+        }
+        i++;
+
+        // every 100000 objects, check memory...
+        if (i % 100000 == 0) {
+          try {
+            checkMem(1, _maxMemory);
+          } catch (...) {
+#pragma omp critical
+            { ePtr = std::current_exception(); }
+            break;
+          }
+        }
+      }
+    }
+
+    #pragma omp section
+    {
+      size_t i = 0;
+      for (const auto& l : _objects) {
+        if (l.first >= I_OFFSET &&
+            l.first < std::numeric_limits<ID_TYPE>::max()) {
+          auto geomId = l.first - I_OFFSET;
 
           size_t start = _cache->getLine(geomId);
           size_t end = _cache->getLineEnd(geomId);
@@ -159,20 +186,20 @@ void Requestor::request(const std::string& qry) {
             // extract real geometry
             util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
                                    mainY * M_COORD_GRANULARITY + cur.getY());
-            _lpgrid.add(util::geo::getBoundingBox(curP), curP);
+            _lpgrid.add(curP, curP);
           }
         }
         i++;
 
-        // every 10000 objects, check memory...
-        try {
-          if (i % 10000) checkMem(1, _maxMemory);
-        } catch (...) {
-          #pragma omp critical
-          {
-            ePtr = std::current_exception();
+        // every 100000 objects, check memory...
+        if (i % 100000 == 0) {
+          try {
+            checkMem(1, _maxMemory);
+          } catch (...) {
+#pragma omp critical
+            { ePtr = std::current_exception(); }
+            break;
           }
-          break;
         }
       }
     }
@@ -260,7 +287,7 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
         if (!util::geo::intersects(lBox, box)) continue;
 
         size_t start = _cache->getLine(_objects[i].first - I_OFFSET);
-        size_t end =_cache->getLineEnd(_objects[i].first - I_OFFSET);
+        size_t end = _cache->getLineEnd(_objects[i].first - I_OFFSET);
 
         // TODO _____________________ own function
         double d = std::numeric_limits<double>::infinity();

@@ -495,7 +495,8 @@ std::vector<std::pair<ID_TYPE, ID_TYPE>> GeomCache::getRelObjects(
     } else if (ids[i].qid < _qidToId[j].qid) {
       i++;
     } else {
-      j++;
+      j = std::lower_bound(_qidToId.begin() + j, _qidToId.end(), ids[i]) -
+          _qidToId.begin();
     }
   }
 

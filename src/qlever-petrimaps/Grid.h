@@ -63,8 +63,8 @@ class Grid {
   }
 
   // add object t to this grid
-  void add(const G<T>& geom, const V& val);
   void add(const util::geo::Box<T>& box, const V& val);
+  void add(const util::geo::Point<T>& box, const V& val);
   void add(size_t x, size_t y, V val);
 
   void get(const util::geo::Box<T>& btbox, std::unordered_set<V>* s) const;

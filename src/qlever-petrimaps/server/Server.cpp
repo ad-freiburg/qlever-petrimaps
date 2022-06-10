@@ -129,7 +129,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   double realCellSize = r.getPointGrid().getCellWidth();
   double virtCellSize = res * 2.5;
 
-  size_t NUM_THREADS = 24;
+  size_t NUM_THREADS = std::thread::hardware_concurrency();
 
   size_t subCellSize = (size_t)ceil(realCellSize / virtCellSize);
   size_t** subCellCount = new size_t*[NUM_THREADS];

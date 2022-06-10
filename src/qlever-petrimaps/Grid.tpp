@@ -42,8 +42,9 @@ Grid<V, G, T>::Grid(double w, double h, const util::geo::Box<T>& bbox)
 
 // _____________________________________________________________________________
 template <typename V, template <typename> class G, typename T>
-void Grid<V, G, T>::add(const G<T>& geom, const V& val) {
-  add(getBoundingBox(geom), val);
+void Grid<V, G, T>::add(const util::geo::Point<T>& p,
+                        const V& val) {
+  add(getCellXFromX(p.getX()), getCellYFromY(p.getY()), val);
 }
 
 // _____________________________________________________________________________
@@ -123,16 +124,16 @@ util::geo::Box<T> Grid<V, G, T>::getBox(size_t x, size_t y) const {
 template <typename V, template <typename> class G, typename T>
 size_t Grid<V, G, T>::getCellXFromX(double x) const {
   float dist = x - _bb.getLowerLeft().getX();
-  if (dist < 0) dist = 0;
-  return floor(dist / _cellWidth);
+  if (dist < 0) return 0;
+  return dist / _cellWidth;
 }
 
 // _____________________________________________________________________________
 template <typename V, template <typename> class G, typename T>
 size_t Grid<V, G, T>::getCellYFromY(double y) const {
   float dist = y - _bb.getLowerLeft().getY();
-  if (dist < 0) dist = 0;
-  return floor(dist / _cellHeight);
+  if (dist < 0) return 0;
+  return dist / _cellHeight;
 }
 
 // _____________________________________________________________________________
