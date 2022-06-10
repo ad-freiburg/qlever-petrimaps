@@ -4,10 +4,10 @@
 
 #include <curl/curl.h>
 #include <stdint.h>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
-#include <stdexcept>
-#include <sstream>
 #include "util/Misc.h"
 
 #ifndef PETRIMAPS_MISC_H_
@@ -19,6 +19,9 @@
 
 const static ID_TYPE I_OFFSET = 500000000;
 const static size_t MAXROWS = 18446744073709551615u;
+
+const static int16_t M_COORD_GRANULARITY = 1000;
+const static int16_t M_COORD_OFFSET = M_COORD_GRANULARITY;
 
 namespace petrimaps {
 
@@ -41,30 +44,31 @@ inline bool operator<(const IdMapping& lh, const IdMapping& rh) {
 }
 
 inline int16_t mCoord(int16_t c) {
-  if (c < 0) return c - 16384;
-  return c + 16384;
+  if (c < 0) return c - M_COORD_OFFSET;
+  return c + M_COORD_OFFSET;
 }
 
 inline int16_t rmCoord(int16_t c) {
-  if (c < -16384) return c + 16384;
-  return c - 16384;
+  if (c < -M_COORD_OFFSET) return c + M_COORD_OFFSET;
+  return c - M_COORD_OFFSET;
 }
 
-inline int16_t isMCoord(int16_t c) { return c < -16384 || c >= 16384; }
+inline int16_t isMCoord(int16_t c) {
+  return c < -M_COORD_OFFSET || c >= M_COORD_OFFSET;
+}
 
 class OutOfMemoryError : public std::exception {
  public:
   explicit OutOfMemoryError(size_t want, size_t have, size_t max) {
     std::stringstream ss;
     ss << "Out of memory, ";
-    ss << "want: " << want << " bytes, already used: " << have << " of " << max << " bytes";
+    ss << "want: " << want << " bytes, already used: " << have << " of " << max
+       << " bytes";
 
     _msg = ss.str();
   }
 
-  const char* what() const noexcept {
-    return _msg.c_str();
-  }
+  const char* what() const noexcept { return _msg.c_str(); }
 
  private:
   std::string _msg;
@@ -80,7 +84,9 @@ inline void checkMem(size_t want, size_t max) {
 
 struct RequestReader {
   explicit RequestReader(const std::string& backendUrl, size_t maxMemory)
-      : _backendUrl(backendUrl), _curl(curl_easy_init()), _maxMemory(maxMemory) {}
+      : _backendUrl(backendUrl),
+        _curl(curl_easy_init()),
+        _maxMemory(maxMemory) {}
   ~RequestReader() {
     if (_curl) curl_easy_cleanup(_curl);
   }

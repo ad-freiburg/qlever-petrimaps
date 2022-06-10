@@ -157,8 +157,8 @@ void Requestor::request(const std::string& qry) {
             if (gi < 3) continue;
 
             // extract real geometry
-            util::geo::FPoint curP(mainX * 1000 + cur.getX(),
-                                   mainY * 1000 + cur.getY());
+            util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
+                                   mainY * M_COORD_GRANULARITY + cur.getY());
             _lpgrid.add(util::geo::getBoundingBox(curP), curP);
           }
         }
@@ -288,8 +288,8 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
           if (gi < 3) continue;
 
           // extract real geometry
-          util::geo::FPoint curP(mainX * 1000 + cur.getX(),
-                                 mainY * 1000 + cur.getY());
+          util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
+                                 mainY * M_COORD_GRANULARITY + cur.getY());
           if (s == 0) {
             curPa = curP;
             s++;
@@ -349,8 +349,8 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
       gi++;
       if (gi < 3) continue;
 
-      util::geo::FPoint curP(mainX * 1000 + cur.getX(),
-                             mainY * 1000 + cur.getY());
+      util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
+                             mainY * M_COORD_GRANULARITY + cur.getY());
       fline.push_back(curP);
     }
 

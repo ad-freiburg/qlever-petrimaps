@@ -508,22 +508,22 @@ void GeomCache::insertLine(const util::geo::FLine& l) {
   // compress that
   const auto& bbox = util::geo::getBoundingBox(l);
 
-  int16_t mainX = bbox.getLowerLeft().getX() / 1000;
-  int16_t mainY = bbox.getLowerLeft().getY() / 1000;
+  int16_t mainX = bbox.getLowerLeft().getX() / M_COORD_GRANULARITY;
+  int16_t mainY = bbox.getLowerLeft().getY() / M_COORD_GRANULARITY;
 
   if (mainX != 0 || mainY != 0)
     _linePoints.push_back({mCoord(mainX), mCoord(mainY)});
 
   // add bounding box lower left
-  int16_t minorXLoc = bbox.getLowerLeft().getX() - mainX * 1000;
-  int16_t minorYLoc = bbox.getLowerLeft().getY() - mainY * 1000;
+  int16_t minorXLoc = bbox.getLowerLeft().getX() - mainX * M_COORD_GRANULARITY;
+  int16_t minorYLoc = bbox.getLowerLeft().getY() - mainY * M_COORD_GRANULARITY;
   _linePoints.push_back({minorXLoc, minorYLoc});
 
   // add bounding box upper left
-  int16_t mainXLoc = bbox.getUpperRight().getX() / 1000;
-  int16_t mainYLoc = bbox.getUpperRight().getY() / 1000;
-  minorXLoc = bbox.getUpperRight().getX() - mainXLoc * 1000;
-  minorYLoc = bbox.getUpperRight().getY() - mainYLoc * 1000;
+  int16_t mainXLoc = bbox.getUpperRight().getX() / M_COORD_GRANULARITY;
+  int16_t mainYLoc = bbox.getUpperRight().getY() / M_COORD_GRANULARITY;
+  minorXLoc = bbox.getUpperRight().getX() - mainXLoc * M_COORD_GRANULARITY;
+  minorYLoc = bbox.getUpperRight().getY() - mainYLoc * M_COORD_GRANULARITY;
   if (mainXLoc != mainX || mainYLoc != mainY) {
     mainX = mainXLoc;
     mainY = mainYLoc;
@@ -534,8 +534,8 @@ void GeomCache::insertLine(const util::geo::FLine& l) {
 
   // add line points
   for (const auto& p : l) {
-    mainXLoc = p.getX() / 1000;
-    mainYLoc = p.getY() / 1000;
+    mainXLoc = p.getX() / M_COORD_GRANULARITY;
+    mainYLoc = p.getY() / M_COORD_GRANULARITY;
 
     if (mainXLoc != mainX || mainYLoc != mainY) {
       mainX = mainXLoc;
@@ -544,8 +544,8 @@ void GeomCache::insertLine(const util::geo::FLine& l) {
       _linePoints.push_back({mCoord(mainX), mCoord(mainY)});
     }
 
-    int16_t minorXLoc = p.getX() - mainXLoc * 1000;
-    int16_t minorYLoc = p.getY() - mainYLoc * 1000;
+    int16_t minorXLoc = p.getX() - mainXLoc * M_COORD_GRANULARITY;
+    int16_t minorYLoc = p.getY() - mainYLoc * M_COORD_GRANULARITY;
 
     _linePoints.push_back({minorXLoc, minorYLoc});
   }
@@ -570,8 +570,8 @@ util::geo::FBox GeomCache::getLineBBox(size_t lid) const {
       continue;
     }
 
-    util::geo::FPoint curP(mainX * 1000 + cur.getX(),
-                           mainY * 1000 + cur.getY());
+    util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
+                           mainY * M_COORD_GRANULARITY + cur.getY());
 
     if (!s) {
       ret.setLowerLeft(curP);
