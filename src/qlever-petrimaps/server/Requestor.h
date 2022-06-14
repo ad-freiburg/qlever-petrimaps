@@ -33,8 +33,6 @@ class Requestor {
 
   void request(const std::string& query);
 
-  size_t size() const { return _points.size(); }
-
   const petrimaps::Grid<ID_TYPE, float>& getPointGrid()
       const {
     return _pgrid;
@@ -44,17 +42,9 @@ class Requestor {
     return _lgrid;
   }
 
-  const petrimaps::Grid<util::geo::FPoint, float>&
+  const petrimaps::Grid<util::geo::Point<uint16_t>, float>&
   getLinePointGrid() const {
     return _lpgrid;
-  }
-
-  const std::vector<std::pair<ID_TYPE, ID_TYPE>>& getPoints() const {
-    return _points;
-  }
-
-  const std::vector<std::pair<ID_TYPE, ID_TYPE>>& getLines() const {
-    return _lines;
   }
 
   const std::vector<std::pair<ID_TYPE, ID_TYPE>>& getObjects() const {
@@ -97,13 +87,11 @@ class Requestor {
 
   mutable std::mutex _m;
 
-  std::vector<std::pair<ID_TYPE, ID_TYPE>> _points;
-  std::vector<std::pair<ID_TYPE, ID_TYPE>> _lines;
   std::vector<std::pair<ID_TYPE, ID_TYPE>> _objects;
 
   petrimaps::Grid<ID_TYPE, float> _pgrid;
   petrimaps::Grid<ID_TYPE, float> _lgrid;
-  petrimaps::Grid<util::geo::FPoint, float> _lpgrid;
+  petrimaps::Grid<util::geo::Point<uint16_t>, float> _lpgrid;
 
   bool _ready = false;
 };

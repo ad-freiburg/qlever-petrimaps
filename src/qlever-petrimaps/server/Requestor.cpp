@@ -24,8 +24,6 @@ using petrimaps::ResObj;
 void Requestor::request(const std::string& qry) {
   _query = qry;
   _ready = false;
-  _points.clear();
-  _lines.clear();
   _objects.clear();
 
   RequestReader reader(_cache->getBackendURL(), _maxMemory);
@@ -53,7 +51,9 @@ void Requestor::request(const std::string& qry) {
   size_t NUM_THREADS = 8;
   std::vector<util::geo::FBox> pointBoxes(NUM_THREADS);
   std::vector<util::geo::FBox> lineBoxes(NUM_THREADS);
+  std::vector<size_t> numLines(NUM_THREADS, 0);
   util::geo::FBox pointBbox, lineBbox;
+  size_t numLinesAll = 0;
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
   for (size_t i = 0; i < _objects.size(); i++) {
@@ -62,10 +62,13 @@ void Requestor::request(const std::string& qry) {
 
     if (geomId < I_OFFSET) {
       auto pId = geomId;
-      pointBoxes[t] = util::geo::extendBox(_cache->getPoints()[pId], pointBoxes[t]);
+      pointBoxes[t] =
+          util::geo::extendBox(_cache->getPoints()[pId], pointBoxes[t]);
     } else if (geomId < std::numeric_limits<ID_TYPE>::max()) {
       auto lId = geomId - I_OFFSET;
-      lineBoxes[t] = util::geo::extendBox(_cache->getLineBBox(lId), lineBoxes[t]);
+      lineBoxes[t] =
+          util::geo::extendBox(_cache->getLineBBox(lId), lineBoxes[t]);
+      numLines[t]++;
     }
   }
 
@@ -75,6 +78,10 @@ void Requestor::request(const std::string& qry) {
 
   for (const auto& box : lineBoxes) {
     lineBbox = util::geo::extendBox(box, lineBbox);
+  }
+
+  for (size_t l : numLines) {
+    numLinesAll += l;
   }
 
   // to avoid zero area boxes if only one point is requested
@@ -87,10 +94,12 @@ void Requestor::request(const std::string& qry) {
   LOG(INFO) << "[REQUESTOR] Line BBox: " << util::geo::getWKT(lineBbox);
   LOG(INFO) << "[REQUESTOR] Building grid...";
 
-  double GRID_SIZE = 100000;
+  double GRID_SIZE = 65536;
 
-  double pw = pointBbox.getUpperRight().getX() - pointBbox.getLowerLeft().getX();
-  double ph = pointBbox.getUpperRight().getY() - pointBbox.getLowerLeft().getY();
+  double pw =
+      pointBbox.getUpperRight().getX() - pointBbox.getLowerLeft().getX();
+  double ph =
+      pointBbox.getUpperRight().getY() - pointBbox.getLowerLeft().getY();
 
   // estimate memory consumption of empty grid
   double pxWidth = fmax(0, ceil(pw / GRID_SIZE));
@@ -103,27 +112,27 @@ void Requestor::request(const std::string& qry) {
   double lxWidth = fmax(0, ceil(lw / GRID_SIZE));
   double lyHeight = fmax(0, ceil(lh / GRID_SIZE));
 
-  LOG(INFO) << "[REQUESTOR] (" << pxWidth << "x" << pyHeight << " cell point grid)";
-  LOG(INFO) << "[REQUESTOR] (" << lxWidth << "x" << lyHeight << " cell line grid)";
+  LOG(INFO) << "[REQUESTOR] (" << pxWidth << "x" << pyHeight
+            << " cell point grid)";
+  LOG(INFO) << "[REQUESTOR] (" << lxWidth << "x" << lyHeight
+            << " cell line grid)";
 
-  checkMem(pxWidth * 8 + pxWidth * pyHeight * sizeof(std::vector<ID_TYPE>),
-           _maxMemory);
+  checkMem(8 * (pxWidth * pyHeight), _maxMemory);
 
-  checkMem(lxWidth * 8 + lxWidth * lyHeight * sizeof(std::vector<ID_TYPE>),
-           _maxMemory);
+  checkMem(8 * (lxWidth * lyHeight), _maxMemory);
 
-  checkMem(lxWidth * 8 + lxWidth * lyHeight * sizeof(std::vector<util::geo::FPoint>),
-           _maxMemory);
+  checkMem(8 * (lxWidth * lyHeight), _maxMemory);
 
   _pgrid = petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, pointBbox);
   _lgrid = petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, lineBbox);
-  _lpgrid = petrimaps::Grid<util::geo::FPoint, float>(GRID_SIZE, GRID_SIZE, lineBbox);
+  _lpgrid = petrimaps::Grid<util::geo::Point<uint16_t>, float>(
+      GRID_SIZE, GRID_SIZE, lineBbox);
 
   std::exception_ptr ePtr;
 
-  #pragma omp parallel sections
+#pragma omp parallel sections
   {
-    #pragma omp section
+#pragma omp section
     {
       size_t i = 0;
       for (const auto& p : _objects) {
@@ -146,7 +155,7 @@ void Requestor::request(const std::string& qry) {
       }
     }
 
-    #pragma omp section
+#pragma omp section
     {
       size_t i = 0;
       for (const auto& l : _objects) {
@@ -170,7 +179,7 @@ void Requestor::request(const std::string& qry) {
       }
     }
 
-    #pragma omp section
+#pragma omp section
     {
       size_t i = 0;
       for (const auto& l : _objects) {
@@ -202,7 +211,16 @@ void Requestor::request(const std::string& qry) {
             // extract real geometry
             util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
                                    mainY * M_COORD_GRANULARITY + cur.getY());
-            _lpgrid.add(curP, curP);
+
+            size_t cellX = _lpgrid.getCellXFromX(curP.getX());
+            size_t cellY = _lpgrid.getCellYFromY(curP.getY());
+
+            const auto& box = _lpgrid.getBox(cellX, cellY);
+
+            uint16_t sX = curP.getX() - box.getLowerLeft().getX();
+            uint16_t sY = curP.getY() - box.getLowerLeft().getY();
+
+            _lpgrid.add(curP, {sX, sY});
           }
         }
         i++;

@@ -56,8 +56,9 @@ class Grid {
 
   ~Grid() {
     if (!_grid) return;
-    for (size_t i = 0; i < _xWidth; i++) {
-      delete[] _grid[i];
+    for (size_t i = 0; i < _xWidth * _yHeight; i++) {
+      if (!_grid[i]) continue;
+      delete _grid[i];
     }
     delete[] _grid;
   }
@@ -69,7 +70,7 @@ class Grid {
 
   void get(const util::geo::Box<T>& btbox, std::unordered_set<V>* s) const;
   void get(size_t x, size_t y, std::unordered_set<V>* s) const;
-  const std::vector<V>& getCell(size_t x, size_t y) const;
+  const std::vector<V>* getCell(size_t x, size_t y) const;
 
   size_t getXWidth() const;
   size_t getYHeight() const;

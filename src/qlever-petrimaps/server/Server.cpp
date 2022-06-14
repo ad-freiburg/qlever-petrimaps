@@ -149,23 +149,20 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   double THRESHOLD = 50;
 
   if (util::geo::intersects(r.getPointGrid().getBBox(), bbox)) {
+    LOG(INFO) << "[SERVER] Looking up display points...";
     if (res < THRESHOLD) {
       std::unordered_set<ID_TYPE> ret;
 
-      LOG(INFO) << "[SERVER] Looking up display points...";
       r.getPointGrid().get(bbox, &ret);
-      LOG(INFO) << "[SERVER] ... done (" << ret.size() << " points)";
-
       for (size_t i : ret) {
         const auto& p = r.getPoint(r.getObjects()[i].first);
         if (!util::geo::contains(p, bbox)) continue;
 
-        size_t px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
-        size_t py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
+        int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
+        int py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-        if (px < w && py < h) {
-          if (points2[0][w * py + px] == 0)
-            points[0].push_back(w * py + px);
+        if (px >= 0 && py >= 0 && px < w && py < h) {
+          if (points2[0][w * py + px] == 0) points[0].push_back(w * py + px);
           points2[0][w * py + px] += 1;
         }
       }
@@ -186,44 +183,42 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
               y >= r.getPointGrid().getYHeight()) {
             continue;
           }
-          const auto& cell = r.getPointGrid().getCell(x, y);
-          if (cell.size() == 0) continue;
+          auto cell = r.getPointGrid().getCell(x, y);
+          if (!cell || cell->size() == 0) continue;
           const auto& cellBox = r.getPointGrid().getBox(x, y);
 
           if (subCellSize == 1) {
-            size_t px = ((cellBox.getLowerLeft().getX() +
-                    bbox.getLowerLeft().getX()) /
-                   mercW) * w;
-            size_t py = h - ((cellBox.getLowerLeft().getY() +
+            int px =
+                ((cellBox.getLowerLeft().getX() + bbox.getLowerLeft().getX()) /
+                 mercW) *
+                w;
+            int py =
+                h -
+                ((cellBox.getLowerLeft().getY() + bbox.getLowerLeft().getY()) /
+                 mercH) *
+                    h;
+            if (px >= 0 && py >= 0 && px < w && py < h) {
+              if (points2[omp_get_thread_num()][w * py + px] == 0)
+                points[omp_get_thread_num()].push_back(w * py + px);
+              points2[omp_get_thread_num()][py * w + px] += cell->size();
+            }
+          } else {
+            for (const auto& i : *cell) {
+              const auto& p = r.getPoint(r.getObjects()[i].first);
+
+              float dx = p.getX() - cellBox.getLowerLeft().getX();
+              float dy = p.getY() - cellBox.getLowerLeft().getY();
+
+              int px = ((cellBox.getLowerLeft().getX() + dx  -
+                         bbox.getLowerLeft().getX()) /
+                        mercW) *
+                       w;
+              int py =
+                  h - ((cellBox.getLowerLeft().getY() + dy  -
                         bbox.getLowerLeft().getY()) /
                        mercH) *
                           h;
-            if (px < w && py < h) {
-              if (points2[omp_get_thread_num()][w * py + px] == 0)
-                points[omp_get_thread_num()].push_back(w * py + px);
-              points2[omp_get_thread_num()][py * w + px] += cell.size();
-            }
-          } else {
-            for (const auto& i : cell) {
-              const auto& p = r.getPoint(r.getObjects()[i].first);
-
-              float dx = fmax(0, p.getX() - cellBox.getLowerLeft().getX());
-              size_t virtX = dx / virtCellSize;
-
-              float dy = fmax(0, p.getY() - cellBox.getLowerLeft().getY());
-              size_t virtY = dy / virtCellSize;
-
-              if (virtX >= subCellSize) virtX = subCellSize - 1;
-              if (virtY >= subCellSize) virtY = subCellSize - 1;
-
-              size_t px = ((cellBox.getLowerLeft().getX() + virtX * virtCellSize -
-                      bbox.getLowerLeft().getX()) /
-                     mercW) * w;
-              size_t py = h - ((cellBox.getLowerLeft().getY() + virtY * virtCellSize -
-                          bbox.getLowerLeft().getY()) /
-                         mercH) *
-                            h;
-              if (px < w && py < h) {
+              if (px >= 0 && py >= 0 && px < w && py < h) {
                 if (points2[omp_get_thread_num()][w * py + px] == 0)
                   points[omp_get_thread_num()].push_back(w * py + px);
                 points2[omp_get_thread_num()][py * w + px] += 1;
@@ -238,12 +233,11 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   // LINES
 
   if (util::geo::intersects(r.getLineGrid().getBBox(), bbox)) {
-  if (res < THRESHOLD) {
-    std::unordered_set<ID_TYPE> ret;
-
     LOG(INFO) << "[SERVER] Looking up display lines...";
-    r.getLineGrid().get(bbox, &ret);
-    LOG(INFO) << "[SERVER] ... done (" << ret.size() << " lines)";
+    if (res < THRESHOLD) {
+      std::unordered_set<ID_TYPE> ret;
+
+      r.getLineGrid().get(bbox, &ret);
       for (size_t i : ret) {
         auto lid = r.getObjects()[i].first;
         const auto& lbox = r.getLineBBox(lid - I_OFFSET);
@@ -331,25 +325,23 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         const auto& denseLine = util::geo::densify(extrLine, res);
 
         for (const auto& p : denseLine) {
-          size_t px =((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
-          size_t py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
+          int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
+          int py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-          if (px < w && py < h) {
-            if (points2[0][w * py + px] == 0)
-              points[0].push_back(w * py + px);
+          if (px >= 0 && py >= 0 && px < w && py < h) {
+            if (points2[0][w * py + px] == 0) points[0].push_back(w * py + px);
             points2[0][py * w + px] += 1;
           }
         }
       }
-
     } else {
       auto iBox = util::geo::intersection(r.getLinePointGrid().getBBox(), bbox);
 
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t x =
                r.getLinePointGrid().getCellXFromX(iBox.getLowerLeft().getX());
            x <= r.getLinePointGrid().getCellXFromX(iBox.getUpperRight().getX());
            x++) {
-#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
         for (size_t y =
                  r.getLinePointGrid().getCellYFromY(iBox.getLowerLeft().getY());
              y <=
@@ -358,42 +350,37 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
           if (x >= r.getLinePointGrid().getXWidth() ||
               y >= r.getLinePointGrid().getYHeight())
             continue;
-          const auto& cell = r.getLinePointGrid().getCell(x, y);
-          if (cell.size() == 0) continue;
+
+          auto cell = r.getLinePointGrid().getCell(x, y);
+          if (!cell || cell->size() == 0) continue;
           const auto& cellBox = r.getLinePointGrid().getBox(x, y);
 
           if (subCellSize == 1) {
-            size_t px = ((cellBox.getLowerLeft().getX() -
-                    bbox.getLowerLeft().getX()) /
-                   mercW) * w;
-            size_t py = h - ((cellBox.getLowerLeft().getY() -
-                        bbox.getLowerLeft().getY()) /
-                       mercH) *
-                          h;
-            if (px < w && py < h) {
+            int px =
+                ((cellBox.getLowerLeft().getX() - bbox.getLowerLeft().getX()) /
+                 mercW) *
+                w;
+            int py =
+                h -
+                ((cellBox.getLowerLeft().getY() - bbox.getLowerLeft().getY()) /
+                 mercH) *
+                    h;
+            if (px >= 0 && py >= 0 && px < w && py < h) {
               if (points2[omp_get_thread_num()][w * py + px] == 0)
                 points[omp_get_thread_num()].push_back(w * py + px);
-              points2[omp_get_thread_num()][py * w + px] += cell.size();
+              points2[omp_get_thread_num()][py * w + px] += cell->size();
             }
           } else {
-            for (const auto& p : cell) {
-              float dx = fmax(0, p.getX() - cellBox.getLowerLeft().getX());
-              size_t virtX = dx / virtCellSize;
-
-              float dy = fmax(0, p.getY() - cellBox.getLowerLeft().getY());
-              size_t virtY = dy / virtCellSize;
-
-              if (virtX >= subCellSize) virtX = subCellSize - 1;
-              if (virtY >= subCellSize) virtY = subCellSize - 1;
-
-              size_t px = ((cellBox.getLowerLeft().getX() + virtX * virtCellSize -
-                      bbox.getLowerLeft().getX()) /
-                     mercW) * w;
-              size_t py = h - ((cellBox.getLowerLeft().getY() + virtY * virtCellSize -
-                          bbox.getLowerLeft().getY()) /
-                         mercH) *
-                            h;
-              if (px < w && py < h) {
+            for (const auto& p : *cell) {
+              int px = ((cellBox.getLowerLeft().getX() + p.getX() -
+                         bbox.getLowerLeft().getX()) /
+                        mercW) *
+                       w;
+              int py = h - ((cellBox.getLowerLeft().getY() + p.getY() -
+                             bbox.getLowerLeft().getY()) /
+                            mercH) *
+                               h;
+              if (px >= 0 && py >= 0 && px < w && py < h) {
                 if (points2[omp_get_thread_num()][w * py + px] == 0)
                   points[omp_get_thread_num()].push_back(w * py + px);
                 points2[omp_get_thread_num()][py * w + px] += 1;
@@ -737,7 +724,7 @@ std::string Server::writePNG(const unsigned char* data, size_t w, size_t h) {
 
   png_set_filter(png_ptr, 0, PNG_FILTER_NONE | PNG_FILTER_VALUE_NONE);
 
-  png_set_compression_level(png_ptr, 6);
+  png_set_compression_level(png_ptr, 7);
 
   static const int bit_depth = 8;
   static const int color_type = PNG_COLOR_TYPE_RGB_ALPHA;

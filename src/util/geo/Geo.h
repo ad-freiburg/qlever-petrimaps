@@ -717,19 +717,19 @@ inline Box<T> intersection(const Box<T>& b1,
 
   if (b1.getLowerLeft().getX() > b2.getLowerLeft().getX())
     llx = b1.getLowerLeft().getX();
-  else llx = b1.getLowerLeft().getX();
+  else llx = b2.getLowerLeft().getX();
 
   if (b1.getLowerLeft().getY() > b2.getLowerLeft().getY())
     lly = b1.getLowerLeft().getY();
-  else lly = b1.getLowerLeft().getY();
+  else lly = b2.getLowerLeft().getY();
 
   if (b1.getUpperRight().getX() < b2.getUpperRight().getX())
     urx = b1.getUpperRight().getX();
-  else urx = b1.getUpperRight().getX();
+  else urx = b2.getUpperRight().getX();
 
   if (b1.getUpperRight().getY() < b2.getUpperRight().getY())
     ury = b1.getUpperRight().getY();
-  else ury = b1.getUpperRight().getY();
+  else ury = b2.getUpperRight().getY();
 
   return Box<T>{{llx, lly}, {urx, ury}};
 }
