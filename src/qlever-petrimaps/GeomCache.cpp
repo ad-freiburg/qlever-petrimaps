@@ -495,8 +495,25 @@ std::vector<std::pair<ID_TYPE, ID_TYPE>> GeomCache::getRelObjects(
     } else if (ids[i].qid < _qidToId[j].qid) {
       i++;
     } else {
-      j = std::lower_bound(_qidToId.begin() + j, _qidToId.end(), ids[i]) -
-          _qidToId.begin();
+      size_t gallop = 1;
+      do {
+        if (j + gallop >= _qidToId.size()) {
+          j = std::lower_bound(_qidToId.begin() + j + gallop / 2,
+                               _qidToId.end(), ids[i]) -
+              _qidToId.begin();
+          break;
+        }
+
+        if (_qidToId[j + gallop].qid >= ids[i].qid) {
+          j = std::lower_bound(_qidToId.begin() + j + gallop / 2,
+                               _qidToId.begin() + j + gallop, ids[i]) -
+              _qidToId.begin();
+          break;
+        }
+
+        gallop *= 2;
+
+      } while (true);
     }
   }
 

@@ -50,58 +50,74 @@ void Requestor::request(const std::string& qry) {
   LOG(INFO) << "[REQUESTOR] ... done, got " << _objects.size() << " objects.";
 
   LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";
-  size_t NUM_THREADS = std::thread::hardware_concurrency();
-  std::vector<util::geo::FBox> bboxes(NUM_THREADS);
-  util::geo::FBox bbox;
+  size_t NUM_THREADS = 8;
+  std::vector<util::geo::FBox> pointBoxes(NUM_THREADS);
+  std::vector<util::geo::FBox> lineBoxes(NUM_THREADS);
+  util::geo::FBox pointBbox, lineBbox;
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
   for (size_t i = 0; i < _objects.size(); i++) {
+    size_t t = omp_get_thread_num();
     auto geomId = _objects[i].first;
 
     if (geomId < I_OFFSET) {
       auto pId = geomId;
-      bboxes[omp_get_thread_num()] = util::geo::extendBox(
-          _cache->getPoints()[pId], bboxes[omp_get_thread_num()]);
+      pointBoxes[t] = util::geo::extendBox(_cache->getPoints()[pId], pointBoxes[t]);
     } else if (geomId < std::numeric_limits<ID_TYPE>::max()) {
       auto lId = geomId - I_OFFSET;
-      bboxes[omp_get_thread_num()] = util::geo::extendBox(
-          _cache->getLineBBox(lId), bboxes[omp_get_thread_num()]);
+      lineBoxes[t] = util::geo::extendBox(_cache->getLineBBox(lId), lineBoxes[t]);
     }
   }
 
-  for (const auto& box : bboxes) {
-    bbox = util::geo::extendBox(box, bbox);
+  for (const auto& box : pointBoxes) {
+    pointBbox = util::geo::extendBox(box, pointBbox);
+  }
+
+  for (const auto& box : lineBoxes) {
+    lineBbox = util::geo::extendBox(box, lineBbox);
   }
 
   // to avoid zero area boxes if only one point is requested
-  bbox = util::geo::pad(bbox, 1);
+  pointBbox = util::geo::pad(pointBbox, 1);
+  lineBbox = util::geo::pad(lineBbox, 1);
 
   LOG(INFO) << "[REQUESTOR] ... done";
 
-  LOG(INFO) << "[REQUESTOR] BBox: " << util::geo::getWKT(bbox);
+  LOG(INFO) << "[REQUESTOR] Point BBox: " << util::geo::getWKT(pointBbox);
+  LOG(INFO) << "[REQUESTOR] Line BBox: " << util::geo::getWKT(lineBbox);
   LOG(INFO) << "[REQUESTOR] Building grid...";
 
   double GRID_SIZE = 100000;
 
-  double w = bbox.getUpperRight().getX() - bbox.getLowerLeft().getX();
-  double h = bbox.getUpperRight().getY() - bbox.getLowerLeft().getY();
+  double pw = pointBbox.getUpperRight().getX() - pointBbox.getLowerLeft().getX();
+  double ph = pointBbox.getUpperRight().getY() - pointBbox.getLowerLeft().getY();
 
   // estimate memory consumption of empty grid
-  double xWidth = ceil(w / GRID_SIZE);
-  double yHeight = ceil(h / GRID_SIZE);
+  double pxWidth = fmax(0, ceil(pw / GRID_SIZE));
+  double pyHeight = fmax(0, ceil(ph / GRID_SIZE));
 
-  checkMem(xWidth * 8 + xWidth * yHeight * sizeof(std::vector<ID_TYPE>),
+  double lw = lineBbox.getUpperRight().getX() - lineBbox.getLowerLeft().getX();
+  double lh = lineBbox.getUpperRight().getY() - lineBbox.getLowerLeft().getY();
+
+  // estimate memory consumption of empty grid
+  double lxWidth = fmax(0, ceil(lw / GRID_SIZE));
+  double lyHeight = fmax(0, ceil(lh / GRID_SIZE));
+
+  LOG(INFO) << "[REQUESTOR] (" << pxWidth << "x" << pyHeight << " cell point grid)";
+  LOG(INFO) << "[REQUESTOR] (" << lxWidth << "x" << lyHeight << " cell line grid)";
+
+  checkMem(pxWidth * 8 + pxWidth * pyHeight * sizeof(std::vector<ID_TYPE>),
            _maxMemory);
 
-  LOG(INFO) << "[REQUESTOR] Allocating grids...";
-  _pgrid = petrimaps::Grid<ID_TYPE, util::geo::Point, float>(GRID_SIZE,
-                                                             GRID_SIZE, bbox);
-  _lgrid = petrimaps::Grid<ID_TYPE, util::geo::Line, float>(GRID_SIZE,
-                                                            GRID_SIZE, bbox);
-  _lpgrid = petrimaps::Grid<util::geo::FPoint, util::geo::Point, float>(
-      GRID_SIZE, GRID_SIZE, bbox);
+  checkMem(lxWidth * 8 + lxWidth * lyHeight * sizeof(std::vector<ID_TYPE>),
+           _maxMemory);
 
-  LOG(INFO) << "[REQUESTOR] ...done";
+  checkMem(lxWidth * 8 + lxWidth * lyHeight * sizeof(std::vector<util::geo::FPoint>),
+           _maxMemory);
+
+  _pgrid = petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, pointBbox);
+  _lgrid = petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, lineBbox);
+  _lpgrid = petrimaps::Grid<util::geo::FPoint, float>(GRID_SIZE, GRID_SIZE, lineBbox);
 
   std::exception_ptr ePtr;
 

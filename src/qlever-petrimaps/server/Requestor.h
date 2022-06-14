@@ -35,16 +35,16 @@ class Requestor {
 
   size_t size() const { return _points.size(); }
 
-  const petrimaps::Grid<ID_TYPE, util::geo::Point, float>& getPointGrid()
+  const petrimaps::Grid<ID_TYPE, float>& getPointGrid()
       const {
     return _pgrid;
   }
 
-  const petrimaps::Grid<ID_TYPE, util::geo::Line, float>& getLineGrid() const {
+  const petrimaps::Grid<ID_TYPE, float>& getLineGrid() const {
     return _lgrid;
   }
 
-  const petrimaps::Grid<util::geo::FPoint, util::geo::Point, float>&
+  const petrimaps::Grid<util::geo::FPoint, float>&
   getLinePointGrid() const {
     return _lpgrid;
   }
@@ -101,9 +101,9 @@ class Requestor {
   std::vector<std::pair<ID_TYPE, ID_TYPE>> _lines;
   std::vector<std::pair<ID_TYPE, ID_TYPE>> _objects;
 
-  petrimaps::Grid<ID_TYPE, util::geo::Point, float> _pgrid;
-  petrimaps::Grid<ID_TYPE, util::geo::Line, float> _lgrid;
-  petrimaps::Grid<util::geo::FPoint, util::geo::Point, float> _lpgrid;
+  petrimaps::Grid<ID_TYPE, float> _pgrid;
+  petrimaps::Grid<ID_TYPE, float> _lgrid;
+  petrimaps::Grid<util::geo::FPoint, float> _lpgrid;
 
   bool _ready = false;
 };

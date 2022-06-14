@@ -17,11 +17,11 @@ class GridException : public std::runtime_error {
   GridException(std::string const& msg) : std::runtime_error(msg) {}
 };
 
-template <typename V, template <typename> class G, typename T>
+template <typename V, typename T>
 class Grid {
  public:
-  Grid(const Grid<V, G, T>&) = delete;
-  Grid(Grid<V, G, T>&& o)
+  Grid(const Grid<V, T>&) = delete;
+  Grid(Grid<V, T>&& o)
       : _width(o._width),
         _height(o._height),
         _cellWidth(o._cellWidth),
@@ -33,7 +33,7 @@ class Grid {
     o._grid = 0;
   }
 
-  Grid<V, G, T>& operator=(Grid<V, G, T>&& o) {
+  Grid<V, T>& operator=(Grid<V, T>&& o) {
     _width = o._width;
     _height = o._height;
     _cellWidth = o._cellWidth;
@@ -68,7 +68,6 @@ class Grid {
   void add(size_t x, size_t y, V val);
 
   void get(const util::geo::Box<T>& btbox, std::unordered_set<V>* s) const;
-  void get(const G<T>& geom, double d, std::unordered_set<V>* s) const;
   void get(size_t x, size_t y, std::unordered_set<V>* s) const;
   const std::vector<V>& getCell(size_t x, size_t y) const;
 

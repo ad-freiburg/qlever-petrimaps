@@ -709,6 +709,33 @@ inline Point<T> intersection(const LineSegment<T>& s1,
 
 // _____________________________________________________________________________
 template <typename T>
+inline Box<T> intersection(const Box<T>& b1,
+                             const Box<T>& b2) {
+  if (!intersects(b1, b2)) return Box<T>();
+
+  T llx, lly, urx, ury;
+
+  if (b1.getLowerLeft().getX() > b2.getLowerLeft().getX())
+    llx = b1.getLowerLeft().getX();
+  else llx = b1.getLowerLeft().getX();
+
+  if (b1.getLowerLeft().getY() > b2.getLowerLeft().getY())
+    lly = b1.getLowerLeft().getY();
+  else lly = b1.getLowerLeft().getY();
+
+  if (b1.getUpperRight().getX() < b2.getUpperRight().getX())
+    urx = b1.getUpperRight().getX();
+  else urx = b1.getUpperRight().getX();
+
+  if (b1.getUpperRight().getY() < b2.getUpperRight().getY())
+    ury = b1.getUpperRight().getY();
+  else ury = b1.getUpperRight().getY();
+
+  return Box<T>{{llx, lly}, {urx, ury}};
+}
+
+// _____________________________________________________________________________
+template <typename T>
 inline bool lineIntersects(T p1x, T p1y, T q1x, T q1y, T p2x, T p2y, T q2x,
                            T q2y) {
   /*

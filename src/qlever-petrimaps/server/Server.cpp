@@ -132,269 +132,276 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
   size_t subCellSize = (size_t)ceil(realCellSize / virtCellSize);
-  size_t** subCellCount = new size_t*[NUM_THREADS];
 
   LOG(INFO) << "[SERVER] Query resolution: " << res;
   LOG(INFO) << "[SERVER] Virt cell size: " << virtCellSize;
   LOG(INFO) << "[SERVER] Num virt cells: " << subCellSize * subCellSize;
 
-  std::vector<std::vector<std::pair<float, std::pair<float, float>>>> points(
-      NUM_THREADS);
+  std::vector<std::vector<size_t>> points(NUM_THREADS);
+
+  std::vector<std::vector<float>> points2(NUM_THREADS);
+
+  // initialize vectors to 0
+  for (size_t i = 0; i < NUM_THREADS; i++) {
+    points2[i].resize(w * h, 0);
+  }
 
   double THRESHOLD = 50;
 
-  if (res < THRESHOLD) {
-    std::unordered_set<ID_TYPE> ret;
+  if (util::geo::intersects(r.getPointGrid().getBBox(), bbox)) {
+    if (res < THRESHOLD) {
+      std::unordered_set<ID_TYPE> ret;
 
-    LOG(INFO) << "[SERVER] Looking up display points...";
-    r.getPointGrid().get(bbox, &ret);
-    LOG(INFO) << "[SERVER] ... done (" << ret.size() << " points)";
+      LOG(INFO) << "[SERVER] Looking up display points...";
+      r.getPointGrid().get(bbox, &ret);
+      LOG(INFO) << "[SERVER] ... done (" << ret.size() << " points)";
 
-    for (size_t i : ret) {
-      const auto& p = r.getPoint(r.getObjects()[i].first);
-      if (!util::geo::contains(p, bbox)) continue;
+      for (size_t i : ret) {
+        const auto& p = r.getPoint(r.getObjects()[i].first);
+        if (!util::geo::contains(p, bbox)) continue;
 
-      points[0].push_back(
-          {1,
-           {((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w,
-            h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h}});
-    }
+        size_t px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
+        size_t py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-  } else {
-    for (size_t i = 0; i < NUM_THREADS; i++) {
-      subCellCount[i] = new size_t[subCellSize * subCellSize];
-    }
+        if (px < w && py < h) {
+          if (points2[0][w * py + px] == 0)
+            points[0].push_back(w * py + px);
+          points2[0][w * py + px] += 1;
+        }
+      }
+    } else {
+      // they intersect, we checked this above
+      auto iBox = util::geo::intersection(r.getPointGrid().getBBox(), bbox);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
-    for (size_t x = r.getPointGrid().getCellXFromX(bbox.getLowerLeft().getX());
-         x <= r.getPointGrid().getCellXFromX(bbox.getUpperRight().getX());
-         x++) {
-      for (size_t y =
-               r.getPointGrid().getCellYFromY(bbox.getLowerLeft().getY());
-           y <= r.getPointGrid().getCellYFromY(bbox.getUpperRight().getY());
-           y++) {
-        if (x >= r.getPointGrid().getXWidth() ||
-            y >= r.getPointGrid().getYHeight())
-          continue;
-        const auto& cell = r.getPointGrid().getCell(x, y);
-        if (cell.size() == 0) continue;
-        const auto& cellBox = r.getPointGrid().getBox(x, y);
-
-        memset(subCellCount[omp_get_thread_num()], 0,
-               subCellSize * subCellSize * sizeof(size_t));
-
-        if (subCellSize == 1) {
-          subCellCount[omp_get_thread_num()][0] = cell.size();
-        } else {
-          for (const auto& i : cell) {
-            const auto& p = r.getPoint(r.getObjects()[i].first);
-
-            float dx = fmax(0, p.getX() - cellBox.getLowerLeft().getX());
-            size_t virtX = floor(dx / virtCellSize);
-
-            float dy = fmax(0, p.getY() - cellBox.getLowerLeft().getY());
-            size_t virtY = floor(dy / virtCellSize);
-
-            if (virtX >= subCellSize) virtX = subCellSize - 1;
-            if (virtY >= subCellSize) virtY = subCellSize - 1;
-
-            assert(virtX * subCellSize + virtY < subCellSize * subCellSize);
-            subCellCount[omp_get_thread_num()][virtX * subCellSize + virtY] +=
-                1;
+      for (size_t x =
+               r.getPointGrid().getCellXFromX(iBox.getLowerLeft().getX());
+           x <= r.getPointGrid().getCellXFromX(iBox.getUpperRight().getX());
+           x++) {
+        for (size_t y =
+                 r.getPointGrid().getCellYFromY(iBox.getLowerLeft().getY());
+             y <= r.getPointGrid().getCellYFromY(iBox.getUpperRight().getY());
+             y++) {
+          if (x >= r.getPointGrid().getXWidth() ||
+              y >= r.getPointGrid().getYHeight()) {
+            continue;
           }
-        }
+          const auto& cell = r.getPointGrid().getCell(x, y);
+          if (cell.size() == 0) continue;
+          const auto& cellBox = r.getPointGrid().getBox(x, y);
 
-        for (size_t x = 0; x < subCellSize; x++) {
-          for (size_t y = 0; y < subCellSize; y++) {
-            if (subCellCount[omp_get_thread_num()][x * subCellSize + y] == 0)
-              continue;
-
-            points[omp_get_thread_num()].push_back(
-                {subCellCount[omp_get_thread_num()][x * subCellSize + y],
-                 {((cellBox.getLowerLeft().getX() + x * virtCellSize -
+          if (subCellSize == 1) {
+            size_t px = ((cellBox.getLowerLeft().getX() +
                     bbox.getLowerLeft().getX()) /
-                   mercW) *
-                      w,
-                  h - ((cellBox.getLowerLeft().getY() + y * virtCellSize -
+                   mercW) * w;
+            size_t py = h - ((cellBox.getLowerLeft().getY() +
                         bbox.getLowerLeft().getY()) /
                        mercH) *
-                          h}});
+                          h;
+            if (px < w && py < h) {
+              if (points2[omp_get_thread_num()][w * py + px] == 0)
+                points[omp_get_thread_num()].push_back(w * py + px);
+              points2[omp_get_thread_num()][py * w + px] += cell.size();
+            }
+          } else {
+            for (const auto& i : cell) {
+              const auto& p = r.getPoint(r.getObjects()[i].first);
+
+              float dx = fmax(0, p.getX() - cellBox.getLowerLeft().getX());
+              size_t virtX = dx / virtCellSize;
+
+              float dy = fmax(0, p.getY() - cellBox.getLowerLeft().getY());
+              size_t virtY = dy / virtCellSize;
+
+              if (virtX >= subCellSize) virtX = subCellSize - 1;
+              if (virtY >= subCellSize) virtY = subCellSize - 1;
+
+              size_t px = ((cellBox.getLowerLeft().getX() + virtX * virtCellSize -
+                      bbox.getLowerLeft().getX()) /
+                     mercW) * w;
+              size_t py = h - ((cellBox.getLowerLeft().getY() + virtY * virtCellSize -
+                          bbox.getLowerLeft().getY()) /
+                         mercH) *
+                            h;
+              if (px < w && py < h) {
+                if (points2[omp_get_thread_num()][w * py + px] == 0)
+                  points[omp_get_thread_num()].push_back(w * py + px);
+                points2[omp_get_thread_num()][py * w + px] += 1;
+              }
+            }
           }
         }
       }
     }
-    for (size_t i = 0; i < NUM_THREADS; i++) {
-      delete[] subCellCount[i];
-    }
   }
 
   // LINES
+
+  if (util::geo::intersects(r.getLineGrid().getBBox(), bbox)) {
   if (res < THRESHOLD) {
     std::unordered_set<ID_TYPE> ret;
 
     LOG(INFO) << "[SERVER] Looking up display lines...";
     r.getLineGrid().get(bbox, &ret);
     LOG(INFO) << "[SERVER] ... done (" << ret.size() << " lines)";
+      for (size_t i : ret) {
+        auto lid = r.getObjects()[i].first;
+        const auto& lbox = r.getLineBBox(lid - I_OFFSET);
+        if (!util::geo::intersects(lbox, bbox)) continue;
 
-    for (size_t i : ret) {
-      auto lid = r.getObjects()[i].first;
-      const auto& lbox = r.getLineBBox(lid - I_OFFSET);
-      if (!util::geo::intersects(lbox, bbox)) continue;
+        uint8_t gi = 0;
 
-      uint8_t gi = 0;
+        size_t start = r.getLine(lid - I_OFFSET);
+        size_t end = r.getLineEnd(lid - I_OFFSET);
 
-      size_t start = r.getLine(lid - I_OFFSET);
-      size_t end = r.getLineEnd(lid - I_OFFSET);
+        // ___________________________________
+        bool isects = false;
 
-      // ___________________________________
-      bool isects = false;
+        util::geo::FPoint curPa, curPb;
+        int s = 0;
 
-      util::geo::FPoint curPa, curPb;
-      int s = 0;
+        double mainX = 0;
+        double mainY = 0;
+        for (size_t i = start; i < end; i++) {
+          // extract real geom
+          const auto& cur = r.getLinePoints()[i];
 
-      double mainX = 0;
-      double mainY = 0;
-      for (size_t i = start; i < end; i++) {
-        // extract real geom
-        const auto& cur = r.getLinePoints()[i];
-
-        if (isMCoord(cur.getX())) {
-          mainX = rmCoord(cur.getX());
-          mainY = rmCoord(cur.getY());
-          continue;
-        }
-
-        // skip bounding box at beginning
-        gi++;
-        if (gi < 3) continue;
-
-        // extract real geometry
-        util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
-                               mainY * M_COORD_GRANULARITY + cur.getY());
-        if (s == 0) {
-          curPa = curP;
-          s++;
-        } else if (s == 1) {
-          curPb = curP;
-          s++;
-        }
-
-        if (s == 2) {
-          s = 1;
-          if (util::geo::intersects(util::geo::LineSegment<float>(curPa, curPb),
-                                    bbox)) {
-            isects = true;
-            break;
+          if (isMCoord(cur.getX())) {
+            mainX = rmCoord(cur.getX());
+            mainY = rmCoord(cur.getY());
+            continue;
           }
-          curPa = curPb;
+
+          // skip bounding box at beginning
+          gi++;
+          if (gi < 3) continue;
+
+          // extract real geometry
+          util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
+                                 mainY * M_COORD_GRANULARITY + cur.getY());
+          if (s == 0) {
+            curPa = curP;
+            s++;
+          } else if (s == 1) {
+            curPb = curP;
+            s++;
+          }
+
+          if (s == 2) {
+            s = 1;
+            if (util::geo::intersects(
+                    util::geo::LineSegment<float>(curPa, curPb), bbox)) {
+              isects = true;
+              break;
+            }
+            curPa = curPb;
+          }
+        }
+        // ___________________________________
+
+        if (!isects) continue;
+
+        mainX = 0;
+        mainY = 0;
+
+        util::geo::FLine extrLine;
+        extrLine.reserve(end - start);
+
+        gi = 0;
+
+        for (size_t i = start; i < end; i++) {
+          // extract real geom
+          const auto& cur = r.getLinePoints()[i];
+
+          if (isMCoord(cur.getX())) {
+            mainX = rmCoord(cur.getX());
+            mainY = rmCoord(cur.getY());
+            continue;
+          }
+
+          // skip bounding box at beginning
+          gi++;
+          if (gi < 3) continue;
+
+          util::geo::FPoint p(mainX * M_COORD_GRANULARITY + cur.getX(),
+                              mainY * M_COORD_GRANULARITY + cur.getY());
+          extrLine.push_back(p);
+        }
+
+        const auto& denseLine = util::geo::densify(extrLine, res);
+
+        for (const auto& p : denseLine) {
+          size_t px =((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
+          size_t py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
+
+          if (px < w && py < h) {
+            if (points2[0][w * py + px] == 0)
+              points[0].push_back(w * py + px);
+            points2[0][py * w + px] += 1;
+          }
         }
       }
-      // ___________________________________
 
-      if (!isects) continue;
+    } else {
+      auto iBox = util::geo::intersection(r.getLinePointGrid().getBBox(), bbox);
 
-      mainX = 0;
-      mainY = 0;
-
-      util::geo::FLine extrLine;
-      extrLine.reserve(end - start);
-
-      gi = 0;
-
-      for (size_t i = start; i < end; i++) {
-        // extract real geom
-        const auto& cur = r.getLinePoints()[i];
-
-        if (isMCoord(cur.getX())) {
-          mainX = rmCoord(cur.getX());
-          mainY = rmCoord(cur.getY());
-          continue;
-        }
-
-        // skip bounding box at beginning
-        gi++;
-        if (gi < 3) continue;
-
-        util::geo::FPoint p(mainX * M_COORD_GRANULARITY + cur.getX(),
-                            mainY * M_COORD_GRANULARITY + cur.getY());
-        extrLine.push_back(p);
-      }
-
-      const auto& denseLine = util::geo::densify(extrLine, res);
-
-      for (const auto& p : denseLine) {
-        points[0].push_back(
-            {1,
-             {((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w,
-              h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h}});
-      }
-    }
-
-  } else {
-    for (size_t i = 0; i < NUM_THREADS; i++) {
-      subCellCount[i] = new size_t[subCellSize * subCellSize];
-    }
-
+      for (size_t x =
+               r.getLinePointGrid().getCellXFromX(iBox.getLowerLeft().getX());
+           x <= r.getLinePointGrid().getCellXFromX(iBox.getUpperRight().getX());
+           x++) {
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
-    for (size_t x =
-             r.getLinePointGrid().getCellXFromX(bbox.getLowerLeft().getX());
-         x <= r.getLinePointGrid().getCellXFromX(bbox.getUpperRight().getX());
-         x++) {
-      for (size_t y =
-               r.getLinePointGrid().getCellYFromY(bbox.getLowerLeft().getY());
-           y <= r.getLinePointGrid().getCellYFromY(bbox.getUpperRight().getY());
-           y++) {
-        if (x >= r.getLinePointGrid().getXWidth() ||
-            y >= r.getLinePointGrid().getYHeight())
-          continue;
-        const auto& cell = r.getLinePointGrid().getCell(x, y);
-        if (cell.size() == 0) continue;
-        const auto& cellBox = r.getLinePointGrid().getBox(x, y);
+        for (size_t y =
+                 r.getLinePointGrid().getCellYFromY(iBox.getLowerLeft().getY());
+             y <=
+             r.getLinePointGrid().getCellYFromY(iBox.getUpperRight().getY());
+             y++) {
+          if (x >= r.getLinePointGrid().getXWidth() ||
+              y >= r.getLinePointGrid().getYHeight())
+            continue;
+          const auto& cell = r.getLinePointGrid().getCell(x, y);
+          if (cell.size() == 0) continue;
+          const auto& cellBox = r.getLinePointGrid().getBox(x, y);
 
-        memset(subCellCount[omp_get_thread_num()], 0,
-               subCellSize * subCellSize * sizeof(size_t));
-
-        if (subCellSize == 1) {
-          subCellCount[omp_get_thread_num()][0] = cell.size();
-        } else {
-          for (const auto& p : cell) {
-            if (!util::geo::contains(p, cellBox)) continue;
-            float dx = fmax(0, p.getX() - cellBox.getLowerLeft().getX());
-            size_t virtX = floor(dx / virtCellSize);
-
-            float dy = fmax(0, p.getY() - cellBox.getLowerLeft().getY());
-            size_t virtY = floor(dy / virtCellSize);
-
-            if (virtX >= subCellSize) virtX = subCellSize - 1;
-            if (virtY >= subCellSize) virtY = subCellSize - 1;
-
-            assert(virtX * subCellSize + virtY < subCellSize * subCellSize);
-            subCellCount[omp_get_thread_num()][virtX * subCellSize + virtY] +=
-                1;
-          }
-        }
-
-        for (size_t x = 0; x < subCellSize; x++) {
-          for (size_t y = 0; y < subCellSize; y++) {
-            if (subCellCount[omp_get_thread_num()][x * subCellSize + y] == 0)
-              continue;
-
-            points[omp_get_thread_num()].push_back(
-                {subCellCount[omp_get_thread_num()][x * subCellSize + y],
-                 {((cellBox.getLowerLeft().getX() + x * virtCellSize -
+          if (subCellSize == 1) {
+            size_t px = ((cellBox.getLowerLeft().getX() -
                     bbox.getLowerLeft().getX()) /
-                   mercW) *
-                      w,
-                  h - ((cellBox.getLowerLeft().getY() + y * virtCellSize -
+                   mercW) * w;
+            size_t py = h - ((cellBox.getLowerLeft().getY() -
                         bbox.getLowerLeft().getY()) /
                        mercH) *
-                          h}});
+                          h;
+            if (px < w && py < h) {
+              if (points2[omp_get_thread_num()][w * py + px] == 0)
+                points[omp_get_thread_num()].push_back(w * py + px);
+              points2[omp_get_thread_num()][py * w + px] += cell.size();
+            }
+          } else {
+            for (const auto& p : cell) {
+              float dx = fmax(0, p.getX() - cellBox.getLowerLeft().getX());
+              size_t virtX = dx / virtCellSize;
+
+              float dy = fmax(0, p.getY() - cellBox.getLowerLeft().getY());
+              size_t virtY = dy / virtCellSize;
+
+              if (virtX >= subCellSize) virtX = subCellSize - 1;
+              if (virtY >= subCellSize) virtY = subCellSize - 1;
+
+              size_t px = ((cellBox.getLowerLeft().getX() + virtX * virtCellSize -
+                      bbox.getLowerLeft().getX()) /
+                     mercW) * w;
+              size_t py = h - ((cellBox.getLowerLeft().getY() + virtY * virtCellSize -
+                          bbox.getLowerLeft().getY()) /
+                         mercH) *
+                            h;
+              if (px < w && py < h) {
+                if (points2[omp_get_thread_num()][w * py + px] == 0)
+                  points[omp_get_thread_num()].push_back(w * py + px);
+                points2[omp_get_thread_num()][py * w + px] += 1;
+              }
+            }
           }
         }
       }
-    }
-    for (size_t i = 0; i < NUM_THREADS; i++) {
-      delete[] subCellCount[i];
     }
   }
 
@@ -402,7 +409,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   for (size_t i = 0; i < NUM_THREADS; i++) {
     for (const auto& p : points[i]) {
-      heatmap_add_weighted_point(hm, p.second.first, p.second.second, p.first);
+      size_t y = p / w;
+      size_t x = p - (y * w);
+      heatmap_add_weighted_point(hm, x, y, points2[i][p]);
     }
   }
 
@@ -424,7 +433,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   LOG(INFO) << "[SERVER] ...done";
 
   heatmap_free(hm);
-  delete[] subCellCount;
 
   return answ;
 }
@@ -582,6 +590,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
       reqor->getMutex().lock();
 
       auto bbox = reqor->getPointGrid().getBBox();
+      bbox = util::geo::extendBox(reqor->getLineGrid().getBBox(), bbox);
 
       auto ll = bbox.getLowerLeft();
       auto ur = bbox.getUpperRight();
@@ -656,6 +665,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   LOG(INFO) << "[SERVER] ** TOTAL REQUEST TIME: " << T_STOP(req) << " ms";
 
   auto bbox = reqor->getPointGrid().getBBox();
+  bbox = util::geo::extendBox(reqor->getLineGrid().getBBox(), bbox);
   reqor->getMutex().unlock();
 
   auto ll = bbox.getLowerLeft();
@@ -727,7 +737,7 @@ std::string Server::writePNG(const unsigned char* data, size_t w, size_t h) {
 
   png_set_filter(png_ptr, 0, PNG_FILTER_NONE | PNG_FILTER_VALUE_NONE);
 
-  png_set_compression_level(png_ptr, 7);
+  png_set_compression_level(png_ptr, 6);
 
   static const int bit_depth = 8;
   static const int color_type = PNG_COLOR_TYPE_RGB_ALPHA;
@@ -756,7 +766,7 @@ void Server::clearSession(const std::string& id) const {
     _rs.erase(id);
 
     for (auto it = _queryCache.cbegin(); it != _queryCache.cend();) {
-      if (it->second == "id") {
+      if (it->second == id) {
         it = _queryCache.erase(it);
       } else {
         ++it;
