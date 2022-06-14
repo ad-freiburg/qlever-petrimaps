@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (access(cacheDir.c_str(), W_OK) != 0) {
+  if (cacheDir.size() && access(cacheDir.c_str(), W_OK) != 0) {
     std::stringstream ss;
     ss << "No write access to cache dir " << cacheDir;
     throw std::runtime_error(ss.str());
