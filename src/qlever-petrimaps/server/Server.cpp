@@ -189,12 +189,12 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
           if (subCellSize == 1) {
             int px =
-                ((cellBox.getLowerLeft().getX() + bbox.getLowerLeft().getX()) /
+                ((cellBox.getLowerLeft().getX() - bbox.getLowerLeft().getX()) /
                  mercW) *
                 w;
             int py =
                 h -
-                ((cellBox.getLowerLeft().getY() + bbox.getLowerLeft().getY()) /
+                ((cellBox.getLowerLeft().getY() - bbox.getLowerLeft().getY()) /
                  mercH) *
                     h;
             if (px >= 0 && py >= 0 && px < w && py < h) {
@@ -206,18 +206,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
             for (const auto& i : *cell) {
               const auto& p = r.getPoint(r.getObjects()[i].first);
 
-              float dx = p.getX() - cellBox.getLowerLeft().getX();
-              float dy = p.getY() - cellBox.getLowerLeft().getY();
-
-              int px = ((cellBox.getLowerLeft().getX() + dx  -
-                         bbox.getLowerLeft().getX()) /
-                        mercW) *
-                       w;
+              int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
               int py =
-                  h - ((cellBox.getLowerLeft().getY() + dy  -
-                        bbox.getLowerLeft().getY()) /
-                       mercH) *
-                          h;
+                  h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
               if (px >= 0 && py >= 0 && px < w && py < h) {
                 if (points2[omp_get_thread_num()][w * py + px] == 0)
                   points[omp_get_thread_num()].push_back(w * py + px);
