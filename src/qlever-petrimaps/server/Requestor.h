@@ -42,7 +42,7 @@ class Requestor {
     return _lgrid;
   }
 
-  const petrimaps::Grid<util::geo::Point<uint16_t>, float>&
+  const petrimaps::Grid<util::geo::Point<uint8_t>, float>&
   getLinePointGrid() const {
     return _lpgrid;
   }
@@ -91,7 +91,7 @@ class Requestor {
 
   petrimaps::Grid<ID_TYPE, float> _pgrid;
   petrimaps::Grid<ID_TYPE, float> _lgrid;
-  petrimaps::Grid<util::geo::Point<uint16_t>, float> _lpgrid;
+  petrimaps::Grid<util::geo::Point<uint8_t>, float> _lpgrid;
 
   bool _ready = false;
 };

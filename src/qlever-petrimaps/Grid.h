@@ -70,6 +70,8 @@ class Grid {
 
   void get(const util::geo::Box<T>& btbox, std::unordered_set<V>* s) const;
   void get(size_t x, size_t y, std::unordered_set<V>* s) const;
+  void get(const util::geo::Box<T>& btbox, std::vector<V>* s) const;
+  void get(size_t x, size_t y, std::vector<V>* s) const;
   const std::vector<V>* getCell(size_t x, size_t y) const;
 
   size_t getXWidth() const;

@@ -48,27 +48,32 @@ void Requestor::request(const std::string& qry) {
   LOG(INFO) << "[REQUESTOR] ... done, got " << _objects.size() << " objects.";
 
   LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";
-  size_t NUM_THREADS = 8;
+
+  size_t NUM_THREADS = std::thread::hardware_concurrency();
+
   std::vector<util::geo::FBox> pointBoxes(NUM_THREADS);
   std::vector<util::geo::FBox> lineBoxes(NUM_THREADS);
   std::vector<size_t> numLines(NUM_THREADS, 0);
   util::geo::FBox pointBbox, lineBbox;
   size_t numLinesAll = 0;
 
-#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
-  for (size_t i = 0; i < _objects.size(); i++) {
-    size_t t = omp_get_thread_num();
-    auto geomId = _objects[i].first;
+  size_t batch = ceil(_objects.size() / NUM_THREADS);
 
-    if (geomId < I_OFFSET) {
-      auto pId = geomId;
-      pointBoxes[t] =
-          util::geo::extendBox(_cache->getPoints()[pId], pointBoxes[t]);
-    } else if (geomId < std::numeric_limits<ID_TYPE>::max()) {
-      auto lId = geomId - I_OFFSET;
-      lineBoxes[t] =
-          util::geo::extendBox(_cache->getLineBBox(lId), lineBoxes[t]);
-      numLines[t]++;
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
+  for (size_t t = 0; t < NUM_THREADS; t++) {
+    for (size_t i = batch * t; i < batch * (t+1) && i < _objects.size(); i++) {
+      auto geomId = _objects[i].first;
+
+      if (geomId < I_OFFSET) {
+        auto pId = geomId;
+        pointBoxes[t] =
+            util::geo::extendBox(_cache->getPoints()[pId], pointBoxes[t]);
+      } else if (geomId < std::numeric_limits<ID_TYPE>::max()) {
+        auto lId = geomId - I_OFFSET;
+        lineBoxes[t] =
+            util::geo::extendBox(_cache->getLineBBox(lId), lineBoxes[t]);
+        numLines[t]++;
+      }
     }
   }
 
@@ -125,7 +130,7 @@ void Requestor::request(const std::string& qry) {
 
   _pgrid = petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, pointBbox);
   _lgrid = petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, lineBbox);
-  _lpgrid = petrimaps::Grid<util::geo::Point<uint16_t>, float>(
+  _lpgrid = petrimaps::Grid<util::geo::Point<uint8_t>, float>(
       GRID_SIZE, GRID_SIZE, lineBbox);
 
   std::exception_ptr ePtr;
@@ -215,12 +220,15 @@ void Requestor::request(const std::string& qry) {
             size_t cellX = _lpgrid.getCellXFromX(curP.getX());
             size_t cellY = _lpgrid.getCellYFromY(curP.getY());
 
-            const auto& box = _lpgrid.getBox(cellX, cellY);
+            uint16_t sX = curP.getX() -
+                          _lpgrid.getBBox().getLowerLeft().getX() +
+                          cellX * _lpgrid.getCellWidth();
+            uint16_t sY = curP.getY() -
+                          _lpgrid.getBBox().getLowerLeft().getY() +
+                          cellY * _lpgrid.getCellHeight();
 
-            uint16_t sX = curP.getX() - box.getLowerLeft().getX();
-            uint16_t sY = curP.getY() - box.getLowerLeft().getY();
 
-            _lpgrid.add(curP, {sX, sY});
+            _lpgrid.add(cellX, cellY, {sX / 256, sY / 256});
           }
         }
         i++;
@@ -276,7 +284,6 @@ std::string Requestor::prepQuery(std::string query) const {
 // _____________________________________________________________________________
 std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
   query += " OFFSET " + std::to_string(row) + " LIMIT 1";
-
   return query;
 }
 

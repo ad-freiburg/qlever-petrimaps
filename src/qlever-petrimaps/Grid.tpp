@@ -68,6 +68,20 @@ void Grid<V, T>::add(size_t x, size_t y, V val) {
 // _____________________________________________________________________________
 template <typename V, typename T>
 void Grid<V, T>::get(const util::geo::Box<T>& box,
+                     std::vector<V>* s) const {
+  size_t swX = getCellXFromX(box.getLowerLeft().getX());
+  size_t swY = getCellYFromY(box.getLowerLeft().getY());
+
+  size_t neX = getCellXFromX(box.getUpperRight().getX());
+  size_t neY = getCellYFromY(box.getUpperRight().getY());
+
+  for (size_t x = swX; x <= neX && x < _xWidth; x++)
+    for (size_t y = swY; y <= neY && y < _yHeight; y++) get(x, y, s);
+}
+
+// _____________________________________________________________________________
+template <typename V, typename T>
+void Grid<V, T>::get(const util::geo::Box<T>& box,
                      std::unordered_set<V>* s) const {
   size_t swX = getCellXFromX(box.getLowerLeft().getX());
   size_t swY = getCellYFromY(box.getLowerLeft().getY());
@@ -84,6 +98,13 @@ template <typename V, typename T>
 void Grid<V, T>::get(size_t x, size_t y, std::unordered_set<V>* s) const {
   if (!_grid[y * _xWidth + x]) return;
   s->insert(_grid[y * _xWidth + x]->begin(), _grid[y * _xWidth + x]->end());
+}
+
+// _____________________________________________________________________________
+template <typename V, typename T>
+void Grid<V, T>::get(size_t x, size_t y, std::vector<V>* s) const {
+  if (!_grid[y * _xWidth + x]) return;
+  s->insert(s->end(), _grid[y * _xWidth + x]->begin(), _grid[y * _xWidth + x]->end());
 }
 
 // _____________________________________________________________________________

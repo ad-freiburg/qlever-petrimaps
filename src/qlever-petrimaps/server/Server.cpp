@@ -11,6 +11,7 @@
 #include <set>
 #include <unordered_set>
 #include <vector>
+#include <parallel/algorithm>
 
 #include "3rdparty/heatmap.h"
 #include "3rdparty/colorschemes/Spectral.h"
@@ -146,14 +147,16 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
     points2[i].resize(w * h, 0);
   }
 
-  double THRESHOLD = 50;
+  double THRESHOLD = 100;
 
   if (util::geo::intersects(r.getPointGrid().getBBox(), bbox)) {
     LOG(INFO) << "[SERVER] Looking up display points...";
     if (res < THRESHOLD) {
-      std::unordered_set<ID_TYPE> ret;
+      std::vector<ID_TYPE> ret;
 
+      // duplicates are not possible with points
       r.getPointGrid().get(bbox, &ret);
+
       for (size_t i : ret) {
         const auto& p = r.getPoint(r.getObjects()[i].first);
         if (!util::geo::contains(p, bbox)) continue;
@@ -226,11 +229,16 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   if (util::geo::intersects(r.getLineGrid().getBBox(), bbox)) {
     LOG(INFO) << "[SERVER] Looking up display lines...";
     if (res < THRESHOLD) {
-      std::unordered_set<ID_TYPE> ret;
+      std::vector<ID_TYPE> ret;
 
       r.getLineGrid().get(bbox, &ret);
-      for (size_t i : ret) {
-        auto lid = r.getObjects()[i].first;
+
+      // sort to avoid duplicates
+      __gnu_parallel::sort(ret.begin(), ret.end());
+
+      for (size_t idx = 0; idx < ret.size(); idx++) {
+        if (idx > 0 && ret[idx] == ret[idx-1]) continue;
+        auto lid = r.getObjects()[ret[idx]].first;
         const auto& lbox = r.getLineBBox(lid - I_OFFSET);
         if (!util::geo::intersects(lbox, bbox)) continue;
 
@@ -289,7 +297,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         mainX = 0;
         mainY = 0;
 
-        util::geo::FLine extrLine;
+        util::geo::DLine extrLine;
         extrLine.reserve(end - start);
 
         gi = 0;
@@ -308,7 +316,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
           gi++;
           if (gi < 3) continue;
 
-          util::geo::FPoint p(mainX * M_COORD_GRANULARITY + cur.getX(),
+          util::geo::DPoint p(mainX * M_COORD_GRANULARITY + cur.getX(),
                               mainY * M_COORD_GRANULARITY + cur.getY());
           extrLine.push_back(p);
         }
@@ -363,11 +371,11 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
             }
           } else {
             for (const auto& p : *cell) {
-              int px = ((cellBox.getLowerLeft().getX() + p.getX() -
+              int px = ((cellBox.getLowerLeft().getX() + p.getX() * 256 -
                          bbox.getLowerLeft().getX()) /
                         mercW) *
                        w;
-              int py = h - ((cellBox.getLowerLeft().getY() + p.getY() -
+              int py = h - ((cellBox.getLowerLeft().getY() + p.getY() * 256 -
                              bbox.getLowerLeft().getY()) /
                             mercH) *
                                h;
