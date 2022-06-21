@@ -61,6 +61,7 @@ void Grid<V, T>::add(const util::geo::Box<T>& box, const V& val) {
 // _____________________________________________________________________________
 template <typename V, typename T>
 void Grid<V, T>::add(size_t x, size_t y, V val) {
+  if (x >= _xWidth || y >= _yHeight) return;
   if (!_grid[y * _xWidth + x]) _grid[y * _xWidth + x] = new std::vector<V>();
   _grid[y * _xWidth + x]->push_back(val);
 }

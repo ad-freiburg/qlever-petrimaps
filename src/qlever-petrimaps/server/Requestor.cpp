@@ -123,9 +123,7 @@ void Requestor::request(const std::string& qry) {
             << " cell line grid)";
 
   checkMem(8 * (pxWidth * pyHeight), _maxMemory);
-
   checkMem(8 * (lxWidth * lyHeight), _maxMemory);
-
   checkMem(8 * (lxWidth * lyHeight), _maxMemory);
 
   _pgrid = petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, pointBbox);
@@ -200,6 +198,9 @@ void Requestor::request(const std::string& qry) {
 
           size_t gi = 0;
 
+          uint8_t lastX = 0;
+          uint8_t lastY = 0;
+
           for (size_t li = start; li < end; li++) {
             const auto& cur = _cache->getLinePoints()[li];
 
@@ -210,8 +211,7 @@ void Requestor::request(const std::string& qry) {
             }
 
             // skip bounding box at beginning
-            gi++;
-            if (gi < 3) continue;
+            if (++gi < 3) continue;
 
             // extract real geometry
             util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
@@ -220,15 +220,18 @@ void Requestor::request(const std::string& qry) {
             size_t cellX = _lpgrid.getCellXFromX(curP.getX());
             size_t cellY = _lpgrid.getCellYFromY(curP.getY());
 
-            uint16_t sX = curP.getX() -
+            uint8_t sX = (curP.getX() -
                           _lpgrid.getBBox().getLowerLeft().getX() +
-                          cellX * _lpgrid.getCellWidth();
-            uint16_t sY = curP.getY() -
+                          cellX * _lpgrid.getCellWidth()) / 256;
+            uint8_t sY = (curP.getY() -
                           _lpgrid.getBBox().getLowerLeft().getY() +
-                          cellY * _lpgrid.getCellHeight();
+                          cellY * _lpgrid.getCellHeight()) / 256;
 
-
-            _lpgrid.add(cellX, cellY, {sX / 256, sY / 256});
+            if (gi == 3 || lastX != sX || lastY != sY) {
+              _lpgrid.add(cellX, cellY, {sX, sY});
+              lastX = sX;
+              lastY = sY;
+            }
           }
         }
         i++;
