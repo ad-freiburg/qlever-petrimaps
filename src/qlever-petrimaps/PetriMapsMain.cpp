@@ -23,7 +23,8 @@ void printHelp(int argc, char** argv) {
       << "\nAllowed arguments:\n    -p <port>    Port for server to listen to "
          "(default: 9090)"
       << "\n    -m <memory>  Max memory in GB (default: 90% of system RAM)"
-      << "\n    -c <dir>     cache dir (default: none)\n";
+      << "\n    -c <dir>     cache dir (default: none)"
+      << "\n    -t <minutes> request cache lifetime (default: 360)\n";
 }
 
 // _____________________________________________________________________________
@@ -39,6 +40,7 @@ int main(int argc, char** argv) {
 
   // default port
   int port = 9090;
+  int cacheLifetime = 6 * 60;
   double maxMemoryGB =
       (sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE) * 0.9) / 1000000000;
   std::string cacheDir;
@@ -66,6 +68,12 @@ int main(int argc, char** argv) {
         exit(1);
       }
       cacheDir = argv[i];
+    } else if (cur == "-t") {
+      if (++i >= argc) {
+        LOG(ERROR) << "Missing argument for cache lifetime (-t).";
+        exit(1);
+      }
+      cacheLifetime = atof(argv[i]);
     }
   }
 
@@ -77,7 +85,7 @@ int main(int argc, char** argv) {
 
   LOG(INFO) << "Starting server...";
   LOG(INFO) << "Max memory is " << maxMemoryGB << " GB...";
-  Server serv(maxMemoryGB * 1000000000, cacheDir);
+  Server serv(maxMemoryGB * 1000000000, cacheDir, cacheLifetime);
 
   LOG(INFO) << "Listening on port " << port;
   util::http::HttpServer(port, &serv, std::thread::hardware_concurrency())

@@ -114,7 +114,9 @@ function loadMap(id, bounds) {
         layers: id,
         format: 'image/png',
         transparent: true,
-    }).addTo(map);
+    }).addTo(map).on('error', function() {
+        showError("<p>Session has been removed from cache.</p> <p> <a href='javascript:location.reload();'>Resend request</a></p>");
+    });
 
     map.on('click', function(e) {
         var ll= e.latlng;

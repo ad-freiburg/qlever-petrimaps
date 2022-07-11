@@ -19,8 +19,8 @@ typedef std::map<std::string, std::string> Params;
 
 class Server : public util::http::Handler {
  public:
-  explicit Server(size_t maxMemory, const std::string& cacheDir)
-      : _maxMemory(maxMemory), _cacheDir(cacheDir) {}
+  explicit Server(size_t maxMemory, const std::string& cacheDir,
+                  int cacheLifetime);
 
   virtual util::http::Answer handle(const util::http::Req& request,
                                     int connection) const;
@@ -45,6 +45,8 @@ class Server : public util::http::Handler {
   size_t _maxMemory;
 
   std::string _cacheDir;
+
+  int _cacheLifetime;
 
   mutable std::mutex _m;
 

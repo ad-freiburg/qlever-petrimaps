@@ -5,6 +5,7 @@
 #ifndef PETRIMAPS_SERVER_REQUESTOR_H_
 #define PETRIMAPS_SERVER_REQUESTOR_H_
 
+#include <chrono>
 #include <map>
 #include <mutex>
 #include <string>
@@ -26,7 +27,9 @@ class Requestor {
  public:
   Requestor() : _maxMemory(-1) {}
   Requestor(const GeomCache* cache, size_t maxMemory)
-      : _cache(cache), _maxMemory(maxMemory) {}
+      : _cache(cache),
+        _maxMemory(maxMemory),
+        _createdAt(std::chrono::system_clock::now()) {}
 
   std::vector<std::pair<std::string, std::string>> requestRow(
       uint64_t row) const;
@@ -71,6 +74,10 @@ class Requestor {
 
   std::mutex& getMutex() const { return _m; }
 
+  std::chrono::time_point<std::chrono::system_clock> createdAt() const {
+    return _createdAt;
+  }
+
   bool ready() const { return _ready; }
 
  private:
@@ -94,6 +101,8 @@ class Requestor {
   petrimaps::Grid<util::geo::Point<uint8_t>, float> _lpgrid;
 
   bool _ready = false;
+
+  std::chrono::time_point<std::chrono::system_clock> _createdAt;
 };
 }  // namespace petrimaps
 

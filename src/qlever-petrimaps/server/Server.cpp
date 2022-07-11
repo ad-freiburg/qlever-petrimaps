@@ -5,6 +5,7 @@
 #include <omp.h>
 #include <png.h>
 
+#include <chrono>
 #include <codecvt>
 #include <locale>
 #include <random>
@@ -26,6 +27,15 @@
 
 using petrimaps::Params;
 using petrimaps::Server;
+
+// _____________________________________________________________________________
+Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime)
+    : _maxMemory(maxMemory),
+      _cacheDir(cacheDir),
+      _cacheLifetime(cacheLifetime) {
+  std::thread t(&Server::clearOldSessions, this);
+  t.detach();
+}
 
 // _____________________________________________________________________________
 util::http::Answer Server::handle(const util::http::Req& req, int con) const {
@@ -96,8 +106,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
 
-  LOG(INFO) << "[SERVER] Begin heat for session " << id;
-
   _m.lock();
   bool has = _rs.count(id);
   _m.unlock();
@@ -105,6 +113,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   if (!has) {
     throw std::invalid_argument("Session not found");
   }
+
+  LOG(INFO) << "[SERVER] Begin heat for session " << id;
 
   _m.lock();
   const Requestor& r = *_rs[id];
@@ -642,7 +652,9 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     reqor->getMutex().unlock();
 
     // delete cache, is now in unready state
+    _m.lock();
     clearSession(id);
+    _m.unlock();
     auto answ = util::http::Answer("406 Not Acceptable", ex.what());
     answ.params["Content-Type"] = "application/json; charset=utf-8";
     return answ;
@@ -770,7 +782,25 @@ void Server::clearSessions() const {
 
 // _____________________________________________________________________________
 void Server::clearOldSessions() const {
-  // TODO
+  while (true) {
+    std::this_thread::sleep_for(std::chrono::minutes(_cacheLifetime));
+
+    std::vector<std::string> toDel;
+
+    for (const auto& i : _rs) {
+      if (std::chrono::duration_cast<std::chrono::minutes>(
+              std::chrono::system_clock::now() - i.second->createdAt())
+              .count() >= 1) {
+        toDel.push_back(i.first);
+      }
+    }
+
+    _m.lock();
+    for (const auto& id : toDel) {
+      clearSession(id);
+    }
+    _m.unlock();
+  }
 }
 
 // _____________________________________________________________________________
