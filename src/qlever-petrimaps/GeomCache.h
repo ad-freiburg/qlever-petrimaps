@@ -8,6 +8,7 @@
 #include <curl/curl.h>
 
 #include <map>
+#include <fstream>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -99,6 +100,18 @@ private:
   std::vector<util::geo::FPoint> _points;
   std::vector<util::geo::Point<int16_t>> _linePoints;
   std::vector<size_t> _lines;
+
+  size_t _pointsFSize;
+  size_t _linePointsFSize;
+  size_t _linesFSize;
+  size_t _qidToIdFSize;
+
+  std::fstream _pointsF;
+  std::fstream _linePointsF;
+  std::fstream _linesF;
+  std::fstream _qidToIdF;
+
+  IdMapping _lastQidToId;
 
   std::vector<IdMapping> _qidToId;
 

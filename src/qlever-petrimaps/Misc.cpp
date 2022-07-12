@@ -34,6 +34,8 @@ void RequestReader::requestIds(const std::string& query) {
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
     res = curl_easy_perform(_curl);
 
+    curl_slist_free_all(headers);
+
     if (exceptionPtr) std::rethrow_exception(exceptionPtr);
   } else {
     LOG(ERROR) << "[REQUESTREADER] Failed to perform curl request.";
@@ -73,6 +75,8 @@ void RequestReader::requestRows(const std::string& query) {
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
     res = curl_easy_perform(_curl);
 
+    curl_slist_free_all(headers);
+
     if (exceptionPtr) std::rethrow_exception(exceptionPtr);
   } else {
     LOG(ERROR) << "[REQUESTREADER] Failed to perform curl request.";
@@ -92,7 +96,9 @@ void RequestReader::requestRows(const std::string& query) {
 
 // _____________________________________________________________________________
 std::string RequestReader::queryUrl(const std::string& query) const {
-  std::string esc = curl_easy_escape(_curl, query.c_str(), query.size());
+  auto escStr = curl_easy_escape(_curl, query.c_str(), query.size());
+  std::string esc = escStr;
+  curl_free(escStr);
 
   return _backendUrl + "/?send=18446744073709551615" +
          "&query=" + esc;
