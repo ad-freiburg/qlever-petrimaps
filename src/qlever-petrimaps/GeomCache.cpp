@@ -34,11 +34,11 @@ using util::geo::latLngToWebMerc;
 // " } ORDER BY ?geometry LIMIT "
 // "18446744073709551615";
 //
-// const static std::string QUERY = "PREFIX osmway:
-// <https://www.openstreetmap.org/way/>" " PREFIX geo:
-// <http://www.opengis.net/ont/geosparql#> " " PREFIX osmrel:
-// <https://www.openstreetmap.org/relation/> " " SELECT ?geom WHERE {
-// osmway:108522418 geo:hasGeometry ?geom } ";
+// const static std::string QUERY = "PREFIX osmway:"
+// "<https://www.openstreetmap.org/way/>" " PREFIX geo:"
+// "<http://www.opengis.net/ont/geosparql#> " " PREFIX osmrel:"
+// "<https://www.openstreetmap.org/relation/> " " SELECT ?geom WHERE {"
+// "osmway:170488516 geo:hasGeometry ?geom } ";
 
 const static std::string QUERY =
     "SELECT ?geometry WHERE {"
@@ -594,7 +594,8 @@ util::geo::FLine GeomCache::parseLineString(const std::string& a,
     p = static_cast<const char*>(n) - a.c_str() + 1;
   }
 
-  return util::geo::simplify(line, 3);
+  // the 200 is the THRESHOLD from Server.cpp
+  return util::geo::densify(util::geo::simplify(line, 3), 200 * 3);
 }
 
 // _____________________________________________________________________________

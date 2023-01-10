@@ -157,7 +157,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
     points2[i].resize(w * h, 0);
   }
 
-  double THRESHOLD = 100;
+  double THRESHOLD = 200;
 
   if (util::geo::intersects(r.getPointGrid().getBBox(), bbox)) {
     LOG(INFO) << "[SERVER] Looking up display points...";
@@ -280,7 +280,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
           if (gi < 3) continue;
 
           // extract real geometry
-          util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
+          const util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
                                  mainY * M_COORD_GRANULARITY + cur.getY());
           if (s == 0) {
             curPa = curP;
@@ -331,7 +331,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
           extrLine.push_back(p);
         }
 
-        const auto& denseLine = util::geo::densify(extrLine, res);
+        // the factor depends on the render thickness of the line, make
+        // this configurable!
+        const auto& denseLine = util::geo::densify(extrLine, res * 3);
 
         for (const auto& p : denseLine) {
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
@@ -830,3 +832,5 @@ void Server::loadCache(GeomCache* cache) const {
     cache->requestIds();
   }
 }
+
+// _____________________________________________________________________________

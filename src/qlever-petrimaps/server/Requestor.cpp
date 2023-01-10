@@ -57,7 +57,7 @@ void Requestor::request(const std::string& qry) {
   util::geo::FBox pointBbox, lineBbox;
   size_t numLinesAll = 0;
 
-  size_t batch = ceil(_objects.size() / NUM_THREADS);
+  size_t batch = ceil(static_cast<double>(_objects.size()) / NUM_THREADS);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
   for (size_t t = 0; t < NUM_THREADS; t++) {
@@ -70,6 +70,10 @@ void Requestor::request(const std::string& qry) {
             util::geo::extendBox(_cache->getPoints()[pId], pointBoxes[t]);
       } else if (geomId < std::numeric_limits<ID_TYPE>::max()) {
         auto lId = geomId - I_OFFSET;
+
+        auto a = _cache->getLineBBox(lId);
+        std::cout << util::geo::getWKT(a) << std::endl;
+
         lineBoxes[t] =
             util::geo::extendBox(_cache->getLineBBox(lId), lineBoxes[t]);
         numLines[t]++;
