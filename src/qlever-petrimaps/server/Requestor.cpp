@@ -72,7 +72,6 @@ void Requestor::request(const std::string& qry) {
         auto lId = geomId - I_OFFSET;
 
         auto a = _cache->getLineBBox(lId);
-        std::cout << util::geo::getWKT(a) << std::endl;
 
         lineBoxes[t] =
             util::geo::extendBox(_cache->getLineBBox(lId), lineBoxes[t]);

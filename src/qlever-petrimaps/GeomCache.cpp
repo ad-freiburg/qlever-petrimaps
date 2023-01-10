@@ -3,8 +3,8 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <curl/curl.h>
-
 #include <stdlib.h>
+
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -45,8 +45,13 @@ const static std::string QUERY =
     " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
     " } ORDER BY ?geometry";
 
+const static std::string COUNT_QUERY =
+    "SELECT (COUNT(?osm_id) as ?count) WHERE {"
+    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+    " }";
+
 // const static std::string QUERY = "PREFIX osm2rdf:
-// <https://osm2rdf.cs.uni-freiburg.de/rdf#>PREFIX ogc:
+// <https://osm2rdf.cs.uni-freiburg.de/rdf#>PREFIX ogc: //
 // <http://www.opengis.net/rdf#>" "PREFIX osmrel:
 // <https://www.openstreetmap.org/relation/>" "PREFIX geo:
 // <http://www.opengis.net/ont/geosparql#>" "PREFIX osm:
@@ -93,6 +98,20 @@ size_t GeomCache::writeCbIds(void* contents, size_t size, size_t nmemb,
   try {
     static_cast<GeomCache*>(userp)->parseIds(static_cast<const char*>(contents),
                                              realsize);
+  } catch (...) {
+    static_cast<GeomCache*>(userp)->_exceptionPtr = std::current_exception();
+    return CURLE_WRITE_ERROR;
+  }
+  return realsize;
+}
+
+// _____________________________________________________________________________
+size_t GeomCache::writeCbCount(void* contents, size_t size, size_t nmemb,
+                               void* userp) {
+  size_t realsize = size * nmemb;
+  try {
+    static_cast<GeomCache*>(userp)->parseCount(
+        static_cast<const char*>(contents), realsize);
   } catch (...) {
     static_cast<GeomCache*>(userp)->_exceptionPtr = std::current_exception();
     return CURLE_WRITE_ERROR;
@@ -294,8 +313,12 @@ void GeomCache::parse(const char* c, size_t size) {
             _curRow++;
             if (_curRow % 1000000 == 0) {
               LOG(INFO) << "[GEOMCACHE] "
-                        << "@ row " << _curRow << " (" << _pointsFSize
-                        << " points, " << _linesFSize << " (open) polygons)";
+                        << "@ row " << _curRow << " (" << std::fixed
+                        << std::setprecision(2)
+                        << (static_cast<double>(_curRow) /
+                            static_cast<double>(_totalSize) * 100)
+                        << "%, " << _pointsFSize << " points, " << _linesFSize
+                        << " (open) polygons)";
             }
             _prev = _dangling;
             _dangling.clear();
@@ -356,6 +379,66 @@ void GeomCache::parseIds(const char* c, size_t size) {
 }
 
 // _____________________________________________________________________________
+void GeomCache::parseCount(const char* c, size_t size) {
+  for (size_t i = 0; i < size; i++) {
+    if (c[i] == '\n') _state = IN_ROW;
+    if (_state == IN_ROW) _dangling += c[i];
+  }
+}
+
+// _____________________________________________________________________________
+size_t GeomCache::requestSize() {
+  _state = IN_HEADER;
+  _dangling.clear();
+  _dangling.reserve(10000);
+
+  CURLcode res;
+  char errbuf[CURL_ERROR_SIZE];
+
+  if (_curl) {
+    auto qUrl = queryUrl(COUNT_QUERY, 0, 1);
+
+    curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
+    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbCount);
+    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
+    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
+
+    // set headers
+    struct curl_slist* headers = 0;
+    headers = curl_slist_append(headers, "Accept: text/tab-separated-values");
+    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
+
+    // accept any compression supported
+    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
+    res = curl_easy_perform(_curl);
+
+    curl_slist_free_all(headers);
+
+    if (_exceptionPtr) std::rethrow_exception(_exceptionPtr);
+  } else {
+    LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request.";
+    return -1;
+  }
+
+  // check if there was an error
+  if (res != CURLE_OK) {
+    size_t len = strlen(errbuf);
+    if (len > 0) {
+      LOG(ERROR) << "[GEOMCACHE] " << errbuf;
+    } else {
+      LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
+    }
+  }
+
+  std::istringstream iss(_dangling);
+  size_t ret;
+  iss >> ret;
+  return ret;
+}
+
+// _____________________________________________________________________________
 void GeomCache::requestPart(size_t offset) {
   _state = IN_HEADER;
   _dangling.clear();
@@ -404,6 +487,8 @@ void GeomCache::requestPart(size_t offset) {
 
 // _____________________________________________________________________________
 void GeomCache::request() {
+  _totalSize = requestSize();
+
   _state = IN_HEADER;
   _points.clear();
   _lines.clear();

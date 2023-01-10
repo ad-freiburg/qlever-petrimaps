@@ -41,12 +41,14 @@ class GeomCache {
   }
 
   void request();
+  size_t requestSize();
   void requestPart(size_t offset);
 
   void requestIds();
 
   void parse(const char*, size_t size);
   void parseIds(const char*, size_t size);
+  void parseCount(const char*, size_t size);
 
   std::vector<std::pair<ID_TYPE, ID_TYPE>> getRelObjects(
       const std::vector<IdMapping>& id) const;
@@ -87,6 +89,8 @@ private:
   static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
   static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
                            void* userp);
+  static size_t writeCbCount(void* contents, size_t size, size_t nmemb,
+                           void* userp);
 
   std::string queryUrl(std::string query, size_t offset, size_t limit) const;
 
@@ -110,6 +114,8 @@ private:
   std::fstream _linePointsF;
   std::fstream _linesF;
   std::fstream _qidToIdF;
+
+  size_t _totalSize;
 
   IdMapping _lastQidToId;
 
