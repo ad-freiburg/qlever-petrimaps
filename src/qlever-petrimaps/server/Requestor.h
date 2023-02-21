@@ -19,8 +19,13 @@ namespace petrimaps {
 
 struct ResObj {
   bool has;
+  size_t id;
   util::geo::FPoint pos;
   std::vector<std::pair<std::string, std::string>> cols;
+
+  // the geometry
+  util::geo::FLine line;
+  util::geo::FPolygon poly;
 };
 
 class Requestor {
@@ -71,6 +76,8 @@ class Requestor {
   }
 
   const ResObj getNearest(util::geo::FPoint p, double rad) const;
+
+  const ResObj getGeom(size_t id, double rad) const;
 
   std::mutex& getMutex() const { return _m; }
 

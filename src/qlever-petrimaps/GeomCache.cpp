@@ -39,43 +39,28 @@ using util::geo::latLngToWebMerc;
 // "<http://www.opengis.net/ont/geosparql#> " " PREFIX osmrel:"
 // "<https://www.openstreetmap.org/relation/> " " SELECT ?geom WHERE {"
 // "osmway:170488516 geo:hasGeometry ?geom } ";
-
+//
 const static std::string QUERY =
     "SELECT ?geometry WHERE {"
-    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+    " ?osm_id <https://www.openstreetmap.org/wiki/Key:type> \"boundary\" . "
+    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry  "
     " } ORDER BY ?geometry";
 
 const static std::string COUNT_QUERY =
-    "SELECT (COUNT(?osm_id) as ?count) WHERE {"
-    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+    "SELECT (COUNT(?geometry) as ?count) WHERE {"
+    " ?osm_id <https://www.openstreetmap.org/wiki/Key:type> \"boundary\" . "
+    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry . "
     " }";
 
-// const static std::string QUERY = "PREFIX osm2rdf:
-// <https://osm2rdf.cs.uni-freiburg.de/rdf#>PREFIX ogc: //
-// <http://www.opengis.net/rdf#>" "PREFIX osmrel:
-// <https://www.openstreetmap.org/relation/>" "PREFIX geo:
-// <http://www.opengis.net/ont/geosparql#>" "PREFIX osm:
-// <https://www.openstreetmap.org/>" "PREFIX rdf:
-// <http://www.w3.org/1999/02/22-rdf-syntax-ns#>" "PREFIX osmkey:
-// <https://www.openstreetmap.org/wiki/Key:>" "SELECT ?osm_id ?shape WHERE { {"
-// "    osmrel:62768 osm2rdf:contains_area+ ?qlm_i . ?qlm_i
-// osm2rdf:contains_nonarea ?osm_id ." "               ?osm_id geo:hasGeometry
-// ?shape" "                 } UNION { {" "                     osmrel:62768
-// osm2rdf:contains_area+ ?osm_id ." "                                ?osm_id
-// geo:hasGeometry ?shape" "                 } UNION {" " osmrel:62768
-// osm2rdf:contains_nonarea ?osm_id ." "                                ?osm_id
-// geo:hasGeometry ?shape" "                 } } }";
+// const static std::string QUERY =
+    // "SELECT ?geometry WHERE {"
+    // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+    // " } ORDER BY ?geometry";
 
-// const static std::string  QUERY = "PREFIX osmnode:
-// <https://www.openstreetmap.org/node/> " " PREFIX osm:
-// <https://www.openstreetmap.org/> " " PREFIX osmrel:
-// <https://www.openstreetmap.org/relation/> " " PREFIX geo:
-// <http://www.opengis.net/ont/geosparql#> " " PREFIX osmkey:
-// <https://www.openstreetmap.org/wiki/Key:> " " SELECT ?geometry WHERE { " "
-// ?osmid geo:hasGeometry ?geometry . " "   ?osmid
-// <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
-// "<https://www.openstreetmap.org/node>"
-// "}";
+// const static std::string COUNT_QUERY =
+    // "SELECT (COUNT(?osm_id) as ?count) WHERE {"
+    // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+    // " }";
 
 // _____________________________________________________________________________
 size_t GeomCache::writeCb(void* contents, size_t size, size_t nmemb,
@@ -184,7 +169,7 @@ void GeomCache::parse(const char* c, size_t size) {
               _linesF.write(reinterpret_cast<const char*>(&_linePointsFSize),
                             sizeof(size_t));
               _linesFSize++;
-              insertLine(line);
+              insertLine(line, false);
 
               IdMapping idm{0, I_OFFSET + _linesFSize - 1};
               _lastQidToId = idm;
@@ -211,7 +196,7 @@ void GeomCache::parse(const char* c, size_t size) {
                 _linesF.write(reinterpret_cast<const char*>(&_linePointsFSize),
                               sizeof(size_t));
                 _linesFSize++;
-                insertLine(line);
+                insertLine(line, false);
 
                 IdMapping idm{i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
                 _lastQidToId = idm;
@@ -247,7 +232,7 @@ void GeomCache::parse(const char* c, size_t size) {
                 _linesF.write(reinterpret_cast<const char*>(&_linePointsFSize),
                               sizeof(size_t));
                 _linesFSize++;
-                insertLine(line);
+                insertLine(line, true);
 
                 IdMapping idm{i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
                 _lastQidToId = idm;
@@ -284,7 +269,7 @@ void GeomCache::parse(const char* c, size_t size) {
                 _linesF.write(reinterpret_cast<const char*>(&_linePointsFSize),
                               sizeof(size_t));
                 _linesFSize++;
-                insertLine(line);
+                insertLine(line, true);
 
                 IdMapping idm{i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
                 _lastQidToId = idm;
@@ -740,7 +725,7 @@ std::vector<std::pair<ID_TYPE, ID_TYPE>> GeomCache::getRelObjects(
 }
 
 // _____________________________________________________________________________
-void GeomCache::insertLine(const util::geo::FLine& l) {
+void GeomCache::insertLine(const util::geo::FLine& l, bool isArea) {
   // we also add the line's bounding box here to also
   // compress that
   const auto& bbox = util::geo::getBoundingBox(l);
@@ -803,6 +788,15 @@ void GeomCache::insertLine(const util::geo::FLine& l) {
 
     util::geo::Point<int16_t> pp{minorXLoc, minorYLoc};
     _linePointsF.write(reinterpret_cast<const char*>(&pp),
+                       sizeof(util::geo::Point<int16_t>));
+    _linePointsFSize++;
+  }
+
+  // if we have an area, we end in a major coord (which is not possible for
+  // other types)
+  if (isArea) {
+    util::geo::Point<int16_t> p{mCoord(0), mCoord(0)};
+    _linePointsF.write(reinterpret_cast<const char*>(&p),
                        sizeof(util::geo::Point<int16_t>));
     _linePointsFSize++;
   }

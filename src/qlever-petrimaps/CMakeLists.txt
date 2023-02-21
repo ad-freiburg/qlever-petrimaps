@@ -21,7 +21,7 @@ add_custom_command(
 add_custom_command(
 	OUTPUT build.h
 	COMMAND cd ${PROJECT_BINARY_DIR}/../web/ && cat leaflet.js NonTiledLayer.js script.js > merged.js && java -jar closurec/compiler.jar -O SIMPLE leaflet.js NonTiledLayer.js script.js > build.js && xxd -i build.js > ${CMAKE_CURRENT_BINARY_DIR}/build.h && rm build.js
-	DEPENDS "${PROJECT_BINARY_DIR}/../web/script.js"
+	DEPENDS "${PROJECT_BINARY_DIR}/../web/script.js" "${PROJECT_BINARY_DIR}/../web/leaflet.js" "${PROJECT_BINARY_DIR}/../web/leaflet-heat.js"
 	VERBATIM
 )
 

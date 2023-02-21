@@ -23,6 +23,7 @@
 #include "util/Misc.h"
 #include "util/String.h"
 #include "util/geo/Geo.h"
+#include "util/geo/output/GeoJsonOutput.cpp"
 #include "util/log/Log.h"
 
 using petrimaps::Params;
@@ -53,6 +54,8 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
       a.params["Content-Type"] = "text/html; charset=utf-8";
     } else if (cmd == "/query") {
       a = handleQueryReq(params);
+    } else if (cmd == "/geojson") {
+      a = handleGeoJSONReq(params);
     } else if (cmd == "/clearsession") {
       a = handleClearSessReq(params);
     } else if (cmd == "/clearsessions") {
@@ -120,10 +123,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   const Requestor& r = *_rs[id];
   _m.unlock();
 
-  float x1 = atof(box[0].c_str());
-  float y1 = atof(box[1].c_str());
-  float x2 = atof(box[2].c_str());
-  float y2 = atof(box[3].c_str());
+  float x1 = std::atof(box[0].c_str());
+  float y1 = std::atof(box[1].c_str());
+  float x2 = std::atof(box[2].c_str());
+  float y2 = std::atof(box[3].c_str());
 
   double mercW = fabs(x2 - x1);
   double mercH = fabs(y2 - y1);
@@ -436,14 +439,63 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 }
 
 // _____________________________________________________________________________
+util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
+  if (pars.count("id") == 0 || pars.find("id")->second.empty())
+    throw std::invalid_argument("No session id (?id=) specified.");
+  auto id = pars.find("id")->second;
+
+  if (pars.count("rad") == 0 || pars.find("rad")->second.empty())
+    throw std::invalid_argument("No rad (?rad=) specified.");
+  auto rad = std::atof(pars.find("rad")->second.c_str());
+
+  if (pars.count("gid") == 0 || pars.find("gid")->second.empty())
+    throw std::invalid_argument("No geom id (?gid=) specified.");
+  auto gid = std::atoi(pars.find("gid")->second.c_str());
+
+  LOG(INFO) << "[SERVER] GeoJSON request for " << gid;
+
+  _m.lock();
+  bool has = _rs.count(id);
+  _m.unlock();
+
+  if (!has) throw std::invalid_argument("Session not found");
+
+  _m.lock();
+  const Requestor& r = *_rs[id];
+  _m.unlock();
+
+  r.getMutex().lock();
+  auto res = r.getGeom(gid, rad);
+  r.getMutex().unlock();
+
+  std::stringstream json;
+
+  if (res.poly.getOuter().size()) {
+    GeoJsonOutput out(json);
+    out.printLatLng(res.poly, {});
+  } else if (res.line.size()) {
+    GeoJsonOutput out(json);
+    out.printLatLng(res.line, {});
+  } else {
+    GeoJsonOutput out(json);
+    out.printLatLng(res.pos, {});
+  }
+
+  auto answ = util::http::Answer("200 OK", json.str());
+  answ.params["Content-Type"] = "application/json; charset=utf-8";
+
+  return answ;
+}
+
+// _____________________________________________________________________________
 util::http::Answer Server::handlePosReq(const Params& pars) const {
   if (pars.count("x") == 0 || pars.find("x")->second.empty())
     throw std::invalid_argument("No x coord (?x=) specified.");
-  float x = atof(pars.find("x")->second.c_str());
+  float x = std::atof(pars.find("x")->second.c_str());
 
   if (pars.count("y") == 0 || pars.find("y")->second.empty())
     throw std::invalid_argument("No y coord (?y=) specified.");
-  float y = atof(pars.find("y")->second.c_str());
+  float y = std::atof(pars.find("y")->second.c_str());
 
   if (pars.count("id") == 0 || pars.find("id")->second.empty())
     throw std::invalid_argument("No session id (?id=) specified.");
@@ -451,7 +503,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
 
   if (pars.count("rad") == 0 || pars.find("rad")->second.empty())
     throw std::invalid_argument("No rad (?rad=) specified.");
-  auto rad = atof(pars.find("rad")->second.c_str());
+  auto rad = std::atof(pars.find("rad")->second.c_str());
 
   LOG(INFO) << "[SERVER] Click at " << x << ", " << y;
 
@@ -474,7 +526,8 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   json << "[";
 
   if (res.has) {
-    json << "{\"attrs\" : [";
+    json << "{\"id\" :" << res.id;
+    json << ",\"attrs\" : [";
 
     bool first = true;
 
@@ -493,6 +546,20 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
     json << "]";
     json << std::setprecision(10) << ",\"ll\":{\"lat\" : " << ll.getY()
          << ",\"lng\":" << ll.getX() << "}";
+
+    if (res.poly.getOuter().size()) {
+      json << ",\"geom\":";
+      GeoJsonOutput out(json);
+      out.printLatLng(res.poly, {});
+    } else if (res.line.size()) {
+      json << ",\"geom\":";
+      GeoJsonOutput out(json);
+      out.printLatLng(res.line, {});
+    } else {
+      json << ",\"geom\":";
+      GeoJsonOutput out(json);
+      out.printLatLng(res.pos, {});
+    }
 
     json << "}";
   }

@@ -99,7 +99,7 @@ private:
 
   static bool pointValid(const util::geo::FPoint& p);
 
-  void insertLine(const util::geo::FLine& l);
+  void insertLine(const util::geo::FLine& l, bool isArea);
 
   std::vector<util::geo::FPoint> _points;
   std::vector<util::geo::Point<int16_t>> _linePoints;

@@ -4,6 +4,9 @@ var map = L.map('m', {
     renderer: L.canvas(),
 }).setView([47.9965, 7.8469], 13);
 
+var curGeojson;
+var curGeojsonId = -1;
+
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a rel="noreferrer" target="_blank" href="#">OpenStreetMap</a>',
     maxZoom: 19,
@@ -82,11 +85,37 @@ function openPopup(data) {
         popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
             var content = "<table>";
 
+        if (curGeojson) curGeojson.remove();
+
         L.popup({"maxWidth" : 600})
             .setLatLng(data[0]["ll"])
             .setContent(popup_html)
-            .openOn(map);
+            .openOn(map)
+            .on('remove', function() {
+                curGeojson.remove();
+                curGeojsonId = -1;
+            });
+
+        curGeojson = getGeoJsonLayer(data[0].geom);
+
+        curGeojsonId = data[0].id;
+
+        curGeojson.addTo(map);
     }
+}
+
+function getGeoJsonLayer(geom) {
+    return L.geoJSON(geom, {
+            pointToLayer: function (feature, latlng) {
+                return L.circleMarker(latlng, {
+                    radius: 8,
+                    fillColor: "#3388ff",
+                    color: "#3388ff",
+                    weight: 3,
+                    opacity: 1,
+                    fillOpacity: 0.2
+                });}
+            })
 }
 
 function showError(error) {
@@ -126,6 +155,18 @@ function loadMap(id, bounds) {
           .then(response => response.json())
           .then(data => openPopup(data));
         });
+
+    map.on('zoomend', function(e) {
+        if (curGeojsonId > -1) {
+            fetch('geojson?gid=' + curGeojsonId + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
+              .then(response => response.json())
+              .then(function(data) {
+                curGeojson.remove();
+                curGeojson = getGeoJsonLayer(data);
+                curGeojson.addTo(map);
+            });
+        }
+    });
 }
 
 console.log("Loading data from QLever...");

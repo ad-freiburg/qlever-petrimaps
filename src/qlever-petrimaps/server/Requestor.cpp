@@ -61,7 +61,8 @@ void Requestor::request(const std::string& qry) {
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
   for (size_t t = 0; t < NUM_THREADS; t++) {
-    for (size_t i = batch * t; i < batch * (t+1) && i < _objects.size(); i++) {
+    for (size_t i = batch * t; i < batch * (t + 1) && i < _objects.size();
+         i++) {
       auto geomId = _objects[i].first;
 
       if (geomId < I_OFFSET) {
@@ -70,8 +71,6 @@ void Requestor::request(const std::string& qry) {
             util::geo::extendBox(_cache->getPoints()[pId], pointBoxes[t]);
       } else if (geomId < std::numeric_limits<ID_TYPE>::max()) {
         auto lId = geomId - I_OFFSET;
-
-        auto a = _cache->getLineBBox(lId);
 
         lineBoxes[t] =
             util::geo::extendBox(_cache->getLineBBox(lId), lineBoxes[t]);
@@ -223,12 +222,14 @@ void Requestor::request(const std::string& qry) {
             size_t cellX = _lpgrid.getCellXFromX(curP.getX());
             size_t cellY = _lpgrid.getCellYFromY(curP.getY());
 
-            uint8_t sX = (curP.getX() -
-                          _lpgrid.getBBox().getLowerLeft().getX() +
-                          cellX * _lpgrid.getCellWidth()) / 256;
-            uint8_t sY = (curP.getY() -
-                          _lpgrid.getBBox().getLowerLeft().getY() +
-                          cellY * _lpgrid.getCellHeight()) / 256;
+            uint8_t sX =
+                (curP.getX() - _lpgrid.getBBox().getLowerLeft().getX() +
+                 cellX * _lpgrid.getCellWidth()) /
+                256;
+            uint8_t sY =
+                (curP.getY() - _lpgrid.getBBox().getLowerLeft().getY() +
+                 cellY * _lpgrid.getCellHeight()) /
+                256;
 
             if (gi == 3 || lastX != sX || lastY != sY) {
               _lpgrid.add(cellX, cellY, {sX, sY});
@@ -347,6 +348,10 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
         double mainX = 0;
         double mainY = 0;
 
+        bool isArea = isMCoord(_cache->getLinePoints()[end - 1].getX());
+
+        util::geo::FLine areaBorder;
+
         for (size_t i = start; i < end; i++) {
           // extract real geom
           const auto& cur = _cache->getLinePoints()[i];
@@ -364,6 +369,11 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
           // extract real geometry
           util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
                                  mainY * M_COORD_GRANULARITY + cur.getY());
+
+          if (isArea) {
+            areaBorder.push_back(curP);
+          }
+
           if (s == 0) {
             curPa = curP;
             s++;
@@ -385,6 +395,14 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
         }
         // TODO _____________________ own function
 
+        if (isArea) {
+          if (util::geo::contains(rp, util::geo::FPolygon(areaBorder))) {
+            // set it to rad/4 - this allows selecting smaller objects
+            // inside the polgon
+            d = rad / 4;
+          }
+        }
+
         if (d < dBestL) {
           nearestL = i;
           dBestL = d;
@@ -394,8 +412,12 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
   }
 
   if (dBest < rad && dBest <= dBestL) {
-    return {true, _cache->getPoints()[_objects[nearest].first],
-            requestRow(_objects[nearest].second)};
+    return {true,
+            nearest,
+            _cache->getPoints()[_objects[nearest].first],
+            requestRow(_objects[nearest].second),
+            {},
+            {}};
   }
 
   if (dBestL < rad && dBestL <= dBest) {
@@ -403,6 +425,8 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
     size_t lineId = _objects[nearestL].first - I_OFFSET;
     size_t start = _cache->getLine(lineId);
     size_t end = _cache->getLineEnd(lineId);
+
+    bool isArea = isMCoord(_cache->getLinePoints()[end - 1].getX());
 
     double mainX = 0;
     double mainY = 0;
@@ -428,9 +452,94 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
       fline.push_back(curP);
     }
 
-    return {true, util::geo::PolyLine<float>(fline).projectOn(rp).p,
-            requestRow(_objects[nearestL].second)};
+    if (isArea && util::geo::contains(rp, util::geo::FPolygon(fline))) {
+      return {true, nearestL,
+              rp,   requestRow(_objects[nearestL].second),
+              {},   util::geo::FPolygon(util::geo::simplify(fline, rad / 10))};
+    } else {
+      if (isArea) {
+        return {true,
+                nearestL,
+                util::geo::PolyLine<float>(fline).projectOn(rp).p,
+                requestRow(_objects[nearestL].second),
+                {},
+                util::geo::FPolygon(util::geo::simplify(fline, rad / 10))};
+      } else {
+        return {true,
+                nearestL,
+                util::geo::PolyLine<float>(fline).projectOn(rp).p,
+                requestRow(_objects[nearestL].second),
+                util::geo::simplify(fline, rad / 10),
+                {}};
+      }
+    }
   }
 
-  return {false, {0, 0}, {}};
+  return {false, 0, {0, 0}, {}, {}, {}};
+}
+
+// _____________________________________________________________________________
+const ResObj Requestor::getGeom(size_t id, double rad) const {
+  auto obj = _objects[id];
+
+  if (obj.first >= I_OFFSET) {
+    size_t start = _cache->getLine(obj.first - I_OFFSET);
+    size_t end = _cache->getLineEnd(obj.first - I_OFFSET);
+
+    int s = 0;
+
+    size_t gi = 0;
+
+    double mainX = 0;
+    double mainY = 0;
+
+    bool isArea = isMCoord(_cache->getLinePoints()[end - 1].getX());
+
+    util::geo::FLine fline;
+
+    for (size_t i = start; i < end; i++) {
+      // extract real geom
+      const auto& cur = _cache->getLinePoints()[i];
+
+      if (isMCoord(cur.getX())) {
+        mainX = rmCoord(cur.getX());
+        mainY = rmCoord(cur.getY());
+        continue;
+      }
+
+      // skip bounding box at beginning
+      gi++;
+      if (gi < 3) continue;
+
+      // extract real geometry
+      util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
+                             mainY * M_COORD_GRANULARITY + cur.getY());
+
+      fline.push_back(curP);
+    }
+
+    if (isArea) {
+      return {true,
+              id,
+              {0, 0},
+              {},
+              {},
+              util::geo::FPolygon(util::geo::simplify(fline, rad / 10))};
+    } else {
+      return {true,
+              id,
+              {0, 0},
+              {},
+              util::geo::simplify(fline, rad / 10),
+              {}};
+    }
+  } else {
+    auto p = _cache->getPoints()[obj.first];
+      return {true,
+              id,
+              p,
+              {},
+              {},
+              {}};
+  }
 }
