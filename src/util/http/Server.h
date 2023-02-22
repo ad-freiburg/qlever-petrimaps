@@ -56,6 +56,7 @@ class HttpErr : public std::exception {
 struct Req {
   std::string cmd, url, ver, payload;
   std::unordered_map<std::string, std::string> params;
+  bool gzip = false;
 };
 
 /*
@@ -68,7 +69,8 @@ struct Answer {
   Answer(const std::string& status, const std::string& pl, bool gz)
       : status(status), pl(pl), gzip(gz) {}
   std::string status, pl;
-  bool gzip;
+  bool gzip = false;
+  bool raw = false;
   std::unordered_map<std::string, std::string> params;
 };
 

@@ -8,12 +8,14 @@
 #define _USE_MATH_DEFINES
 
 #include <math.h>
+
 #include <algorithm>
 #include <cassert>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+
 #include "util/Misc.h"
 #include "util/String.h"
 #include "util/geo/Box.h"
@@ -709,27 +711,30 @@ inline Point<T> intersection(const LineSegment<T>& s1,
 
 // _____________________________________________________________________________
 template <typename T>
-inline Box<T> intersection(const Box<T>& b1,
-                             const Box<T>& b2) {
+inline Box<T> intersection(const Box<T>& b1, const Box<T>& b2) {
   if (!intersects(b1, b2)) return Box<T>();
 
   T llx, lly, urx, ury;
 
   if (b1.getLowerLeft().getX() > b2.getLowerLeft().getX())
     llx = b1.getLowerLeft().getX();
-  else llx = b2.getLowerLeft().getX();
+  else
+    llx = b2.getLowerLeft().getX();
 
   if (b1.getLowerLeft().getY() > b2.getLowerLeft().getY())
     lly = b1.getLowerLeft().getY();
-  else lly = b2.getLowerLeft().getY();
+  else
+    lly = b2.getLowerLeft().getY();
 
   if (b1.getUpperRight().getX() < b2.getUpperRight().getX())
     urx = b1.getUpperRight().getX();
-  else urx = b2.getUpperRight().getX();
+  else
+    urx = b2.getUpperRight().getX();
 
   if (b1.getUpperRight().getY() < b2.getUpperRight().getY())
     ury = b1.getUpperRight().getY();
-  else ury = b2.getUpperRight().getY();
+  else
+    ury = b2.getUpperRight().getY();
 
   return Box<T>{{llx, lly}, {urx, ury}};
 }
@@ -964,6 +969,94 @@ inline Line<T> lineFromWKT(std::string wkt) {
       double x = atof(xy[0].c_str());
       double y = atof(xy[1].c_str());
       ret.push_back({x, y});
+    }
+    return ret;
+  }
+  throw std::runtime_error("Could not parse WKT");
+}
+
+// _____________________________________________________________________________
+template <typename T>
+inline MultiPolygon<T> multiPolygonFromWKT(std::string wkt) {
+  wkt = util::normalizeWhiteSpace(util::trim(wkt));
+  util::replaceAll(wkt, "))", ")!");
+  util::replaceAll(wkt, ") )", ")!");
+  if (wkt.rfind("MULTIPOLYGON") == 0 || wkt.rfind("MMULTIPOLYGON") == 0) {
+    MultiPolygon<T> ret;
+    size_t b = wkt.find("(") + 1;
+    size_t e = wkt.rfind(")");
+    if (b > e) throw std::runtime_error("Could not parse WKT");
+
+    auto polyPairs = util::split(wkt.substr(b, e - b), '!');
+
+    for (const auto& polyPair : polyPairs) {
+      size_t b = polyPair.find("(") + 1;
+      size_t e = polyPair.rfind(")");
+      auto pairs = util::split(polyPair.substr(b, e - b), ')');
+
+      ret.push_back({});
+
+      for (size_t i = 0; i < pairs.size(); i++) {
+        size_t b = pairs[i].find("(") + 1;
+        size_t e = pairs[i].rfind(")", b);
+        auto pairsLoc = util::split(pairs[i].substr(b, e - b), ',');
+
+        if (i > 0) {
+          ret.back().getInners().push_back({});
+        }
+
+        for (const auto& p : pairsLoc) {
+          auto xy = util::split(util::trim(p), ' ');
+          if (xy.size() < 2) throw std::runtime_error("Could not parse WKT");
+          double x = atof(xy[0].c_str());
+          double y = atof(xy[1].c_str());
+
+          if (i == 0) {
+            ret.back().getOuter().push_back({x, y});
+          } else {
+            ret.back().getInners().back().push_back({x, y});
+          }
+        }
+      }
+    }
+    return ret;
+  }
+  throw std::runtime_error("Could not parse WKT");
+}
+
+// _____________________________________________________________________________
+template <typename T>
+inline Polygon<T> polygonFromWKT(std::string wkt) {
+  wkt = util::normalizeWhiteSpace(util::trim(wkt));
+  if (wkt.rfind("POLYGON") == 0 || wkt.rfind("MPOLYGON") == 0) {
+    Polygon<T> ret;
+    size_t b = wkt.find("(") + 1;
+    size_t e = wkt.rfind(")");
+    if (b > e) throw std::runtime_error("Could not parse WKT");
+
+    auto pairs = util::split(wkt.substr(b, e - b), ')');
+
+    for (size_t i = 0; i < pairs.size(); i++) {
+      size_t b = pairs[i].find("(") + 1;
+      size_t e = pairs[i].rfind(")", b);
+      auto pairsLoc = util::split(pairs[i].substr(b, e - b), ',');
+
+      if (i > 0) {
+        ret.getInners().push_back({});
+      }
+
+      for (const auto& p : pairsLoc) {
+        auto xy = util::split(util::trim(p), ' ');
+        if (xy.size() < 2) throw std::runtime_error("Could not parse WKT");
+        double x = atof(xy[0].c_str());
+        double y = atof(xy[1].c_str());
+
+        if (i == 0) {
+          ret.getOuter().push_back({x, y});
+        } else {
+          ret.getInners().back().push_back({x, y});
+        }
+      }
     }
     return ret;
   }

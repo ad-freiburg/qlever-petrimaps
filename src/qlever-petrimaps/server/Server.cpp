@@ -7,15 +7,16 @@
 
 #include <chrono>
 #include <codecvt>
+#include <csignal>
 #include <locale>
+#include <parallel/algorithm>
 #include <random>
 #include <set>
 #include <unordered_set>
 #include <vector>
-#include <parallel/algorithm>
 
-#include "3rdparty/heatmap.h"
 #include "3rdparty/colorschemes/Spectral.h"
+#include "3rdparty/heatmap.h"
 #include "qlever-petrimaps/build.h"
 #include "qlever-petrimaps/index.h"
 #include "qlever-petrimaps/server/Requestor.h"
@@ -24,6 +25,7 @@
 #include "util/String.h"
 #include "util/geo/Geo.h"
 #include "util/geo/output/GeoJsonOutput.cpp"
+#include "util/http/Server.h"
 #include "util/log/Log.h"
 
 using petrimaps::Params;
@@ -64,6 +66,8 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
       a = handleLoadReq(params);
     } else if (cmd == "/pos") {
       a = handlePosReq(params);
+    } else if (cmd == "/export") {
+      a = handleExportReq(params, con);
     } else if (cmd == "/build.js") {
       a = util::http::Answer(
           "200 OK", std::string(build_js, build_js + sizeof build_js /
@@ -111,17 +115,14 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   _m.lock();
   bool has = _rs.count(id);
-  _m.unlock();
-
   if (!has) {
+    _m.unlock();
     throw std::invalid_argument("Session not found");
   }
+  auto r = _rs[id];
+  _m.unlock();
 
   LOG(INFO) << "[SERVER] Begin heat for session " << id;
-
-  _m.lock();
-  const Requestor& r = *_rs[id];
-  _m.unlock();
 
   float x1 = std::atof(box[0].c_str());
   float y1 = std::atof(box[1].c_str());
@@ -140,7 +141,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   heatmap_t* hm = heatmap_new(w, h);
 
-  double realCellSize = r.getPointGrid().getCellWidth();
+  double realCellSize = r->getPointGrid().getCellWidth();
   double virtCellSize = res * 2.5;
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
@@ -162,16 +163,16 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   double THRESHOLD = 200;
 
-  if (util::geo::intersects(r.getPointGrid().getBBox(), bbox)) {
+  if (util::geo::intersects(r->getPointGrid().getBBox(), bbox)) {
     LOG(INFO) << "[SERVER] Looking up display points...";
     if (res < THRESHOLD) {
       std::vector<ID_TYPE> ret;
 
       // duplicates are not possible with points
-      r.getPointGrid().get(bbox, &ret);
+      r->getPointGrid().get(bbox, &ret);
 
       for (size_t i : ret) {
-        const auto& p = r.getPoint(r.getObjects()[i].first);
+        const auto& p = r->getPoint(r->getObjects()[i].first);
         if (!util::geo::contains(p, bbox)) continue;
 
         int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
@@ -184,24 +185,24 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
       }
     } else {
       // they intersect, we checked this above
-      auto iBox = util::geo::intersection(r.getPointGrid().getBBox(), bbox);
+      auto iBox = util::geo::intersection(r->getPointGrid().getBBox(), bbox);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t x =
-               r.getPointGrid().getCellXFromX(iBox.getLowerLeft().getX());
-           x <= r.getPointGrid().getCellXFromX(iBox.getUpperRight().getX());
+               r->getPointGrid().getCellXFromX(iBox.getLowerLeft().getX());
+           x <= r->getPointGrid().getCellXFromX(iBox.getUpperRight().getX());
            x++) {
         for (size_t y =
-                 r.getPointGrid().getCellYFromY(iBox.getLowerLeft().getY());
-             y <= r.getPointGrid().getCellYFromY(iBox.getUpperRight().getY());
+                 r->getPointGrid().getCellYFromY(iBox.getLowerLeft().getY());
+             y <= r->getPointGrid().getCellYFromY(iBox.getUpperRight().getY());
              y++) {
-          if (x >= r.getPointGrid().getXWidth() ||
-              y >= r.getPointGrid().getYHeight()) {
+          if (x >= r->getPointGrid().getXWidth() ||
+              y >= r->getPointGrid().getYHeight()) {
             continue;
           }
-          auto cell = r.getPointGrid().getCell(x, y);
+          auto cell = r->getPointGrid().getCell(x, y);
           if (!cell || cell->size() == 0) continue;
-          const auto& cellBox = r.getPointGrid().getBox(x, y);
+          const auto& cellBox = r->getPointGrid().getBox(x, y);
 
           if (subCellSize == 1) {
             int px =
@@ -220,7 +221,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
             }
           } else {
             for (const auto& i : *cell) {
-              const auto& p = r.getPoint(r.getObjects()[i].first);
+              const auto& p = r->getPoint(r->getObjects()[i].first);
 
               int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
               int py =
@@ -239,26 +240,26 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   // LINES
 
-  if (util::geo::intersects(r.getLineGrid().getBBox(), bbox)) {
+  if (util::geo::intersects(r->getLineGrid().getBBox(), bbox)) {
     LOG(INFO) << "[SERVER] Looking up display lines...";
     if (res < THRESHOLD) {
       std::vector<ID_TYPE> ret;
 
-      r.getLineGrid().get(bbox, &ret);
+      r->getLineGrid().get(bbox, &ret);
 
       // sort to avoid duplicates
       __gnu_parallel::sort(ret.begin(), ret.end());
 
       for (size_t idx = 0; idx < ret.size(); idx++) {
-        if (idx > 0 && ret[idx] == ret[idx-1]) continue;
-        auto lid = r.getObjects()[ret[idx]].first;
-        const auto& lbox = r.getLineBBox(lid - I_OFFSET);
+        if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
+        auto lid = r->getObjects()[ret[idx]].first;
+        const auto& lbox = r->getLineBBox(lid - I_OFFSET);
         if (!util::geo::intersects(lbox, bbox)) continue;
 
         uint8_t gi = 0;
 
-        size_t start = r.getLine(lid - I_OFFSET);
-        size_t end = r.getLineEnd(lid - I_OFFSET);
+        size_t start = r->getLine(lid - I_OFFSET);
+        size_t end = r->getLineEnd(lid - I_OFFSET);
 
         // ___________________________________
         bool isects = false;
@@ -270,7 +271,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         double mainY = 0;
         for (size_t i = start; i < end; i++) {
           // extract real geom
-          const auto& cur = r.getLinePoints()[i];
+          const auto& cur = r->getLinePoints()[i];
 
           if (isMCoord(cur.getX())) {
             mainX = rmCoord(cur.getX());
@@ -283,8 +284,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
           if (gi < 3) continue;
 
           // extract real geometry
-          const util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
-                                 mainY * M_COORD_GRANULARITY + cur.getY());
+          const util::geo::FPoint curP(
+              mainX * M_COORD_GRANULARITY + cur.getX(),
+              mainY * M_COORD_GRANULARITY + cur.getY());
           if (s == 0) {
             curPa = curP;
             s++;
@@ -317,7 +319,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
         for (size_t i = start; i < end; i++) {
           // extract real geom
-          const auto& cur = r.getLinePoints()[i];
+          const auto& cur = r->getLinePoints()[i];
 
           if (isMCoord(cur.getX())) {
             mainX = rmCoord(cur.getX());
@@ -349,25 +351,27 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         }
       }
     } else {
-      auto iBox = util::geo::intersection(r.getLinePointGrid().getBBox(), bbox);
+      auto iBox =
+          util::geo::intersection(r->getLinePointGrid().getBBox(), bbox);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t x =
-               r.getLinePointGrid().getCellXFromX(iBox.getLowerLeft().getX());
-           x <= r.getLinePointGrid().getCellXFromX(iBox.getUpperRight().getX());
+               r->getLinePointGrid().getCellXFromX(iBox.getLowerLeft().getX());
+           x <=
+           r->getLinePointGrid().getCellXFromX(iBox.getUpperRight().getX());
            x++) {
-        for (size_t y =
-                 r.getLinePointGrid().getCellYFromY(iBox.getLowerLeft().getY());
+        for (size_t y = r->getLinePointGrid().getCellYFromY(
+                 iBox.getLowerLeft().getY());
              y <=
-             r.getLinePointGrid().getCellYFromY(iBox.getUpperRight().getY());
+             r->getLinePointGrid().getCellYFromY(iBox.getUpperRight().getY());
              y++) {
-          if (x >= r.getLinePointGrid().getXWidth() ||
-              y >= r.getLinePointGrid().getYHeight())
+          if (x >= r->getLinePointGrid().getXWidth() ||
+              y >= r->getLinePointGrid().getYHeight())
             continue;
 
-          auto cell = r.getLinePointGrid().getCell(x, y);
+          auto cell = r->getLinePointGrid().getCell(x, y);
           if (!cell || cell->size() == 0) continue;
-          const auto& cellBox = r.getLinePointGrid().getBox(x, y);
+          const auto& cellBox = r->getLinePointGrid().getBox(x, y);
 
           if (subCellSize == 1) {
             int px =
@@ -452,37 +456,56 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
     throw std::invalid_argument("No geom id (?gid=) specified.");
   auto gid = std::atoi(pars.find("gid")->second.c_str());
 
+  bool noExport = pars.count("export") == 0 ||
+                  pars.find("export")->second.empty() ||
+                  !std::atoi(pars.find("export")->second.c_str());
+
   LOG(INFO) << "[SERVER] GeoJSON request for " << gid;
 
   _m.lock();
   bool has = _rs.count(id);
+  if (!has) {
+    _m.unlock();
+    throw std::invalid_argument("Session not found");
+  }
+
+  // NOTE: reqor is a shared pointer here, so it doesnt
+  // matter if _rs is cleared after unlock
+  auto reqor = _rs[id];
   _m.unlock();
 
-  if (!has) throw std::invalid_argument("Session not found");
+  // TODO: use concurrent read / exclusive write lock here
+  reqor->getMutex().lock();
+  auto res = reqor->getGeom(gid, rad);
+  reqor->getMutex().unlock();
 
-  _m.lock();
-  const Requestor& r = *_rs[id];
-  _m.unlock();
+  util::json::Val dict;
 
-  r.getMutex().lock();
-  auto res = r.getGeom(gid, rad);
-  r.getMutex().unlock();
+  if (!noExport) {
+    for (auto col : reqor->requestRow(reqor->getObjects()[gid].second)) {
+      dict.dict[col.first] = col.second;
+    }
+  }
 
   std::stringstream json;
 
   if (res.poly.getOuter().size()) {
     GeoJsonOutput out(json);
-    out.printLatLng(res.poly, {});
+    out.printLatLng(res.poly, dict);
   } else if (res.line.size()) {
     GeoJsonOutput out(json);
-    out.printLatLng(res.line, {});
+    out.printLatLng(res.line, dict);
   } else {
     GeoJsonOutput out(json);
-    out.printLatLng(res.pos, {});
+    out.printLatLng(res.pos, dict);
   }
 
   auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";
+
+  if (!noExport) {
+    answ.params["Content-Disposition"] = "attachement;filename:\"export.json\"";
+  }
 
   return answ;
 }
@@ -509,17 +532,19 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
 
   _m.lock();
   bool has = _rs.count(id);
+  if (!has) {
+    _m.unlock();
+    throw std::invalid_argument("Session not found");
+  }
+
+  // NOTE: reqor is a shared pointer here, so it doesnt
+  // matter if _rs is cleared after unlock
+  auto reqor = _rs[id];
   _m.unlock();
 
-  if (!has) throw std::invalid_argument("Session not found");
-
-  _m.lock();
-  const Requestor& r = *_rs[id];
-  _m.unlock();
-
-  r.getMutex().lock();
-  auto res = r.getNearest({x, y}, rad);
-  r.getMutex().unlock();
+  reqor->getMutex().lock();
+  auto res = reqor->getNearest({x, y}, rad);
+  reqor->getMutex().unlock();
 
   std::stringstream json;
 
@@ -870,6 +895,138 @@ void Server::clearOldSessions() const {
     }
     _m.unlock();
   }
+}
+
+// _____________________________________________________________________________
+util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
+  // ignore SIGPIPE
+  signal(SIGPIPE, SIG_IGN);
+
+  auto aw = util::http::Answer("200 OK", "");
+
+  if (pars.count("id") == 0 || pars.find("id")->second.empty())
+    throw std::invalid_argument("No session id (?id=) specified.");
+  auto id = pars.find("id")->second;
+
+  _m.lock();
+  bool has = _rs.count(id);
+  if (!has) {
+    _m.unlock();
+    throw std::invalid_argument("Session not found");
+  }
+
+  // NOTE: reqor is a shared pointer here, so it doesnt
+  // matter if _rs is cleared after unlock
+  auto reqor = _rs[id];
+  _m.unlock();
+
+  aw.params["Content-Encoding"] = "identity";
+  aw.params["Content-Type"] = "application/json";
+  aw.params["Content-Disposition"] = "attachement;filename:\"export.json\"";
+
+  std::stringstream ss;
+  ss << "HTTP/1.1 200 OK" << aw.status << "\r\n";
+  for (const auto& kv : aw.params)
+    ss << kv.first << ": " << kv.second << "\r\n";
+
+  ss << "\r\n";
+  ss << "{\"type\":\"FeatureCollection\",\"features\":[";
+
+  std::string buff = ss.str();
+
+  size_t writes = 0;
+
+  while (writes != buff.size()) {
+    int64_t out = write(sock, buff.c_str() + writes, buff.size() - writes);
+    if (out < 0) {
+      if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) continue;
+      throw std::runtime_error("Failed to write to socket");
+    }
+    writes += out;
+  }
+
+  bool first = false;
+
+  reqor->requestRows(
+      [sock, &first](
+          std::vector<std::vector<std::pair<std::string, std::string>>> rows) {
+        std::stringstream ss;
+        ss << std::setprecision(10);
+
+        util::json::Val dict;
+
+        for (const auto& row : rows) {
+          // skip last entry, which is the WKT
+          for (size_t i = 0; i < row.size() - 1; i++) {
+            dict.dict[row[i].first] = row[i].second;
+          }
+
+          GeoJsonOutput geoJsonOut(ss, true);
+
+          std::string wkt = row[row.size() - 1].second;
+          if (wkt.size()) wkt[0] = ' ';  // drop " at beginning
+
+          try {
+            auto geom = util::geo::polygonFromWKT<float>(wkt);
+            if (first) ss << ",";
+            geoJsonOut.print(geom, dict);
+            first = true;
+          } catch (std::runtime_error& e) {
+          }
+          try {
+            auto geom = util::geo::multiPolygonFromWKT<float>(wkt);
+            if (first) ss << ",";
+            geoJsonOut.print(geom, dict);
+            first = true;
+          } catch (std::runtime_error& e) {
+          }
+          try {
+            auto geom = util::geo::pointFromWKT<float>(wkt);
+            if (first) ss << ",";
+            geoJsonOut.print(geom, dict);
+            first = true;
+          } catch (std::runtime_error& e) {
+          }
+          try {
+            auto geom = util::geo::lineFromWKT<float>(wkt);
+            if (first) ss << ",";
+            geoJsonOut.print(geom, dict);
+            first = true;
+          } catch (std::runtime_error& e) {
+          }
+          ss << "\n";
+        }
+
+        std::string buff = ss.str();
+
+        size_t writes = 0;
+
+        while (writes != buff.size()) {
+          int64_t out =
+              write(sock, buff.c_str() + writes, buff.size() - writes);
+          if (out < 0) {
+            if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR)
+              continue;
+            throw std::runtime_error("Failed to write to socket");
+          }
+          writes += out;
+        }
+      });
+
+  buff = "]}";
+  writes = 0;
+
+  while (writes != buff.size()) {
+    int64_t out = write(sock, buff.c_str() + writes, buff.size() - writes);
+    if (out < 0) {
+      if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) continue;
+      throw std::runtime_error("Failed to write to socket");
+    }
+    writes += out;
+  }
+
+  aw.raw = true;
+  return aw;
 }
 
 // _____________________________________________________________________________

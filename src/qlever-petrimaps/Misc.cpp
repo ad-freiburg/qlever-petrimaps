@@ -2,10 +2,12 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
-#include <string>
-#include <cstring>
-#include <vector>
 #include <stdint.h>
+
+#include <cstring>
+#include <string>
+#include <vector>
+
 #include "qlever-petrimaps/Misc.h"
 #include "util/log/Log.h"
 
@@ -46,7 +48,7 @@ void RequestReader::requestIds(const std::string& query) {
     size_t len = strlen(errbuf);
     if (len > 0) {
       LOG(ERROR) << "[REQUESTREADER] " << errbuf;
-     } else {
+    } else {
       LOG(ERROR) << "[REQUESTREADER] " << curl_easy_strerror(res);
     }
   }
@@ -54,14 +56,21 @@ void RequestReader::requestIds(const std::string& query) {
 
 // _____________________________________________________________________________
 void RequestReader::requestRows(const std::string& query) {
+  return requestRows(query, RequestReader::writeCb, this);
+}
+
+// _____________________________________________________________________________
+void RequestReader::requestRows(const std::string& query,
+                                size_t (*writeCb)(void*, size_t, size_t,
+                                                  void*), void* ptr) {
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
     auto url = queryUrl(query);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, RequestReader::writeCb);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
+    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, writeCb);
+    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, ptr);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
 
@@ -87,12 +96,11 @@ void RequestReader::requestRows(const std::string& query) {
     size_t len = strlen(errbuf);
     if (len > 0) {
       LOG(ERROR) << "[REQUESTREADER] " << errbuf;
-     } else {
+    } else {
       LOG(ERROR) << "[REQUESTREADER] " << curl_easy_strerror(res);
     }
   }
 }
-
 
 // _____________________________________________________________________________
 std::string RequestReader::queryUrl(const std::string& query) const {
@@ -100,18 +108,17 @@ std::string RequestReader::queryUrl(const std::string& query) const {
   std::string esc = escStr;
   curl_free(escStr);
 
-  return _backendUrl + "/?send=18446744073709551615" +
-         "&query=" + esc;
+  return _backendUrl + "/?send=18446744073709551615" + "&query=" + esc;
 }
 
 // _____________________________________________________________________________
 size_t RequestReader::writeCb(void* contents, size_t size, size_t nmemb,
                               void* userp) {
   size_t realsize = size * nmemb;
-  try  {
-    static_cast<RequestReader*>(userp)->parse(static_cast<const char*>(contents),
-                                              realsize);
-  } catch(...) {
+  try {
+    static_cast<RequestReader*>(userp)->parse(
+        static_cast<const char*>(contents), realsize);
+  } catch (...) {
     static_cast<RequestReader*>(userp)->exceptionPtr = std::current_exception();
     return CURLE_WRITE_ERROR;
   }
@@ -123,10 +130,10 @@ size_t RequestReader::writeCb(void* contents, size_t size, size_t nmemb,
 size_t RequestReader::writeCbIds(void* contents, size_t size, size_t nmemb,
                                  void* userp) {
   size_t realsize = size * nmemb;
-  try  {
+  try {
     static_cast<RequestReader*>(userp)->parseIds(
         static_cast<const char*>(contents), realsize);
-  } catch(...) {
+  } catch (...) {
     static_cast<RequestReader*>(userp)->exceptionPtr = std::current_exception();
     return CURLE_WRITE_ERROR;
   }
@@ -174,10 +181,12 @@ void RequestReader::parse(const char* c, size_t size) {
         }
       case IN_ROW:
         if (*c == '\t' || *c == '\n') {
-          cols.push_back({_colNames[_curCol], _dangling});
+          curCols.push_back({_colNames[_curCol], _dangling});
 
           if (*c == '\n') {
             _curRow++;
+            rows.push_back(curCols);
+            curCols = {};
             _curCol = 0;
           } else {
             _curCol++;

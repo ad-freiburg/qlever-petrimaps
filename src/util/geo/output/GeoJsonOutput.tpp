@@ -65,6 +65,7 @@ void GeoJsonOutput::print(const Polygon<T>& poly, json::Val attrs) {
   _wr.keyVal("type", "Polygon");
   _wr.key("coordinates");
   _wr.arr();
+
   _wr.arr();
   for (auto p : poly.getOuter()) {
     _wr.arr();
@@ -72,8 +73,19 @@ void GeoJsonOutput::print(const Polygon<T>& poly, json::Val attrs) {
     _wr.val(p.getY());
     _wr.close();
   }
-
   _wr.close();
+
+  for (const auto& inner : poly.getInners()) {
+    _wr.arr();
+    for (auto p : inner) {
+      _wr.arr();
+      _wr.val(p.getX());
+      _wr.val(p.getY());
+      _wr.close();
+    }
+    _wr.close();
+  }
+
   _wr.close();
   _wr.close();
   _wr.key("properties");
@@ -84,7 +96,48 @@ void GeoJsonOutput::print(const Polygon<T>& poly, json::Val attrs) {
 // _____________________________________________________________________________
 template <typename T>
 void GeoJsonOutput::print(const MultiPolygon<T>& mpoly, json::Val attrs) {
-  for (const auto& p : mpoly) print(p, attrs);
+  if (!mpoly.size()) return;
+  _wr.obj();
+  _wr.keyVal("type", "Feature");
+
+  _wr.key("geometry");
+  _wr.obj();
+  _wr.keyVal("type", "MultiPolygon");
+  _wr.key("coordinates");
+
+  _wr.arr();
+
+  for (const auto& poly : mpoly) {
+    _wr.arr();
+
+    _wr.arr();
+    for (auto p : poly.getOuter()) {
+      _wr.arr();
+      _wr.val(p.getX());
+      _wr.val(p.getY());
+      _wr.close();
+    }
+    _wr.close();
+
+    for (const auto& inner : poly.getInners()) {
+      _wr.arr();
+      for (auto p : inner) {
+        _wr.arr();
+        _wr.val(p.getX());
+        _wr.val(p.getY());
+        _wr.close();
+      }
+      _wr.close();
+    }
+
+    _wr.close();
+  }
+
+  _wr.close();
+  _wr.close();
+  _wr.key("properties");
+  _wr.val(attrs);
+  _wr.close();
 }
 
 // _____________________________________________________________________________

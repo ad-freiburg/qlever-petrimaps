@@ -4,17 +4,19 @@
 
 #include <curl/curl.h>
 #include <stdint.h>
+
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
 #include "util/Misc.h"
 
 #ifndef PETRIMAPS_MISC_H_
 #define PETRIMAPS_MISC_H_
 
 #define ID_TYPE uint32_t
-//#define QLEVER_ID_TYPE size_t
+// #define QLEVER_ID_TYPE size_t
 #define QLEVER_ID_TYPE uint32_t
 
 const static ID_TYPE I_OFFSET = 500000000;
@@ -93,6 +95,8 @@ struct RequestReader {
 
   void requestIds(const std::string& qurl);
   void requestRows(const std::string& qurl);
+  void requestRows(const std::string& query,
+                   size_t (*writeCb)(void*, size_t, size_t, void*), void* ptr);
   void parse(const char*, size_t size);
   void parseIds(const char*, size_t size);
 
@@ -112,7 +116,8 @@ struct RequestReader {
   std::string _dangling;
   ParseState _state = IN_HEADER;
 
-  std::vector<std::pair<std::string, std::string>> cols;
+  std::vector<std::vector<std::pair<std::string, std::string>>> rows;
+  std::vector<std::pair<std::string, std::string>> curCols;
 
   uint8_t _curByte = 0;
   ID _curId;

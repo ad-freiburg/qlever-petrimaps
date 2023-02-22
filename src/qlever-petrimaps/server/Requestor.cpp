@@ -271,7 +271,37 @@ std::vector<std::pair<std::string, std::string>> Requestor::requestRow(
 
   reader.requestRows(query);
 
-  return reader.cols;
+  return reader.rows[0];
+}
+
+// _____________________________________________________________________________
+void Requestor::requestRows(
+    std::function<
+        void(std::vector<std::vector<std::pair<std::string, std::string>>>)>
+        cb) const {
+  RequestReader reader(_cache->getBackendURL(), _maxMemory);
+  LOG(INFO) << "[REQUESTOR] Requesting rows for query " << _query;
+
+  ReaderCbPair cbPair{&reader, cb};
+
+  reader.requestRows(
+      _query,
+      [](void* contents, size_t size, size_t nmemb, void* ptr) {
+        size_t realsize = size * nmemb;
+        auto pr = static_cast<ReaderCbPair*>(ptr);
+        try {
+          // clear rows
+          pr->reader->rows = {};
+          pr->reader->parse(static_cast<const char*>(contents), realsize);
+          pr->cb(pr->reader->rows);
+        } catch (...) {
+          pr->reader->exceptionPtr = std::current_exception();
+          return static_cast<size_t>(CURLE_WRITE_ERROR);
+        }
+
+        return realsize;
+      },
+      &cbPair);
 }
 
 // _____________________________________________________________________________
@@ -519,27 +549,14 @@ const ResObj Requestor::getGeom(size_t id, double rad) const {
     }
 
     if (isArea) {
-      return {true,
-              id,
-              {0, 0},
-              {},
-              {},
-              util::geo::FPolygon(util::geo::simplify(fline, rad / 10))};
+      return {
+          true, id, {0, 0},
+          {},   {}, util::geo::FPolygon(util::geo::simplify(fline, rad / 10))};
     } else {
-      return {true,
-              id,
-              {0, 0},
-              {},
-              util::geo::simplify(fline, rad / 10),
-              {}};
+      return {true, id, {0, 0}, {}, util::geo::simplify(fline, rad / 10), {}};
     }
   } else {
     auto p = _cache->getPoints()[obj.first];
-      return {true,
-              id,
-              p,
-              {},
-              {},
-              {}};
+    return {true, id, p, {}, {}, {}};
   }
 }

@@ -35,6 +35,8 @@ class Server : public util::http::Handler {
   util::http::Answer handlePosReq(const Params& pars) const;
   util::http::Answer handleLoadReq(const Params& pars) const;
 
+  util::http::Answer handleExportReq(const Params& pars, int sock) const;
+
   void loadCache(GeomCache* c) const;
 
   void clearSession(const std::string& id) const;

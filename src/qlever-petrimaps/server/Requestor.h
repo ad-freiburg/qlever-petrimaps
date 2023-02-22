@@ -10,6 +10,8 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <functional>
+
 #include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/Grid.h"
 #include "qlever-petrimaps/Misc.h"
@@ -28,6 +30,11 @@ struct ResObj {
   util::geo::FPolygon poly;
 };
 
+struct ReaderCbPair {
+  RequestReader* reader;
+  std::function<void(std::vector<std::vector<std::pair<std::string, std::string>>>)> cb;
+};
+
 class Requestor {
  public:
   Requestor() : _maxMemory(-1) {}
@@ -39,19 +46,17 @@ class Requestor {
   std::vector<std::pair<std::string, std::string>> requestRow(
       uint64_t row) const;
 
+void requestRows(
+    std::function<void(std::vector<std::vector<std::pair<std::string, std::string>>>)> cb) const;
+
   void request(const std::string& query);
 
-  const petrimaps::Grid<ID_TYPE, float>& getPointGrid()
+  const petrimaps::Grid<ID_TYPE, float>& getPointGrid() const { return _pgrid; }
+
+  const petrimaps::Grid<ID_TYPE, float>& getLineGrid() const { return _lgrid; }
+
+  const petrimaps::Grid<util::geo::Point<uint8_t>, float>& getLinePointGrid()
       const {
-    return _pgrid;
-  }
-
-  const petrimaps::Grid<ID_TYPE, float>& getLineGrid() const {
-    return _lgrid;
-  }
-
-  const petrimaps::Grid<util::geo::Point<uint8_t>, float>&
-  getLinePointGrid() const {
     return _lpgrid;
   }
 

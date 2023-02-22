@@ -1,5 +1,9 @@
 var sessionId;
 
+var urlParams = new URLSearchParams(window.location.search);
+var qleverBackend = urlParams.get("backend");
+var query = urlParams.get("query");
+
 var map = L.map('m', {
     renderer: L.canvas(),
 }).setView([47.9965, 7.8469], 13);
@@ -83,7 +87,7 @@ function openPopup(data) {
             "<td>" + value + "</td></tr>");
         })
         popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
-            var content = "<table>";
+        popup_html += '<a href="/geojson?gid=' + data[0].id + "&id=" + sessionId + '&rad=0&export=1">Export as GeoJSON</a>';
 
         if (curGeojson) curGeojson.remove();
 
@@ -180,3 +184,15 @@ fetch('query' + window.location.search)
   .then(response => response.json())
   .then(data => loadMap(data["qid"], data["bounds"]))
   .catch(error => {showError(error);});
+
+document.getElementById("export-geojson").onclick = function() {
+	window.location.href = "/export?id="+ sessionId;
+}
+
+document.getElementById("export-tsv").onclick = function() {
+	window.location.href = qleverBackend + "?query=" + encodeURIComponent(query) + "&action=tsv_export";
+}
+
+document.getElementById("export-csv").onclick = function() {
+	window.location.href = qleverBackend + "?query=" + encodeURIComponent(query) + "&action=csv_export";
+}
