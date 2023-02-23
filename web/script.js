@@ -6,12 +6,16 @@ var query = urlParams.get("query");
 
 var map = L.map('m', {
     renderer: L.canvas(),
+    preferCanvas: true
 }).setView([47.9965, 7.8469], 13);
+map.attributionControl.setPrefix('University of Freiburg');
+
+var layerControl = L.control.layers([], [], {collapsed:true, position: 'topleft'}).addTo(map);
 
 var curGeojson;
 var curGeojsonId = -1;
 
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+var osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a rel="noreferrer" target="_blank" href="#">OpenStreetMap</a>',
     maxZoom: 19,
     opacity:0.9
@@ -87,7 +91,7 @@ function openPopup(data) {
             "<td>" + value + "</td></tr>");
         })
         popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
-        popup_html += '<a href="/geojson?gid=' + data[0].id + "&id=" + sessionId + '&rad=0&export=1">Export as GeoJSON</a>';
+        popup_html += '<a class="export-link" href="/geojson?gid=' + data[0].id + "&id=" + sessionId + '&rad=0&export=1">Export as GeoJSON</a>';
 
         if (curGeojson) curGeojson.remove();
 
@@ -109,13 +113,15 @@ function openPopup(data) {
 }
 
 function getGeoJsonLayer(geom) {
+	var color = "#e6930e";
     return L.geoJSON(geom, {
+			style: {color : color, fillColor: color, weight: 7, fillOpacity: 0.2},
             pointToLayer: function (feature, latlng) {
                 return L.circleMarker(latlng, {
                     radius: 8,
-                    fillColor: "#3388ff",
-                    color: "#3388ff",
-                    weight: 3,
+                    fillColor: color,
+                    color: color,
+                    weight: 4,
                     opacity: 1,
                     fillOpacity: 0.2
                 });}
@@ -140,16 +146,33 @@ function loadMap(id, bounds) {
     var bounds = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
     map.fitBounds(bounds);
     sessionId = id;
-    L.nonTiledLayer.wms('heatmap', {
+
+	var heatmapLayer = L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
         maxZoom: 19,
         opacity: 0.8,
         layers: id,
+		styles: ["heatmap"],
         format: 'image/png',
         transparent: true,
-    }).addTo(map).on('error', function() {
+    });
+
+	var objectsLayer = L.nonTiledLayer.wms('heatmap', {
+        minZoom: 0,
+        maxZoom: 19,
+        opacity: 0.8,
+        layers: id,
+		styles: ["objects"],
+        format: 'image/png',
+        transparent: true,
+    });
+
+	heatmapLayer.addTo(map).on('error', function() {
         showError("<p>Session has been removed from cache.</p> <p> <a href='javascript:location.reload();'>Resend request</a></p>");
     });
+
+	layerControl.addBaseLayer(heatmapLayer, "Heatmap");
+	layerControl.addBaseLayer(objectsLayer, "Objects");
 
     map.on('click', function(e) {
         var ll= e.latlng;

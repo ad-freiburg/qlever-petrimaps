@@ -15,8 +15,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "3rdparty/colorschemes/Spectral.h"
 #include "3rdparty/heatmap.h"
+#include "3rdparty/colorschemes/Spectral.h"
 #include "qlever-petrimaps/build.h"
 #include "qlever-petrimaps/index.h"
 #include "qlever-petrimaps/server/Requestor.h"
@@ -30,6 +30,17 @@
 
 using petrimaps::Params;
 using petrimaps::Server;
+using util::geo::intersects;
+using util::geo::densify;
+using util::geo::contains;
+using util::geo::intersection;
+using util::geo::LineSegment;
+using util::geo::DPoint;
+using util::geo::DLine;
+using util::geo::FLine;
+using util::geo::FPoint;
+using util::geo::extendBox;
+using util::geo::webMercToLatLng;
 
 // _____________________________________________________________________________
 Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime)
@@ -111,6 +122,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
     throw std::invalid_argument("No bbox specified.");
   std::string id = pars.find("layers")->second;
 
+	std::string style;
+  if (pars.count("styles") != 0 && !pars.find("styles")->second.empty())
+  	style = pars.find("styles")->second;
+
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
 
   _m.lock();
@@ -132,7 +147,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   double mercW = fabs(x2 - x1);
   double mercH = fabs(y2 - y1);
 
-  auto bbox = util::geo::FBox({x1, y1}, {x2, y2});
+  auto bbox = FBox({x1, y1}, {x2, y2});
 
   int w = atoi(pars.find("width")->second.c_str());
   int h = atoi(pars.find("height")->second.c_str());
@@ -153,17 +168,14 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
   LOG(INFO) << "[SERVER] Num virt cells: " << subCellSize * subCellSize;
 
   std::vector<std::vector<size_t>> points(NUM_THREADS);
-
   std::vector<std::vector<float>> points2(NUM_THREADS);
 
   // initialize vectors to 0
-  for (size_t i = 0; i < NUM_THREADS; i++) {
-    points2[i].resize(w * h, 0);
-  }
+  for (size_t i = 0; i < NUM_THREADS; i++) points2[i].resize(w * h, 0);
 
   double THRESHOLD = 200;
 
-  if (util::geo::intersects(r->getPointGrid().getBBox(), bbox)) {
+  if (intersects(r->getPointGrid().getBBox(), bbox)) {
     LOG(INFO) << "[SERVER] Looking up display points...";
     if (res < THRESHOLD) {
       std::vector<ID_TYPE> ret;
@@ -173,7 +185,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
       for (size_t i : ret) {
         const auto& p = r->getPoint(r->getObjects()[i].first);
-        if (!util::geo::contains(p, bbox)) continue;
+        if (!contains(p, bbox)) continue;
 
         int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
         int py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
@@ -185,24 +197,25 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
       }
     } else {
       // they intersect, we checked this above
-      auto iBox = util::geo::intersection(r->getPointGrid().getBBox(), bbox);
+      auto iBox = intersection(r->getPointGrid().getBBox(), bbox);
+			const auto& grid  = r->getPointGrid();
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t x =
-               r->getPointGrid().getCellXFromX(iBox.getLowerLeft().getX());
-           x <= r->getPointGrid().getCellXFromX(iBox.getUpperRight().getX());
+               grid.getCellXFromX(iBox.getLowerLeft().getX());
+           x <= grid.getCellXFromX(iBox.getUpperRight().getX());
            x++) {
         for (size_t y =
-                 r->getPointGrid().getCellYFromY(iBox.getLowerLeft().getY());
-             y <= r->getPointGrid().getCellYFromY(iBox.getUpperRight().getY());
+                 grid.getCellYFromY(iBox.getLowerLeft().getY());
+             y <= grid.getCellYFromY(iBox.getUpperRight().getY());
              y++) {
-          if (x >= r->getPointGrid().getXWidth() ||
-              y >= r->getPointGrid().getYHeight()) {
+          if (x >= grid.getXWidth() ||
+              y >= grid.getYHeight()) {
             continue;
           }
-          auto cell = r->getPointGrid().getCell(x, y);
+          auto cell = grid.getCell(x, y);
           if (!cell || cell->size() == 0) continue;
-          const auto& cellBox = r->getPointGrid().getBox(x, y);
+          const auto& cellBox = grid.getBox(x, y);
 
           if (subCellSize == 1) {
             int px =
@@ -240,12 +253,14 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   // LINES
 
-  if (util::geo::intersects(r->getLineGrid().getBBox(), bbox)) {
+	const auto& lgrid = r->getLineGrid();
+
+  if (intersects(lgrid.getBBox(), bbox)) {
     LOG(INFO) << "[SERVER] Looking up display lines...";
     if (res < THRESHOLD) {
       std::vector<ID_TYPE> ret;
 
-      r->getLineGrid().get(bbox, &ret);
+      lgrid.get(bbox, &ret);
 
       // sort to avoid duplicates
       __gnu_parallel::sort(ret.begin(), ret.end());
@@ -254,7 +269,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
         auto lid = r->getObjects()[ret[idx]].first;
         const auto& lbox = r->getLineBBox(lid - I_OFFSET);
-        if (!util::geo::intersects(lbox, bbox)) continue;
+        if (!intersects(lbox, bbox)) continue;
 
         uint8_t gi = 0;
 
@@ -264,7 +279,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         // ___________________________________
         bool isects = false;
 
-        util::geo::FPoint curPa, curPb;
+        FPoint curPa, curPb;
         int s = 0;
 
         double mainX = 0;
@@ -284,7 +299,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
           if (gi < 3) continue;
 
           // extract real geometry
-          const util::geo::FPoint curP(
+          const FPoint curP(
               mainX * M_COORD_GRANULARITY + cur.getX(),
               mainY * M_COORD_GRANULARITY + cur.getY());
           if (s == 0) {
@@ -297,8 +312,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
           if (s == 2) {
             s = 1;
-            if (util::geo::intersects(
-                    util::geo::LineSegment<float>(curPa, curPb), bbox)) {
+            if (intersects(LineSegment<float>(curPa, curPb), bbox)) {
               isects = true;
               break;
             }
@@ -312,7 +326,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         mainX = 0;
         mainY = 0;
 
-        util::geo::DLine extrLine;
+        DLine extrLine;
         extrLine.reserve(end - start);
 
         gi = 0;
@@ -331,14 +345,14 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
           gi++;
           if (gi < 3) continue;
 
-          util::geo::DPoint p(mainX * M_COORD_GRANULARITY + cur.getX(),
+          DPoint p(mainX * M_COORD_GRANULARITY + cur.getX(),
                               mainY * M_COORD_GRANULARITY + cur.getY());
           extrLine.push_back(p);
         }
 
         // the factor depends on the render thickness of the line, make
         // this configurable!
-        const auto& denseLine = util::geo::densify(extrLine, res * 3);
+        const auto& denseLine = densify(extrLine, res * 3);
 
         for (const auto& p : denseLine) {
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
@@ -351,27 +365,22 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         }
       }
     } else {
-      auto iBox =
-          util::geo::intersection(r->getLinePointGrid().getBBox(), bbox);
+			const auto& lpgrid = r->getLinePointGrid();
+      auto iBox = intersection(lpgrid.getBBox(), bbox);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
-      for (size_t x =
-               r->getLinePointGrid().getCellXFromX(iBox.getLowerLeft().getX());
-           x <=
-           r->getLinePointGrid().getCellXFromX(iBox.getUpperRight().getX());
+      for (size_t x = lpgrid.getCellXFromX(iBox.getLowerLeft().getX());
+           x <= lpgrid.getCellXFromX(iBox.getUpperRight().getX());
            x++) {
-        for (size_t y = r->getLinePointGrid().getCellYFromY(
-                 iBox.getLowerLeft().getY());
-             y <=
-             r->getLinePointGrid().getCellYFromY(iBox.getUpperRight().getY());
+        for (size_t y = lpgrid.getCellYFromY(iBox.getLowerLeft().getY());
+             y <= lpgrid.getCellYFromY(iBox.getUpperRight().getY());
              y++) {
-          if (x >= r->getLinePointGrid().getXWidth() ||
-              y >= r->getLinePointGrid().getYHeight())
+          if (x >= lpgrid.getXWidth() || y >= lpgrid.getYHeight())
             continue;
 
-          auto cell = r->getLinePointGrid().getCell(x, y);
+          auto cell = lpgrid.getCell(x, y);
           if (!cell || cell->size() == 0) continue;
-          const auto& cellBox = r->getLinePointGrid().getBox(x, y);
+          const auto& cellBox = lpgrid.getBox(x, y);
 
           if (subCellSize == 1) {
             int px =
@@ -412,22 +421,42 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   LOG(INFO) << "[SERVER] Adding points to heatmap...";
 
-  for (size_t i = 0; i < NUM_THREADS; i++) {
-    for (const auto& p : points[i]) {
-      size_t y = p / w;
-      size_t x = p - (y * w);
-      heatmap_add_weighted_point(hm, x, y, points2[i][p]);
-    }
-  }
+	if (style == "objects") {
+		for (size_t i = 0; i < NUM_THREADS; i++) {
+			for (const auto& p : points[i]) {
+				size_t y = p / w;
+				size_t x = p - (y * w);
+				if (points2[i][p] > 0)
+					heatmap_add_weighted_point_with_stamp(hm, x, y, 1, heatmap_stamp_gen(3));
+			}
+		}
+	} else {
+		for (size_t i = 0; i < NUM_THREADS; i++) {
+			for (const auto& p : points[i]) {
+				size_t y = p / w;
+				size_t x = p - (y * w);
+				if (points2[i][p] > 0)
+					heatmap_add_weighted_point(hm, x, y, points2[i][p]);
+			}
+		}
+	}
 
   LOG(INFO) << "[SERVER] ...done";
   LOG(INFO) << "[SERVER] Rendering heatmap...";
 
   std::vector<unsigned char> image(w * h * 4);
-  // double sat = 5 * pow(res, 1.3);
-  // heatmapr.nder_saturated_to(hm, heatmap_cs_Spectral_mixed_exp, sat,
-  // &image[0]);
-  heatmap_render_to(hm, heatmap_cs_Spectral_mixed_exp, &image[0]);
+
+
+	if (style == "objects") {
+		static const unsigned char discrete_data[] = {
+			0, 0, 0, 0, 0, 0, 0, 0, 51, 136, 255, 16, 51, 136, 255, 32, 51, 136, 255, 64, 51, 136, 255, 128, 51, 136, 255, 160, 51, 136, 255, 192, 51, 136, 255, 224, 51, 136, 255, 255
+		};
+		static const heatmap_colorscheme_t discrete = { discrete_data, sizeof(discrete_data)/sizeof(discrete_data[0]/4) };
+
+		heatmap_render_saturated_to(hm, &discrete, 1, &image[0]);
+	} else {
+		heatmap_render_to(hm, heatmap_cs_Spectral_mixed_exp, &image[0]);
+	}
 
   LOG(INFO) << "[SERVER] ...done";
   LOG(INFO) << "[SERVER] Generating PNG...";
@@ -566,7 +595,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
       first = false;
     }
 
-    auto ll = util::geo::webMercToLatLng<float>(res.pos.getX(), res.pos.getY());
+    auto ll = webMercToLatLng<float>(res.pos.getX(), res.pos.getY());
 
     json << "]";
     json << std::setprecision(10) << ",\"ll\":{\"lat\" : " << ll.getY()
@@ -680,7 +709,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
       reqor->getMutex().lock();
 
       auto bbox = reqor->getPointGrid().getBBox();
-      bbox = util::geo::extendBox(reqor->getLineGrid().getBBox(), bbox);
+      bbox = extendBox(reqor->getLineGrid().getBBox(), bbox);
 
       auto ll = bbox.getLowerLeft();
       auto ur = bbox.getUpperRight();
@@ -722,15 +751,10 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     }
   }
 
-  std::random_device dev;
-  std::mt19937 rng(dev());
-  std::uniform_int_distribution<std::mt19937::result_type> d(
-      1, std::numeric_limits<int>::max());
-
-  std::string id = std::to_string(d(rng));
-
   auto reqor =
       std::shared_ptr<Requestor>(new Requestor(_caches[backend], _maxMemory));
+
+	const auto& id = getSessionId();
 
   _rs[id] = reqor;
   _queryCache[queryId] = id;
@@ -757,7 +781,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   LOG(INFO) << "[SERVER] ** TOTAL REQUEST TIME: " << T_STOP(req) << " ms";
 
   auto bbox = reqor->getPointGrid().getBBox();
-  bbox = util::geo::extendBox(reqor->getLineGrid().getBBox(), bbox);
+  bbox = extendBox(reqor->getLineGrid().getBBox(), bbox);
   reqor->getMutex().unlock();
 
   auto ll = bbox.getLowerLeft();
@@ -1055,6 +1079,16 @@ void Server::loadCache(GeomCache* cache) const {
     cache->request();
     cache->requestIds();
   }
+}
+
+// _____________________________________________________________________________
+std::string Server::getSessionId() const {
+  std::random_device dev;
+  std::mt19937 rng(dev());
+  std::uniform_int_distribution<std::mt19937::result_type> d(
+      1, std::numeric_limits<int>::max());
+
+  return std::to_string(d(rng));
 }
 
 // _____________________________________________________________________________

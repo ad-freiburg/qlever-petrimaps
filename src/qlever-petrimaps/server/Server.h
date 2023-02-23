@@ -43,6 +43,8 @@ class Server : public util::http::Handler {
   void clearSessions() const;
   void clearOldSessions() const;
 
+  std::string getSessionId() const;
+
   static std::string writePNG(const unsigned char* data, size_t w, size_t h);
 
   size_t _maxMemory;
