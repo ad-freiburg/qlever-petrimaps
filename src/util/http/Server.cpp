@@ -111,7 +111,7 @@ void HttpServer::handle() {
       answ = _handler->handle(req, connection);
       if (answ.raw) {
         close(connection); // the handle did everything
-        return;
+        continue;
       }
       answ.gzip = req.gzip;
     } catch (const HttpErr& err) {

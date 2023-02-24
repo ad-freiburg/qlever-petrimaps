@@ -31,7 +31,7 @@ class Server : public util::http::Handler {
  private:
   static std::string parseUrl(std::string u, std::string pl, Params* params);
 
-  util::http::Answer handleHeatMapReq(const Params& pars) const;
+  util::http::Answer handleHeatMapReq(const Params& pars, int sock) const;
   util::http::Answer handleQueryReq(const Params& pars) const;
   util::http::Answer handleGeoJSONReq(const Params& pars) const;
   util::http::Answer handleClearSessReq(const Params& pars) const;
@@ -48,7 +48,7 @@ class Server : public util::http::Handler {
 
   std::string getSessionId() const;
 
-  static std::string writePNG(const unsigned char* data, size_t w, size_t h);
+  static void writePNG(const unsigned char* data, size_t w, size_t h, int sock);
 
   void drawPoint(std::vector<size_t>& points, std::vector<float>& points2,
                          int px, int py, int w, int h, MapStyle style) const;

@@ -85,7 +85,7 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
       a.params["Content-Type"] = "application/javascript; charset=utf-8";
       a.params["Cache-Control"] = "public, max-age=10000";
     } else if (cmd == "/heatmap") {
-      a = handleHeatMapReq(params);
+      a = handleHeatMapReq(params, con);
     } else {
       a = util::http::Answer("404 Not Found", "dunno");
     }
@@ -107,7 +107,7 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
+util::http::Answer Server::handleHeatMapReq(const Params& pars, int sock) const {
   if (pars.count("width") == 0 || pars.find("width")->second.empty())
     throw std::invalid_argument("No width (?width=) specified.");
   if (pars.count("height") == 0 || pars.find("height")->second.empty())
@@ -446,17 +446,43 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
     heatmap_render_to(hm, heatmap_cs_Spectral_mixed_exp, &image[0]);
   }
 
+  heatmap_free(hm);
+
   LOG(INFO) << "[SERVER] ...done";
   LOG(INFO) << "[SERVER] Generating PNG...";
 
-  auto answ = util::http::Answer("200 OK", writePNG(&image[0], w, h));
-  answ.params["Content-Type"] = "image/png";
+  auto aw = util::http::Answer("200 OK", "");
+  aw.params["Content-Type"] = "image/png";
+  aw.params["Content-Encoding"] = "identity";
+  aw.params["Server"] = "qlever-petrimaps";
+  aw.raw = true;
+
+  std::stringstream ss;
+  ss << "HTTP/1.1 200 OK" << aw.status << "\r\n";
+  for (const auto& kv : aw.params)
+    ss << kv.first << ": " << kv.second << "\r\n";
+
+  ss << "\r\n";
+
+  std::string buff = ss.str();
+
+  size_t writes = 0;
+
+  while (writes != buff.size()) {
+    int64_t out = write(sock, buff.c_str() + writes, buff.size() - writes);
+    if (out < 0) {
+      if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) continue;
+      throw std::runtime_error("Failed to write to socket");
+    }
+    writes += out;
+  }
+
+
+  writePNG(&image[0], w, h, sock);
 
   LOG(INFO) << "[SERVER] ...done";
 
-  heatmap_free(hm);
-
-  return answ;
+  return aw;
 }
 
 // _____________________________________________________________________________
@@ -750,30 +776,38 @@ std::string Server::parseUrl(std::string u, std::string pl,
 
 // _____________________________________________________________________________
 inline void pngWriteCb(png_structp png_ptr, png_bytep data, png_size_t length) {
-  std::stringstream* ss = (std::stringstream*)png_get_io_ptr(png_ptr);
-  ss->write(reinterpret_cast<char*>(data), length);
+  int sock = *((int*)png_get_io_ptr(png_ptr));
+
+  size_t writes = 0;
+
+  while (writes != length) {
+    int64_t out = write(sock, reinterpret_cast<char*>(data) + writes, length - writes);
+    if (out < 0) {
+      if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) continue;
+      throw std::runtime_error("Failed to write to socket");
+    }
+    writes += out;
+  }
 }
 
 // _____________________________________________________________________________
-std::string Server::writePNG(const unsigned char* data, size_t w, size_t h) {
+void Server::writePNG(const unsigned char* data, size_t w, size_t h, int sock) {
   png_structp png_ptr =
       png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
-  if (!png_ptr) return "";
+  if (!png_ptr) return;
 
   png_infop info_ptr = png_create_info_struct(png_ptr);
   if (!info_ptr) {
     png_destroy_write_struct(&png_ptr, (png_infopp) nullptr);
-    return "";
+    return;
   }
 
   if (setjmp(png_jmpbuf(png_ptr))) {
     png_destroy_write_struct(&png_ptr, &info_ptr);
-    return "";
+    return;
   }
 
-  std::stringstream ss;
-
-  png_set_write_fn(png_ptr, &ss, pngWriteCb, 0);
+  png_set_write_fn(png_ptr, &sock, pngWriteCb, 0);
   png_set_filter(png_ptr, 0, PNG_FILTER_NONE | PNG_FILTER_VALUE_NONE);
   png_set_compression_level(png_ptr, 7);
 
@@ -785,7 +819,7 @@ std::string Server::writePNG(const unsigned char* data, size_t w, size_t h) {
 
   png_bytep* row_pointers =
       (png_byte**)png_malloc(png_ptr, h * sizeof(png_bytep));
-    }
+
   for (size_t y = 0; y < h; ++y) {
     row_pointers[y] = const_cast<png_bytep>(data + y * w * 4);
   }
@@ -795,8 +829,6 @@ std::string Server::writePNG(const unsigned char* data, size_t w, size_t h) {
 
   png_free(png_ptr, row_pointers);
   png_destroy_write_struct(&png_ptr, &info_ptr);
-
-  return ss.str();
 }
 
 // _____________________________________________________________________________
