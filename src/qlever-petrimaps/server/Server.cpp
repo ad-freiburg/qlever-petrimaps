@@ -33,7 +33,8 @@ using petrimaps::Server;
 using util::geo::contains;
 using util::geo::densify;
 using util::geo::DLine;
-using util::geo::DPoint; using util::geo::extendBox;
+using util::geo::DPoint;
+using util::geo::extendBox;
 using util::geo::FLine;
 using util::geo::FPoint;
 using util::geo::intersection;
@@ -107,7 +108,8 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleHeatMapReq(const Params& pars, int sock) const {
+util::http::Answer Server::handleHeatMapReq(const Params& pars,
+                                            int sock) const {
   if (pars.count("width") == 0 || pars.find("width")->second.empty())
     throw std::invalid_argument("No width (?width=) specified.");
   if (pars.count("height") == 0 || pars.find("height")->second.empty())
@@ -477,7 +479,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars, int sock) const 
     writes += out;
   }
 
-
   writePNG(&image[0], w, h, sock);
 
   LOG(INFO) << "[SERVER] ...done";
@@ -651,8 +652,10 @@ util::http::Answer Server::handleClearSessReq(const Params& pars) const {
 
   {
     std::lock_guard<std::mutex> guard(_m);
-    if (id.size()) clearSession(id);
-    else clearSessions();
+    if (id.size())
+      clearSession(id);
+    else
+      clearSessions();
   }
 
   auto answ = util::http::Answer("200 OK", "{}");
@@ -781,19 +784,30 @@ inline void pngWriteCb(png_structp png_ptr, png_bytep data, png_size_t length) {
   size_t writes = 0;
 
   while (writes != length) {
-    int64_t out = write(sock, reinterpret_cast<char*>(data) + writes, length - writes);
+    int64_t out =
+        write(sock, reinterpret_cast<char*>(data) + writes, length - writes);
     if (out < 0) {
       if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) continue;
-      throw std::runtime_error("Failed to write to socket");
+      break;
     }
     writes += out;
   }
 }
 
 // _____________________________________________________________________________
+inline void pngWarnCb(png_structp, png_const_charp error_msg) {
+  LOG(WARN) << "[SERVER] (libpng) " << error_msg;
+}
+
+// _____________________________________________________________________________
+inline void pngErrorCb(png_structp, png_const_charp error_msg) {
+  throw std::runtime_error(error_msg);
+}
+
+// _____________________________________________________________________________
 void Server::writePNG(const unsigned char* data, size_t w, size_t h, int sock) {
-  png_structp png_ptr =
-      png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr,
+                                                pngErrorCb, pngWarnCb);
   if (!png_ptr) return;
 
   png_infop info_ptr = png_create_info_struct(png_ptr);
@@ -808,6 +822,7 @@ void Server::writePNG(const unsigned char* data, size_t w, size_t h, int sock) {
   }
 
   png_set_write_fn(png_ptr, &sock, pngWriteCb, 0);
+
   png_set_filter(png_ptr, 0, PNG_FILTER_NONE | PNG_FILTER_VALUE_NONE);
   png_set_compression_level(png_ptr, 7);
 

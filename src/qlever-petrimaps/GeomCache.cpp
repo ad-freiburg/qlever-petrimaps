@@ -616,7 +616,7 @@ void GeomCache::requestIds() {
 
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
-    auto res = curl_easy_perform(_curl);
+    curl_easy_perform(_curl);
 
     int httpCode = 0;
     curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
