@@ -40,27 +40,27 @@ using util::geo::latLngToWebMerc;
 // "<https://www.openstreetmap.org/relation/> " " SELECT ?geom WHERE {"
 // "osmway:170488516 geo:hasGeometry ?geom } ";
 
-// const static std::string QUERY =
-    // "SELECT ?geometry WHERE {"
-    // " ?osm_id <https://www.openstreetmap.org/wiki/Key:type> \"boundary\" . "
-    // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry  "
-    // " } ORDER BY ?geometry";
-
-// const static std::string COUNT_QUERY =
-    // "SELECT (COUNT(?geometry) as ?count) WHERE {"
-    // " ?osm_id <https://www.openstreetmap.org/wiki/Key:type> \"boundary\" . "
-    // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry . "
-    // " }";
-
 const static std::string QUERY =
     "SELECT ?geometry WHERE {"
-    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+    " ?osm_id <https://www.openstreetmap.org/wiki/Key:building> ?a . "
+    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry  "
     " } ORDER BY ?geometry";
 
 const static std::string COUNT_QUERY =
-    "SELECT (COUNT(?osm_id) as ?count) WHERE {"
-    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+    "SELECT (COUNT(?geometry) as ?count) WHERE {"
+    " ?osm_id <https://www.openstreetmap.org/wiki/Key:building> ?a . "
+    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry . "
     " }";
+
+// const static std::string QUERY =
+    // "SELECT ?geometry WHERE {"
+    // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+    // " } ORDER BY ?geometry";
+
+// const static std::string COUNT_QUERY =
+    // "SELECT (COUNT(?osm_id) as ?count) WHERE {"
+    // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+    // " }";
 
 // _____________________________________________________________________________
 size_t GeomCache::writeCb(void* contents, size_t size, size_t nmemb,

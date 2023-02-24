@@ -271,6 +271,8 @@ std::vector<std::pair<std::string, std::string>> Requestor::requestRow(
 
   reader.requestRows(query);
 
+  if (reader.rows.size() == 0) return {};
+
   return reader.rows[0];
 }
 
@@ -309,7 +311,10 @@ std::string Requestor::prepQuery(std::string query) const {
   // only use last column
   std::regex expr("select\\s*(\\?[A-Z0-9_\\-+]*\\s*)+\\s*where\\s*\\{",
                   std::regex_constants::icase);
-  query = std::regex_replace(query, expr, "SELECT $1 WHERE {");
+
+  // only remove columns the first (=outer) SELECT statement
+  query = std::regex_replace(query, expr, "SELECT $1 WHERE {",
+                             std::regex_constants::format_first_only);
 
   if (util::toLower(query).find("limit") == std::string::npos) {
     query += " LIMIT 18446744073709551615";
@@ -328,8 +333,16 @@ std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
 const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
   auto box = pad(getBoundingBox(rp), rad);
 
+  size_t NUM_THREADS = std::thread::hardware_concurrency();
+
   size_t nearest = 0;
   double dBest = std::numeric_limits<double>::max();
+  std::vector<size_t> nearestVec(NUM_THREADS, 0);
+  std::vector<double> dBestVec(NUM_THREADS, std::numeric_limits<double>::max());
+
+  std::vector<size_t> nearestLVec(NUM_THREADS, 0);
+  std::vector<double> dBestLVec(NUM_THREADS,
+                                std::numeric_limits<double>::max());
   size_t nearestL = 0;
   double dBestL = std::numeric_limits<double>::max();
 #pragma omp parallel sections
@@ -338,18 +351,20 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
     {
       // points
 
-      std::unordered_set<ID_TYPE> ret;
+      std::vector<ID_TYPE> ret;
       _pgrid.get(box, &ret);
 
-      for (const auto& i : ret) {
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
+      for (size_t idx = 0; idx < ret.size(); idx++) {
+        const auto& i = ret[idx];
         auto p = _cache->getPoints()[_objects[i].first];
         if (!util::geo::contains(p, box)) continue;
 
         double d = util::geo::dist(p, rp);
 
-        if (d < dBest) {
-          nearest = i;
-          dBest = d;
+        if (d < dBestVec[omp_get_thread_num()]) {
+          nearestVec[omp_get_thread_num()] = i;
+          dBestVec[omp_get_thread_num()] = d;
         }
       }
     }
@@ -357,10 +372,12 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
 #pragma omp section
     {
       // lines
-      std::unordered_set<ID_TYPE> retL;
+      std::vector<ID_TYPE> retL;
       _lgrid.get(box, &retL);
 
-      for (const auto& i : retL) {
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
+      for (size_t idx = 0; idx < retL.size(); idx++) {
+        const auto& i = retL[idx];
         auto lBox = _cache->getLineBBox(_objects[i].first - I_OFFSET);
         if (!util::geo::intersects(lBox, box)) continue;
 
@@ -433,11 +450,24 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
           }
         }
 
-        if (d < dBestL) {
-          nearestL = i;
-          dBestL = d;
+        if (d < dBestLVec[omp_get_thread_num()]) {
+          nearestLVec[omp_get_thread_num()] = i;
+          dBestLVec[omp_get_thread_num()] = d;
         }
       }
+    }
+  }
+
+  // join threads
+  for (size_t i = 0; i < NUM_THREADS; i++) {
+    if (dBestVec[i] < dBest) {
+      dBest = dBestVec[i];
+      nearest = nearestVec[i];
+    }
+
+    if (dBestLVec[i] < dBestL) {
+      dBestL = dBestLVec[i];
+      nearestL = nearestLVec[i];
     }
   }
 

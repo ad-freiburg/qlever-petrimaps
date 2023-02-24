@@ -9,6 +9,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+
 #include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "util/http/Server.h"
@@ -16,6 +17,8 @@
 namespace petrimaps {
 
 typedef std::map<std::string, std::string> Params;
+
+enum MapStyle { HEATMAP, OBJECTS };
 
 class Server : public util::http::Handler {
  public:
@@ -46,6 +49,9 @@ class Server : public util::http::Handler {
   std::string getSessionId() const;
 
   static std::string writePNG(const unsigned char* data, size_t w, size_t h);
+
+  void drawPoint(std::vector<size_t>& points, std::vector<float>& points2,
+                         int px, int py, int w, int h, MapStyle style) const;
 
   size_t _maxMemory;
 

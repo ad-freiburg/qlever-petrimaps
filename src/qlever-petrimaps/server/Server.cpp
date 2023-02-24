@@ -30,16 +30,16 @@
 
 using petrimaps::Params;
 using petrimaps::Server;
-using util::geo::intersects;
-using util::geo::densify;
 using util::geo::contains;
-using util::geo::intersection;
-using util::geo::LineSegment;
-using util::geo::DPoint;
+using util::geo::densify;
 using util::geo::DLine;
+using util::geo::DPoint;
+using util::geo::extendBox;
 using util::geo::FLine;
 using util::geo::FPoint;
-using util::geo::extendBox;
+using util::geo::intersection;
+using util::geo::intersects;
+using util::geo::LineSegment;
 using util::geo::webMercToLatLng;
 
 // _____________________________________________________________________________
@@ -122,9 +122,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
     throw std::invalid_argument("No bbox specified.");
   std::string id = pars.find("layers")->second;
 
-	std::string style;
-  if (pars.count("styles") != 0 && !pars.find("styles")->second.empty())
-  	style = pars.find("styles")->second;
+  MapStyle style = HEATMAP;
+  if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
+    if (pars.find("styles")->second == "objects") style = OBJECTS;
+  }
 
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
 
@@ -190,27 +191,19 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
         int py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-        if (px >= 0 && py >= 0 && px < w && py < h) {
-          if (points2[0][w * py + px] == 0) points[0].push_back(w * py + px);
-          points2[0][w * py + px] += 1;
-        }
+        drawPoint(points[0], points2[0], px, py, w, h, style);
       }
     } else {
       // they intersect, we checked this above
       auto iBox = intersection(r->getPointGrid().getBBox(), bbox);
-			const auto& grid  = r->getPointGrid();
+      const auto& grid = r->getPointGrid();
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
-      for (size_t x =
-               grid.getCellXFromX(iBox.getLowerLeft().getX());
-           x <= grid.getCellXFromX(iBox.getUpperRight().getX());
-           x++) {
-        for (size_t y =
-                 grid.getCellYFromY(iBox.getLowerLeft().getY());
-             y <= grid.getCellYFromY(iBox.getUpperRight().getY());
-             y++) {
-          if (x >= grid.getXWidth() ||
-              y >= grid.getYHeight()) {
+      for (size_t x = grid.getCellXFromX(iBox.getLowerLeft().getX());
+           x <= grid.getCellXFromX(iBox.getUpperRight().getX()); x++) {
+        for (size_t y = grid.getCellYFromY(iBox.getLowerLeft().getY());
+             y <= grid.getCellYFromY(iBox.getUpperRight().getY()); y++) {
+          if (x >= grid.getXWidth() || y >= grid.getYHeight()) {
             continue;
           }
           auto cell = grid.getCell(x, y);
@@ -227,11 +220,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
                 ((cellBox.getLowerLeft().getY() - bbox.getLowerLeft().getY()) /
                  mercH) *
                     h;
-            if (px >= 0 && py >= 0 && px < w && py < h) {
-              if (points2[omp_get_thread_num()][w * py + px] == 0)
-                points[omp_get_thread_num()].push_back(w * py + px);
-              points2[omp_get_thread_num()][py * w + px] += cell->size();
-            }
+
+            drawPoint(points[omp_get_thread_num()],
+                      points2[omp_get_thread_num()], px, py, w, h, style);
           } else {
             for (const auto& i : *cell) {
               const auto& p = r->getPoint(r->getObjects()[i].first);
@@ -239,11 +230,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
               int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
               int py =
                   h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
-              if (px >= 0 && py >= 0 && px < w && py < h) {
-                if (points2[omp_get_thread_num()][w * py + px] == 0)
-                  points[omp_get_thread_num()].push_back(w * py + px);
-                points2[omp_get_thread_num()][py * w + px] += 1;
-              }
+              drawPoint(points[omp_get_thread_num()],
+                        points2[omp_get_thread_num()], px, py, w, h, style);
             }
           }
         }
@@ -253,7 +241,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   // LINES
 
-	const auto& lgrid = r->getLineGrid();
+  const auto& lgrid = r->getLineGrid();
 
   if (intersects(lgrid.getBBox(), bbox)) {
     LOG(INFO) << "[SERVER] Looking up display lines...";
@@ -299,9 +287,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
           if (gi < 3) continue;
 
           // extract real geometry
-          const FPoint curP(
-              mainX * M_COORD_GRANULARITY + cur.getX(),
-              mainY * M_COORD_GRANULARITY + cur.getY());
+          const FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
+                            mainY * M_COORD_GRANULARITY + cur.getY());
           if (s == 0) {
             curPa = curP;
             s++;
@@ -346,7 +333,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
           if (gi < 3) continue;
 
           DPoint p(mainX * M_COORD_GRANULARITY + cur.getX(),
-                              mainY * M_COORD_GRANULARITY + cur.getY());
+                   mainY * M_COORD_GRANULARITY + cur.getY());
           extrLine.push_back(p);
         }
 
@@ -365,18 +352,15 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
         }
       }
     } else {
-			const auto& lpgrid = r->getLinePointGrid();
+      const auto& lpgrid = r->getLinePointGrid();
       auto iBox = intersection(lpgrid.getBBox(), bbox);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t x = lpgrid.getCellXFromX(iBox.getLowerLeft().getX());
-           x <= lpgrid.getCellXFromX(iBox.getUpperRight().getX());
-           x++) {
+           x <= lpgrid.getCellXFromX(iBox.getUpperRight().getX()); x++) {
         for (size_t y = lpgrid.getCellYFromY(iBox.getLowerLeft().getY());
-             y <= lpgrid.getCellYFromY(iBox.getUpperRight().getY());
-             y++) {
-          if (x >= lpgrid.getXWidth() || y >= lpgrid.getYHeight())
-            continue;
+             y <= lpgrid.getCellYFromY(iBox.getUpperRight().getY()); y++) {
+          if (x >= lpgrid.getXWidth() || y >= lpgrid.getYHeight()) continue;
 
           auto cell = lpgrid.getCell(x, y);
           if (!cell || cell->size() == 0) continue;
@@ -421,42 +405,45 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   LOG(INFO) << "[SERVER] Adding points to heatmap...";
 
-	if (style == "objects") {
-		for (size_t i = 0; i < NUM_THREADS; i++) {
-			for (const auto& p : points[i]) {
-				size_t y = p / w;
-				size_t x = p - (y * w);
-				if (points2[i][p] > 0)
-					heatmap_add_weighted_point_with_stamp(hm, x, y, 1, heatmap_stamp_gen(3));
-			}
-		}
-	} else {
-		for (size_t i = 0; i < NUM_THREADS; i++) {
-			for (const auto& p : points[i]) {
-				size_t y = p / w;
-				size_t x = p - (y * w);
-				if (points2[i][p] > 0)
-					heatmap_add_weighted_point(hm, x, y, points2[i][p]);
-			}
-		}
-	}
+  if (style == OBJECTS) {
+    auto stamp = heatmap_stamp_gen(3);
+    for (size_t i = 0; i < NUM_THREADS; i++) {
+      for (const auto& p : points[i]) {
+        size_t y = p / w;
+        size_t x = p - (y * w);
+        if (points2[i][p] > 0)
+          heatmap_add_weighted_point_with_stamp(hm, x, y, 1, stamp);
+      }
+    }
+    heatmap_stamp_free(stamp);
+  } else {
+    for (size_t i = 0; i < NUM_THREADS; i++) {
+      for (const auto& p : points[i]) {
+        size_t y = p / w;
+        size_t x = p - (y * w);
+        if (points2[i][p] > 0)
+          heatmap_add_weighted_point(hm, x, y, points2[i][p]);
+      }
+    }
+  }
 
   LOG(INFO) << "[SERVER] ...done";
   LOG(INFO) << "[SERVER] Rendering heatmap...";
 
   std::vector<unsigned char> image(w * h * 4);
 
+  if (style == OBJECTS) {
+    static const unsigned char discrete_data[] = {
+        0,   0,   0,   0,   0,   0,   0,   0,   51,  136, 255, 16,  51,  136,
+        255, 32,  51,  136, 255, 64,  51,  136, 255, 128, 51,  136, 255, 160,
+        51,  136, 255, 192, 51,  136, 255, 224, 51,  136, 255, 255};
+    static const heatmap_colorscheme_t discrete = {
+        discrete_data, sizeof(discrete_data) / sizeof(discrete_data[0] / 4)};
 
-	if (style == "objects") {
-		static const unsigned char discrete_data[] = {
-			0, 0, 0, 0, 0, 0, 0, 0, 51, 136, 255, 16, 51, 136, 255, 32, 51, 136, 255, 64, 51, 136, 255, 128, 51, 136, 255, 160, 51, 136, 255, 192, 51, 136, 255, 224, 51, 136, 255, 255
-		};
-		static const heatmap_colorscheme_t discrete = { discrete_data, sizeof(discrete_data)/sizeof(discrete_data[0]/4) };
-
-		heatmap_render_saturated_to(hm, &discrete, 1, &image[0]);
-	} else {
-		heatmap_render_to(hm, heatmap_cs_Spectral_mixed_exp, &image[0]);
-	}
+    heatmap_render_saturated_to(hm, &discrete, 1, &image[0]);
+  } else {
+    heatmap_render_to(hm, heatmap_cs_Spectral_mixed_exp, &image[0]);
+  }
 
   LOG(INFO) << "[SERVER] ...done";
   LOG(INFO) << "[SERVER] Generating PNG...";
@@ -754,7 +741,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   auto reqor =
       std::shared_ptr<Requestor>(new Requestor(_caches[backend], _maxMemory));
 
-	const auto& id = getSessionId();
+  const auto& id = getSessionId();
 
   _rs[id] = reqor;
   _queryCache[queryId] = id;
@@ -1078,6 +1065,27 @@ void Server::loadCache(GeomCache* cache) const {
   } else {
     cache->request();
     cache->requestIds();
+  }
+}
+
+// _____________________________________________________________________________
+void Server::drawPoint(std::vector<size_t>& points, std::vector<float>& points2,
+                       int px, int py, int w, int h, MapStyle style) const {
+  if (style == OBJECTS) {
+    // for the raw style, increase the size of the points a bit
+    for (int x = px - 2; x < px + 2; x++) {
+      for (int y = py - 2; y < py + 2; y++) {
+        if (x >= 0 && y >= 0 && x < w && y < h) {
+          if (points2[w * y + x] == 0) points.push_back(w * y + x);
+          points2[w * y + x] += 1;
+        }
+      }
+    }
+  } else {
+    if (px >= 0 && py >= 0 && px < w && py < h) {
+      if (points2[w * py + px] == 0) points.push_back(w * py + px);
+      points2[w * py + px] += 1;
+    }
   }
 }
 
