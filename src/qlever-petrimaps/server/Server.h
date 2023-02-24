@@ -40,7 +40,7 @@ class Server : public util::http::Handler {
 
   util::http::Answer handleExportReq(const Params& pars, int sock) const;
 
-  void loadCache(GeomCache* c) const;
+  void loadCache(const std::string& backend) const;
 
   void clearSession(const std::string& id) const;
   void clearSessions() const;
@@ -61,7 +61,7 @@ class Server : public util::http::Handler {
 
   mutable std::mutex _m;
 
-  mutable std::map<std::string, GeomCache*> _caches;
+  mutable std::map<std::string, std::shared_ptr<GeomCache>> _caches;
   mutable std::map<std::string, std::shared_ptr<Requestor>> _rs;
   mutable std::map<std::string, std::string> _queryCache;
 };

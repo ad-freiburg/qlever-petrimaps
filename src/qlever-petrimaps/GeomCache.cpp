@@ -53,14 +53,14 @@ using util::geo::latLngToWebMerc;
     // " }";
 
 const static std::string QUERY =
-    "SELECT ?geometry WHERE {"
-    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
-    " } ORDER BY ?geometry";
+"SELECT ?geometry WHERE {"
+" ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+" } ORDER BY ?geometry";
 
 const static std::string COUNT_QUERY =
-    "SELECT (COUNT(?osm_id) as ?count) WHERE {"
-    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
-    " }";
+"SELECT (COUNT(?osm_id) as ?count) WHERE {"
+" ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+" }";
 
 // _____________________________________________________________________________
 size_t GeomCache::writeCb(void* contents, size_t size, size_t nmemb,
@@ -399,7 +399,16 @@ size_t GeomCache::requestSize() {
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     res = curl_easy_perform(_curl);
 
+    int httpCode = 0;
+    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
     curl_slist_free_all(headers);
+
+    if (httpCode != 200) {
+      std::stringstream ss;
+      ss << "QLever backend returned status code " << httpCode;
+      throw std::runtime_error(ss.str());
+    }
 
     if (_exceptionPtr) std::rethrow_exception(_exceptionPtr);
   } else {
@@ -451,7 +460,16 @@ void GeomCache::requestPart(size_t offset) {
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     res = curl_easy_perform(_curl);
 
+    int httpCode = 0;
+    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
     curl_slist_free_all(headers);
+
+    if (httpCode != 200) {
+      std::stringstream ss;
+      ss << "QLever backend returned status code " << httpCode;
+      throw std::runtime_error(ss.str());
+    }
 
     if (_exceptionPtr) std::rethrow_exception(_exceptionPtr);
   } else {
@@ -473,6 +491,11 @@ void GeomCache::requestPart(size_t offset) {
 // _____________________________________________________________________________
 void GeomCache::request() {
   _totalSize = requestSize();
+
+  if (_totalSize == 0) {
+    throw std::runtime_error(
+        "Could not determine number of rows, or number of rows was 0");
+  }
 
   _state = IN_HEADER;
   _points.clear();
@@ -524,6 +547,7 @@ void GeomCache::request() {
 
   size_t lastNum = -1;
 
+  LOG(INFO) << "[GEOMCACHE] Total request size: " << _totalSize;
   LOG(INFO) << "[GEOMCACHE] Query is:\n" << QUERY;
 
   while (lastNum != 0) {
@@ -531,6 +555,8 @@ void GeomCache::request() {
     requestPart(offset);
     lastNum = _curRow - offset;
   }
+
+  if (i == -1) throw std::runtime_error("Could not create temporary file");
 
   LOG(INFO) << "[GEOMCACHE] Building vectors...";
 
@@ -590,9 +616,18 @@ void GeomCache::requestIds() {
 
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
-    curl_easy_perform(_curl);
+    auto res = curl_easy_perform(_curl);
+
+    int httpCode = 0;
+    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
     curl_slist_free_all(headers);
+
+    if (httpCode != 200) {
+      std::stringstream ss;
+      ss << "QLever backend returned status code " << httpCode;
+      throw std::runtime_error(ss.str());
+    }
 
     if (_exceptionPtr) std::rethrow_exception(_exceptionPtr);
   } else {
@@ -890,4 +925,38 @@ void GeomCache::serializeToDisk(const std::string& fname) const {
   f.write(reinterpret_cast<const char*>(&_qidToId[0]), sizeof(IdMapping) * num);
 
   f.close();
+}
+
+// _____________________________________________________________________________
+void GeomCache::load(const std::string& cacheDir) {
+  std::lock_guard<std::mutex> guard(_m);
+
+  if (_ready) return;
+
+  if (cacheDir.size()) {
+    std::string backend = getBackendURL();
+    util::replaceAll(backend, "/", "_");
+    std::string cacheFile = cacheDir + "/" + backend;
+    if (access(cacheFile.c_str(), F_OK) != -1) {
+      LOG(INFO) << "Reading from cache file " << cacheFile << "...";
+      fromDisk(cacheFile);
+      LOG(INFO) << "done ...";
+    } else {
+      if (access(cacheDir.c_str(), W_OK) != 0) {
+        std::stringstream ss;
+        ss << "No write access to cache dir " << cacheDir;
+        throw std::runtime_error(ss.str());
+      }
+      request();
+      requestIds();
+      LOG(INFO) << "Serializing to cache file " << cacheFile << "...";
+      serializeToDisk(cacheFile);
+      LOG(INFO) << "done ...";
+    }
+  } else {
+    request();
+    requestIds();
+  }
+
+  _ready = true;
 }

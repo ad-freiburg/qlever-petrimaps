@@ -36,21 +36,37 @@ void RequestReader::requestIds(const std::string& query) {
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
     res = curl_easy_perform(_curl);
 
+    int httpCode = 0;
+    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
     curl_slist_free_all(headers);
 
+    if (httpCode != 200) {
+      std::stringstream ss;
+      ss << "QLever backend returned status code " << httpCode;
+      throw std::runtime_error(ss.str());
+    }
+
     if (exceptionPtr) std::rethrow_exception(exceptionPtr);
+
   } else {
     LOG(ERROR) << "[REQUESTREADER] Failed to perform curl request.";
     return;
   }
 
   if (res != CURLE_OK) {
+    std::stringstream ss;
+    ss << "QLever backend request failed: ";
     size_t len = strlen(errbuf);
     if (len > 0) {
       LOG(ERROR) << "[REQUESTREADER] " << errbuf;
+      ss << errbuf;
     } else {
       LOG(ERROR) << "[REQUESTREADER] " << curl_easy_strerror(res);
+      ss << curl_easy_strerror(res);
     }
+
+    throw std::runtime_error(ss.str());
   }
 }
 
@@ -84,7 +100,16 @@ void RequestReader::requestRows(const std::string& query,
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
     res = curl_easy_perform(_curl);
 
+    int httpCode = 0;
+    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
     curl_slist_free_all(headers);
+
+    if (httpCode != 200) {
+      std::stringstream ss;
+      ss << "QLever backend returned status code " << httpCode;
+      throw std::runtime_error(ss.str());
+    }
 
     if (exceptionPtr) std::rethrow_exception(exceptionPtr);
   } else {
@@ -93,12 +118,18 @@ void RequestReader::requestRows(const std::string& query,
   }
 
   if (res != CURLE_OK) {
+    std::stringstream ss;
+    ss << "QLever backend request failed: ";
     size_t len = strlen(errbuf);
     if (len > 0) {
       LOG(ERROR) << "[REQUESTREADER] " << errbuf;
+      ss << errbuf;
     } else {
       LOG(ERROR) << "[REQUESTREADER] " << curl_easy_strerror(res);
+      ss << curl_easy_strerror(res);
     }
+
+    throw std::runtime_error(ss.str());
   }
 }
 

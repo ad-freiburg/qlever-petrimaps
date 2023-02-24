@@ -6,11 +6,11 @@
 #define PETRIMAPS_SERVER_REQUESTOR_H_
 
 #include <chrono>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <string>
 #include <vector>
-#include <functional>
 
 #include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/Grid.h"
@@ -32,24 +32,28 @@ struct ResObj {
 
 struct ReaderCbPair {
   RequestReader* reader;
-  std::function<void(std::vector<std::vector<std::pair<std::string, std::string>>>)> cb;
+  std::function<void(
+      std::vector<std::vector<std::pair<std::string, std::string>>>)>
+      cb;
 };
 
 class Requestor {
  public:
   Requestor() : _maxMemory(-1) {}
-  Requestor(const GeomCache* cache, size_t maxMemory)
+  Requestor(std::shared_ptr<const GeomCache> cache, size_t maxMemory)
       : _cache(cache),
         _maxMemory(maxMemory),
         _createdAt(std::chrono::system_clock::now()) {}
 
+  void request(const std::string& query);
+
   std::vector<std::pair<std::string, std::string>> requestRow(
       uint64_t row) const;
 
-void requestRows(
-    std::function<void(std::vector<std::vector<std::pair<std::string, std::string>>>)> cb) const;
-
-  void request(const std::string& query);
+  void requestRows(
+      std::function<
+          void(std::vector<std::vector<std::pair<std::string, std::string>>>)>
+          cb) const;
 
   const petrimaps::Grid<ID_TYPE, float>& getPointGrid() const { return _pgrid; }
 
@@ -84,18 +88,21 @@ void requestRows(
 
   const ResObj getGeom(size_t id, double rad) const;
 
-  std::mutex& getMutex() const { return _m; }
-
   std::chrono::time_point<std::chrono::system_clock> createdAt() const {
     return _createdAt;
   }
 
-  bool ready() const { return _ready; }
+  bool ready() const {
+    _m.lock();
+    bool ready = _ready;
+    _m.unlock();
+    return ready;
+  }
 
  private:
   std::string _backendUrl;
 
-  const GeomCache* _cache;
+  std::shared_ptr<const GeomCache> _cache;
 
   size_t _maxMemory;
 

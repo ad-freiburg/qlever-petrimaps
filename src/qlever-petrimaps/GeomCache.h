@@ -7,8 +7,8 @@
 
 #include <curl/curl.h>
 
-#include <map>
 #include <fstream>
+#include <map>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -23,7 +23,9 @@ class GeomCache {
  public:
   GeomCache() : _backendUrl(""), _curl(0), _maxMemory(-1) {}
   explicit GeomCache(const std::string& backendUrl, size_t maxMemory)
-      : _backendUrl(backendUrl), _curl(curl_easy_init()), _maxMemory(maxMemory) {}
+      : _backendUrl(backendUrl),
+        _curl(curl_easy_init()),
+        _maxMemory(maxMemory) {}
 
   GeomCache& operator=(GeomCache&& o) {
     _backendUrl = o._backendUrl;
@@ -39,6 +41,15 @@ class GeomCache {
   ~GeomCache() {
     if (_curl) curl_easy_cleanup(_curl);
   }
+
+  bool ready() const {
+    _m.lock();
+    bool ready = _ready;
+    _m.unlock();
+    return ready;
+  }
+
+  void load(const std::string& cacheFile);
 
   void request();
   size_t requestSize();
@@ -57,7 +68,9 @@ class GeomCache {
 
   const std::vector<util::geo::FPoint>& getPoints() const { return _points; }
 
-  const std::vector<util::geo::Point<int16_t>>& getLinePoints() const { return _linePoints; }
+  const std::vector<util::geo::Point<int16_t>>& getLinePoints() const {
+    return _linePoints;
+  }
 
   const std::vector<size_t>& getLines() const { return _lines; }
 
@@ -70,14 +83,13 @@ class GeomCache {
 
   void fromDisk(const std::string& fname);
 
-  size_t getLine(ID_TYPE id) const {
-    return _lines[id];
-  }
+  size_t getLine(ID_TYPE id) const { return _lines[id]; }
 
   size_t getLineEnd(ID_TYPE id) const {
     return id + 1 < _lines.size() ? _lines[id + 1] : _linePoints.size();
   }
-private:
+
+ private:
   std::string _backendUrl;
   CURL* _curl;
 
@@ -90,7 +102,7 @@ private:
   static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
                            void* userp);
   static size_t writeCbCount(void* contents, size_t size, size_t nmemb,
-                           void* userp);
+                             void* userp);
 
   std::string queryUrl(std::string query, size_t offset, size_t limit) const;
 
@@ -126,6 +138,9 @@ private:
 
   size_t _maxMemory;
   std::exception_ptr _exceptionPtr;
+
+  mutable std::mutex _m;
+  bool _ready = false;
 };
 }  // namespace petrimaps
 

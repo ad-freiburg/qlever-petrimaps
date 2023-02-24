@@ -22,6 +22,17 @@ using petrimaps::ResObj;
 
 // _____________________________________________________________________________
 void Requestor::request(const std::string& qry) {
+  std::lock_guard<std::mutex> guard(_m);
+
+  if (_ready) {
+    // nothing to do
+    return;
+  }
+
+  if (!_cache->ready()) {
+    throw std::runtime_error("Geom cache not ready");
+  }
+
   _query = qry;
   _ready = false;
   _objects.clear();
@@ -254,7 +265,9 @@ void Requestor::request(const std::string& qry) {
     }
   }
 
-  if (ePtr) std::rethrow_exception(ePtr);
+  if (ePtr) {
+    std::rethrow_exception(ePtr);
+  }
 
   _ready = true;
 
@@ -264,6 +277,9 @@ void Requestor::request(const std::string& qry) {
 // _____________________________________________________________________________
 std::vector<std::pair<std::string, std::string>> Requestor::requestRow(
     uint64_t row) const {
+  if (!_cache->ready()) {
+    throw std::runtime_error("Geom cache not ready");
+  }
   RequestReader reader(_cache->getBackendURL(), _maxMemory);
   LOG(INFO) << "[REQUESTOR] Requesting single row " << row << " for query "
             << _query;
@@ -281,6 +297,9 @@ void Requestor::requestRows(
     std::function<
         void(std::vector<std::vector<std::pair<std::string, std::string>>>)>
         cb) const {
+  if (!_cache->ready()) {
+    throw std::runtime_error("Geom cache not ready");
+  }
   RequestReader reader(_cache->getBackendURL(), _maxMemory);
   LOG(INFO) << "[REQUESTOR] Requesting rows for query " << _query;
 
@@ -331,6 +350,9 @@ std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
 
 // _____________________________________________________________________________
 const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
+  if (!_cache->ready()) {
+    throw std::runtime_error("Geom cache not ready");
+  }
   auto box = pad(getBoundingBox(rp), rad);
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
@@ -540,6 +562,9 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
 
 // _____________________________________________________________________________
 const ResObj Requestor::getGeom(size_t id, double rad) const {
+  if (!_cache->ready()) {
+    throw std::runtime_error("Geom cache not ready");
+  }
   auto obj = _objects[id];
 
   if (obj.first >= I_OFFSET) {

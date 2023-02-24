@@ -33,8 +33,7 @@ using petrimaps::Server;
 using util::geo::contains;
 using util::geo::densify;
 using util::geo::DLine;
-using util::geo::DPoint;
-using util::geo::extendBox;
+using util::geo::DPoint; using util::geo::extendBox;
 using util::geo::FLine;
 using util::geo::FPoint;
 using util::geo::intersection;
@@ -102,7 +101,7 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
   }
 
   a.params["Access-Control-Allow-Origin"] = "*";
-  a.params["Server"] = "qlever-petrimaps-middleend";
+  a.params["Server"] = "qlever-petrimaps";
 
   return a;
 }
@@ -129,14 +128,16 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars) const {
 
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
 
-  _m.lock();
-  bool has = _rs.count(id);
-  if (!has) {
-    _m.unlock();
-    throw std::invalid_argument("Session not found");
+  std::shared_ptr<Requestor> r;
+
+  {
+    std::lock_guard<std::mutex> guard(_m);
+    bool has = _rs.count(id);
+    if (!has) {
+      throw std::invalid_argument("Session not found");
+    }
+    r = _rs[id];
   }
-  auto r = _rs[id];
-  _m.unlock();
 
   LOG(INFO) << "[SERVER] Begin heat for session " << id;
 
@@ -478,22 +479,23 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
 
   LOG(INFO) << "[SERVER] GeoJSON request for " << gid;
 
-  _m.lock();
-  bool has = _rs.count(id);
-  if (!has) {
-    _m.unlock();
-    throw std::invalid_argument("Session not found");
+  std::shared_ptr<Requestor> reqor;
+
+  {
+    std::lock_guard<std::mutex> guard(_m);
+    bool has = _rs.count(id);
+    if (!has) {
+      throw std::invalid_argument("Session not found");
+    }
+    reqor = _rs[id];
   }
 
-  // NOTE: reqor is a shared pointer here, so it doesnt
-  // matter if _rs is cleared after unlock
-  auto reqor = _rs[id];
-  _m.unlock();
+  if (!reqor->ready()) {
+    throw std::invalid_argument("Session not ready.");
+  }
+  // as soon as we are ready, the reqor can be read concurrently
 
-  // TODO: use concurrent read / exclusive write lock here
-  reqor->getMutex().lock();
   auto res = reqor->getGeom(gid, rad);
-  reqor->getMutex().unlock();
 
   util::json::Val dict;
 
@@ -546,21 +548,23 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
 
   LOG(INFO) << "[SERVER] Click at " << x << ", " << y;
 
-  _m.lock();
-  bool has = _rs.count(id);
-  if (!has) {
-    _m.unlock();
-    throw std::invalid_argument("Session not found");
+  std::shared_ptr<Requestor> reqor;
+
+  {
+    std::lock_guard<std::mutex> guard(_m);
+    bool has = _rs.count(id);
+    if (!has) {
+      throw std::invalid_argument("Session not found");
+    }
+    reqor = _rs[id];
   }
 
-  // NOTE: reqor is a shared pointer here, so it doesnt
-  // matter if _rs is cleared after unlock
-  auto reqor = _rs[id];
-  _m.unlock();
+  if (!reqor->ready()) {
+    throw std::invalid_argument("Session not ready.");
+  }
+  // as soon as we are ready, the reqor can be read concurrently
 
-  reqor->getMutex().lock();
   auto res = reqor->getNearest({x, y}, rad);
-  reqor->getMutex().unlock();
 
   std::stringstream json;
 
@@ -619,14 +623,11 @@ util::http::Answer Server::handleClearSessReq(const Params& pars) const {
   if (pars.count("id") != 0 && !pars.find("id")->second.empty())
     id = pars.find("id")->second;
 
-  _m.lock();
-  if (id.size()) {
-    clearSession(id);
-  } else {
-    clearSessions();
+  {
+    std::lock_guard<std::mutex> guard(_m);
+    if (id.size()) clearSession(id);
+    else clearSessions();
   }
-
-  _m.unlock();
 
   auto answ = util::http::Answer("200 OK", "{}");
   answ.params["Content-Type"] = "application/json; charset=utf-8";
@@ -638,34 +639,11 @@ util::http::Answer Server::handleClearSessReq(const Params& pars) const {
 util::http::Answer Server::handleLoadReq(const Params& pars) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
-  auto query = pars.find("query")->second;
   auto backend = pars.find("backend")->second;
 
-  LOG(INFO) << "Backend is " << backend;
+  LOG(INFO) << "[SERVER] Queried backend is " << backend;
 
-  _m.lock();
-  if (_queryCache.count(backend)) {
-    _m.unlock();
-    auto answ = util::http::Answer("200 OK", "{}");
-    answ.params["Content-Type"] = "application/json; charset=utf-8";
-    return answ;
-  }
-
-  auto cache = new GeomCache(backend, _maxMemory);
-
-  try {
-    loadCache(cache);
-    _caches[backend] = cache;
-  } catch (OutOfMemoryError& ex) {
-    LOG(ERROR) << ex.what() << backend;
-    delete cache;
-    _m.unlock();
-    auto answ = util::http::Answer("406 Not Acceptable", ex.what());
-    answ.params["Content-Type"] = "application/json; charset=utf-8";
-    return answ;
-  }
-
-  _m.unlock();
+  loadCache(backend);
 
   auto answ = util::http::Answer("200 OK", "{}");
   answ.params["Content-Type"] = "application/json; charset=utf-8";
@@ -684,102 +662,62 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   LOG(INFO) << "[SERVER] Queried backend is " << backend;
   LOG(INFO) << "[SERVER] Query is:\n" << query;
 
+  loadCache(backend);
+
   std::string queryId = backend + "$" + query;
 
-  _m.lock();
-  if (_queryCache.count(queryId)) {
-    auto id = _queryCache[queryId];
-    auto reqor = _rs[id];
-    _m.unlock();
+  std::shared_ptr<Requestor> reqor;
+  std::string sessionId;
 
-    if (reqor->ready()) {
-      reqor->getMutex().lock();
+  {
+    std::lock_guard<std::mutex> guard(_m);
+    if (_queryCache.count(queryId)) {
+      sessionId = _queryCache[queryId];
+      reqor = _rs[sessionId];
+    } else {
+      reqor = std::shared_ptr<Requestor>(
+          new Requestor(_caches[backend], _maxMemory));
 
-      auto bbox = reqor->getPointGrid().getBBox();
-      bbox = extendBox(reqor->getLineGrid().getBBox(), bbox);
+      sessionId = getSessionId();
 
-      auto ll = bbox.getLowerLeft();
-      auto ur = bbox.getUpperRight();
-
-      double llX = ll.getX();
-      double llY = ll.getY();
-      double urX = ur.getX();
-      double urY = ur.getY();
-
-      std::stringstream json;
-      json << std::fixed << "{\"qid\" : \"" << id << "\",\"bounds\":[[" << llX
-           << "," << llY << "],[" << urX << "," << urY << "]]"
-           << "}";
-
-      auto answ = util::http::Answer("200 OK", json.str());
-      answ.params["Content-Type"] = "application/json; charset=utf-8";
-      reqor->getMutex().unlock();
-
-      return answ;
-    }
-
-    // if not ready, lock global lock again
-    _m.lock();
-  }
-
-  if (_caches.count(backend) == 0) {
-    auto cache = new GeomCache(backend, _maxMemory);
-
-    try {
-      loadCache(cache);
-      _caches[backend] = cache;
-    } catch (OutOfMemoryError& ex) {
-      LOG(ERROR) << ex.what() << backend;
-      delete cache;
-      _m.unlock();
-      auto answ = util::http::Answer("406 Not Acceptable", ex.what());
-      answ.params["Content-Type"] = "application/json; charset=utf-8";
-      return answ;
+      _rs[sessionId] = reqor;
+      _queryCache[queryId] = sessionId;
     }
   }
-
-  auto reqor =
-      std::shared_ptr<Requestor>(new Requestor(_caches[backend], _maxMemory));
-
-  const auto& id = getSessionId();
-
-  _rs[id] = reqor;
-  _queryCache[queryId] = id;
-  reqor->getMutex().lock();
-  _m.unlock();
-
-  T_START(req);
 
   try {
     reqor->request(query);
   } catch (OutOfMemoryError& ex) {
     LOG(ERROR) << ex.what() << backend;
-    reqor->getMutex().unlock();
 
     // delete cache, is now in unready state
-    _m.lock();
-    clearSession(id);
-    _m.unlock();
+    {
+      std::lock_guard<std::mutex> guard(_m);
+      clearSession(sessionId);
+    }
+
     auto answ = util::http::Answer("406 Not Acceptable", ex.what());
     answ.params["Content-Type"] = "application/json; charset=utf-8";
     return answ;
   }
 
-  LOG(INFO) << "[SERVER] ** TOTAL REQUEST TIME: " << T_STOP(req) << " ms";
-
   auto bbox = reqor->getPointGrid().getBBox();
   bbox = extendBox(reqor->getLineGrid().getBBox(), bbox);
-  reqor->getMutex().unlock();
 
   auto ll = bbox.getLowerLeft();
   auto ur = bbox.getUpperRight();
 
+  double llX = ll.getX();
+  double llY = ll.getY();
+  double urX = ur.getX();
+  double urY = ur.getY();
+
   std::stringstream json;
-  json << std::fixed << "{\"qid\" : \"" << id << "\",\"bounds\":[[" << ll.getX()
-       << "," << ll.getY() << "],[" << ur.getX() << "," << ur.getY() << "]]"
+  json << std::fixed << "{\"qid\" : \"" << sessionId << "\",\"bounds\":[["
+       << llX << "," << llY << "],[" << urX << "," << urY << "]]"
        << "}";
 
-  auto answ = util::http::Answer("200 OK", json.str(), true);
+  auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";
 
   return answ;
@@ -820,9 +758,7 @@ inline void pngWriteCb(png_structp png_ptr, png_bytep data, png_size_t length) {
 std::string Server::writePNG(const unsigned char* data, size_t w, size_t h) {
   png_structp png_ptr =
       png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
-  if (!png_ptr) {
-    return "";
-  }
+  if (!png_ptr) return "";
 
   png_infop info_ptr = png_create_info_struct(png_ptr);
   if (!info_ptr) {
@@ -836,10 +772,9 @@ std::string Server::writePNG(const unsigned char* data, size_t w, size_t h) {
   }
 
   std::stringstream ss;
+
   png_set_write_fn(png_ptr, &ss, pngWriteCb, 0);
-
   png_set_filter(png_ptr, 0, PNG_FILTER_NONE | PNG_FILTER_VALUE_NONE);
-
   png_set_compression_level(png_ptr, 7);
 
   static const int bit_depth = 8;
@@ -850,15 +785,17 @@ std::string Server::writePNG(const unsigned char* data, size_t w, size_t h) {
 
   png_bytep* row_pointers =
       (png_byte**)png_malloc(png_ptr, h * sizeof(png_bytep));
+    }
   for (size_t y = 0; y < h; ++y) {
     row_pointers[y] = const_cast<png_bytep>(data + y * w * 4);
   }
-  png_set_rows(png_ptr, info_ptr, row_pointers);
 
+  png_set_rows(png_ptr, info_ptr, row_pointers);
   png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, nullptr);
 
   png_free(png_ptr, row_pointers);
   png_destroy_write_struct(&png_ptr, &info_ptr);
+
   return ss.str();
 }
 
@@ -900,11 +837,10 @@ void Server::clearOldSessions() const {
       }
     }
 
-    _m.lock();
+    std::lock_guard<std::mutex> guard(_m);
     for (const auto& id : toDel) {
       clearSession(id);
     }
-    _m.unlock();
   }
 }
 
@@ -919,21 +855,26 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
     throw std::invalid_argument("No session id (?id=) specified.");
   auto id = pars.find("id")->second;
 
-  _m.lock();
-  bool has = _rs.count(id);
-  if (!has) {
-    _m.unlock();
-    throw std::invalid_argument("Session not found");
+  std::shared_ptr<Requestor> reqor;
+
+  {
+    std::lock_guard<std::mutex> guard(_m);
+    bool has = _rs.count(id);
+    if (!has) {
+      throw std::invalid_argument("Session not found");
+    }
+    reqor = _rs[id];
   }
 
-  // NOTE: reqor is a shared pointer here, so it doesnt
-  // matter if _rs is cleared after unlock
-  auto reqor = _rs[id];
-  _m.unlock();
+  if (!reqor->ready()) {
+    throw std::invalid_argument("Session not ready.");
+  }
+  // as soon as we are ready, the reqor can be read concurrently
 
   aw.params["Content-Encoding"] = "identity";
   aw.params["Content-Type"] = "application/json";
   aw.params["Content-Disposition"] = "attachement;filename:\"export.json\"";
+  aw.params["Server"] = "qlever-petrimaps";
 
   std::stringstream ss;
   ss << "HTTP/1.1 200 OK" << aw.status << "\r\n";
@@ -1041,34 +982,6 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
 }
 
 // _____________________________________________________________________________
-void Server::loadCache(GeomCache* cache) const {
-  if (_cacheDir.size()) {
-    std::string backend = cache->getBackendURL();
-    util::replaceAll(backend, "/", "_");
-    std::string cacheFile = _cacheDir + "/" + backend;
-    if (access(cacheFile.c_str(), F_OK) != -1) {
-      LOG(INFO) << "Reading from cache file " << cacheFile << "...";
-      cache->fromDisk(cacheFile);
-      LOG(INFO) << "done ...";
-    } else {
-      if (access(_cacheDir.c_str(), W_OK) != 0) {
-        std::stringstream ss;
-        ss << "No write access to cache dir " << _cacheDir;
-        throw std::runtime_error(ss.str());
-      }
-      cache->request();
-      cache->requestIds();
-      LOG(INFO) << "Serializing to cache file " << cacheFile << "...";
-      cache->serializeToDisk(cacheFile);
-      LOG(INFO) << "done ...";
-    }
-  } else {
-    cache->request();
-    cache->requestIds();
-  }
-}
-
-// _____________________________________________________________________________
 void Server::drawPoint(std::vector<size_t>& points, std::vector<float>& points2,
                        int px, int py, int w, int h, MapStyle style) const {
   if (style == OBJECTS) {
@@ -1100,3 +1013,28 @@ std::string Server::getSessionId() const {
 }
 
 // _____________________________________________________________________________
+void Server::loadCache(const std::string& backend) const {
+  std::shared_ptr<Requestor> reqor;
+  std::shared_ptr<GeomCache> cache;
+
+  {
+    std::lock_guard<std::mutex> guard(_m);
+    if (_caches.count(backend)) {
+      cache = _caches[backend];
+    } else {
+      cache = std::shared_ptr<GeomCache>(new GeomCache(backend, _maxMemory));
+      _caches[backend] = cache;
+    }
+  }
+
+  try {
+    cache->load(_cacheDir);
+  } catch (...) {
+    std::lock_guard<std::mutex> guard(_m);
+
+    auto it = _caches.find(backend);
+    if (it != _caches.end()) _caches.erase(it);
+
+    throw;
+  }
+}

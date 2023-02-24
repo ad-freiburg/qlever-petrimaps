@@ -209,7 +209,7 @@ fetch('query' + window.location.search)
   .catch(error => {showError(error);});
 
 document.getElementById("export-geojson").onclick = function() {
-	window.location.href = "/export?id="+ sessionId;
+    if (sessionId) window.location.href = "/export?id="+ sessionId;
 }
 
 document.getElementById("export-tsv").onclick = function() {
