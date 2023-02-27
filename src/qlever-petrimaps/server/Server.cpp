@@ -459,6 +459,11 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   aw.params["Server"] = "qlever-petrimaps";
   aw.raw = true;
 
+  // we do not set the Content-Length header here, but serve until
+  // we are done. In particular, we do not need to send our data in chunks, as
+  // specified by https://www.rfc-editor.org/rfc/rfc7230#section-3.3.3
+  // point 7
+
   std::stringstream ss;
   ss << "HTTP/1.1 200 OK" << aw.status << "\r\n";
   for (const auto& kv : aw.params)
@@ -922,6 +927,11 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
   aw.params["Content-Type"] = "application/json";
   aw.params["Content-Disposition"] = "attachment;filename:\"export.json\"";
   aw.params["Server"] = "qlever-petrimaps";
+
+  // we do not set the Content-Length header here, but serve until
+  // we are done. In particular, we do not need to send our data in chunks, as
+  // specified by https://www.rfc-editor.org/rfc/rfc7230#section-3.3.3
+  // point 7
 
   std::stringstream ss;
   ss << "HTTP/1.1 200 OK" << aw.status << "\r\n";
