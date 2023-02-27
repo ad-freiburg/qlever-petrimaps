@@ -549,7 +549,7 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
   answ.params["Content-Type"] = "application/json; charset=utf-8";
 
   if (!noExport) {
-    answ.params["Content-Disposition"] = "attachement;filename:\"export.json\"";
+    answ.params["Content-Disposition"] = "attachment;filename:\"export.json\"";
   }
 
   return answ;
@@ -920,7 +920,7 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
 
   aw.params["Content-Encoding"] = "identity";
   aw.params["Content-Type"] = "application/json";
-  aw.params["Content-Disposition"] = "attachement;filename:\"export.json\"";
+  aw.params["Content-Disposition"] = "attachment;filename:\"export.json\"";
   aw.params["Server"] = "qlever-petrimaps";
 
   std::stringstream ss;
