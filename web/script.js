@@ -82,7 +82,7 @@ function openPopup(data) {
             "<td>" + value + "</td></tr>");
         })
         popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
-        popup_html += '<a class="export-link" href="/geojson?gid=' + data[0].id + "&id=" + sessionId + '&rad=0&export=1">Export as GeoJSON</a>';
+        popup_html += '<a class="export-link" href="geojson?gid=' + data[0].id + "&id=" + sessionId + '&rad=0&export=1">Export as GeoJSON</a>';
 
         if (curGeojson) curGeojson.remove();
 
