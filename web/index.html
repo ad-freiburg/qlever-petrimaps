@@ -112,6 +112,21 @@ h1 {
 	z-index:9999;
 }
 
+#stats {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    z-index: 9999;
+    font-size: 80%;
+    border-radius: 5px;
+    opacity: 0.8;
+    background: white;
+}
+
+#stats span {
+    padding: 5px;
+}
+
 #buttons button {
 	padding: 6px 12px;
     margin-bottom: 0;
@@ -151,6 +166,8 @@ h1 {
 			 <button id='export-csv'>Export as CSV</button>
 			 <button id='export-tsv'>Export as TSV</button>
 			 <button id='export-geojson'>Export as GeoJSON</button>
+		 </div>
+		 <div id='stats'>
 		 </div>
       </main>
       <script src='build.js' defer></script>

@@ -738,6 +738,8 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   auto bbox = reqor->getPointGrid().getBBox();
   bbox = extendBox(reqor->getLineGrid().getBBox(), bbox);
 
+  size_t numObjs = reqor->getObjects().size();
+
   auto ll = bbox.getLowerLeft();
   auto ur = bbox.getUpperRight();
 
@@ -749,6 +751,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   std::stringstream json;
   json << std::fixed << "{\"qid\" : \"" << sessionId << "\",\"bounds\":[["
        << llX << "," << llY << "],[" << urX << "," << urY << "]]"
+       << ",\"numobjects\":" << numObjs
        << "}";
 
   auto answ = util::http::Answer("200 OK", json.str());

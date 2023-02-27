@@ -129,7 +129,7 @@ function showError(error) {
     document.getElementById("msg-inner").innerHTML = error;
 }
 
-function loadMap(id, bounds) {
+function loadMap(id, bounds, numObjects) {
     console.log("Loading session " + id);
     document.getElementById("msg").style.display = "none";
     const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
@@ -137,6 +137,8 @@ function loadMap(id, bounds) {
     const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
     map.fitBounds(boundsLatLng);
     sessionId = id;
+
+    document.getElementById("stats").innerHTML = "<span>Showing " + numObjects + " objects</span>";
 
 	const heatmapLayer = L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
@@ -194,7 +196,7 @@ fetch('query' + window.location.search)
       return response;
     })
   .then(response => response.json())
-  .then(data => loadMap(data["qid"], data["bounds"]))
+  .then(data => loadMap(data["qid"], data["bounds"], data["numobjects"]))
   .catch(error => {showError(error);});
 
 document.getElementById("export-geojson").onclick = function() {

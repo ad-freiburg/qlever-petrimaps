@@ -91,7 +91,7 @@ function openPopup(data) {
             "<td>" + value + "</td></tr>");
         })
         popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
-        popup_html += '<a class="export-link" href="/geojson?gid=' + data[0].id + "&id=" + sessionId + '&rad=0&export=1">Export as GeoJSON</a>';
+        popup_html += '<a class="export-link" href="geojson?gid=' + data[0].id + "&id=" + sessionId + '&rad=0&export=1">Export as GeoJSON</a>';
 
         if (curGeojson) curGeojson.remove();
 
@@ -138,7 +138,7 @@ function showError(error) {
     document.getElementById("msg-inner").innerHTML = error;
 }
 
-function loadMap(id, bounds) {
+function loadMap(id, bounds, numObjects) {
     console.log("Loading session " + id);
     document.getElementById("msg").style.display = "none";
     const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
@@ -146,6 +146,8 @@ function loadMap(id, bounds) {
     const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
     map.fitBounds(boundsLatLng);
     sessionId = id;
+
+    document.getElementById("stats").innerHTML = "<span>Showing " + numObjects + " objects</span>";
 
 	const heatmapLayer = L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
@@ -203,7 +205,7 @@ fetch('query' + window.location.search)
       return response;
     })
   .then(response => response.json())
-  .then(data => loadMap(data["qid"], data["bounds"]))
+  .then(data => loadMap(data["qid"], data["bounds"], data["numobjects"]))
   .catch(error => {showError(error);});
 
 document.getElementById("export-geojson").onclick = function() {
