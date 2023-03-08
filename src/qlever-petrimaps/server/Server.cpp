@@ -18,6 +18,7 @@
 #include "3rdparty/heatmap.h"
 #include "3rdparty/colorschemes/Spectral.h"
 #include "qlever-petrimaps/build.h"
+#include "qlever-petrimaps/style.h"
 #include "qlever-petrimaps/index.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "qlever-petrimaps/server/Server.h"
@@ -84,6 +85,12 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
           "200 OK", std::string(build_js, build_js + sizeof build_js /
                                                          sizeof build_js[0]));
       a.params["Content-Type"] = "application/javascript; charset=utf-8";
+      a.params["Cache-Control"] = "public, max-age=10000";
+    } else if (cmd == "/build.css") {
+      a = util::http::Answer(
+          "200 OK", std::string(build_css, build_css + sizeof build_css /
+                                                         sizeof build_css[0]));
+      a.params["Content-Type"] = "text/css; charset=utf-8";
       a.params["Cache-Control"] = "public, max-age=10000";
     } else if (cmd == "/heatmap") {
       a = handleHeatMapReq(params, con);
@@ -171,7 +178,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   LOG(INFO) << "[SERVER] Virt cell size: " << virtCellSize;
   LOG(INFO) << "[SERVER] Num virt cells: " << subCellSize * subCellSize;
 
-  std::vector<std::vector<size_t>> points(NUM_THREADS);
+  std::vector<std::vector<uint32_t>> points(NUM_THREADS);
   std::vector<std::vector<float>> points2(NUM_THREADS);
 
   // initialize vectors to 0
@@ -1042,7 +1049,7 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
 }
 
 // _____________________________________________________________________________
-void Server::drawPoint(std::vector<size_t>& points, std::vector<float>& points2,
+void Server::drawPoint(std::vector<uint32_t>& points, std::vector<float>& points2,
                        int px, int py, int w, int h, MapStyle style) const {
   if (style == OBJECTS) {
     // for the raw style, increase the size of the points a bit

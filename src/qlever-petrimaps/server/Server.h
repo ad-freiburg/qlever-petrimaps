@@ -50,7 +50,7 @@ class Server : public util::http::Handler {
 
   static void writePNG(const unsigned char* data, size_t w, size_t h, int sock);
 
-  void drawPoint(std::vector<size_t>& points, std::vector<float>& points2,
+  void drawPoint(std::vector<uint32_t>& points, std::vector<float>& points2,
                          int px, int py, int w, int h, MapStyle style) const;
 
   size_t _maxMemory;

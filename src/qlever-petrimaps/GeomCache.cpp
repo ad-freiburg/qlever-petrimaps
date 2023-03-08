@@ -52,6 +52,18 @@ using util::geo::latLngToWebMerc;
     // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry . "
     // " }";
 
+// const static std::string QUERY =
+    // "SELECT ?geometry WHERE {"
+    // " ?osm_id <https://www.openstreetmap.org/wiki/Key:highway> ?a . "
+    // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry  "
+    // " } ORDER BY ?geometry";
+
+// const static std::string COUNT_QUERY =
+    // "SELECT (COUNT(?geometry) as ?count) WHERE {"
+    // " ?osm_id <https://www.openstreetmap.org/wiki/Key:highway> ?a . "
+    // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry . "
+    // " }";
+
 const static std::string QUERY =
 "SELECT ?geometry WHERE {"
 " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "

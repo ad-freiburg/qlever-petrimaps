@@ -29,10 +29,12 @@ var osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     opacity:0.9
 }).addTo(map);
 
+var genError = "<p>Session has been removed from cache.</p> <p> <a href='javascript:location.reload();'>Resend request</a></p>";
+
 function openPopup(data) {
     if (data.length > 0) {
-        select_variables = [];
-        row = [];
+        let select_variables = [];
+        let row = [];
 
         for (let i in data[0]["attrs"]) {
             select_variables.push(data[0]["attrs"][i][0]);
@@ -45,7 +47,7 @@ function openPopup(data) {
         //
         // NOTE: We assume that the last column contains the geometry information
         // (WKT), which we will not put in the table.
-        geometry_column = select_variables.length - 1;
+        let geometry_column = select_variables.length - 1;
         // If the second to last variable exists and is called "?image" or ends in
         // "_image", then show an image with that URL in the first column of the
         // table. Note that we compute the cell contents here and add it during the
@@ -57,7 +59,7 @@ function openPopup(data) {
                 select_variables[image_column] == "?flag" ||
                 select_variables[image_column].endsWith("_image")) {
             let num_table_rows = select_variables.length - 2;
-            image_url = row[image_column];
+            let image_url = row[image_column];
             if (image_url != null)
               image_cell = "<td rowspan=\"" + num_table_rows + "\"><a target=\"_blank\" href=\"" + image_url.replace(/^[<"]/, "").replace(/[>"]$/, "") + "\"><img src=\""
                            + image_url.replace(/^[<"]/, "").replace(/[>"]$/, "")
@@ -77,9 +79,9 @@ function openPopup(data) {
           // another. Reformat a bit, so that it looks nice in an HTML table. and
           // the result value as another. Reformat a bit, so that it looks nice in
           // an HTML table.
-          key = variable.substring(1);
+          let key = variable.substring(1);
           if (row[i] == null) { row[i] = "---"; }
-          value = row[i].replace(/\\([()])/g, "$1")
+          let value = row[i].replace(/\\([()])/g, "$1")
                         .replace(/<((.*)\/(.*))>/,
                          "<a class=\"link\" href=\"$1\" target=\"_blank\">$3</a>")
                         .replace(/\^\^.*$/, "")
@@ -90,7 +92,7 @@ function openPopup(data) {
             "<td>" + key.replace(/_/g, " ") + "</td>" +
             "<td>" + value + "</td></tr>");
         })
-        popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
+        let popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
         popup_html += '<a class="export-link" href="geojson?gid=' + data[0].id + "&id=" + sessionId + '&rad=0&export=1">Export as GeoJSON</a>';
 
         if (curGeojson) curGeojson.remove();
@@ -105,9 +107,7 @@ function openPopup(data) {
             });
 
         curGeojson = getGeoJsonLayer(data[0].geom);
-
         curGeojsonId = data[0].id;
-
         curGeojson.addTo(map);
     }
 }
@@ -129,7 +129,6 @@ function getGeoJsonLayer(geom) {
 }
 
 function showError(error) {
-    console.error(error);
     document.getElementById("msg").style.display = "block";
     document.getElementById("loader").style.display = "none";
     document.getElementById("msg-inner").style.color = "red";
@@ -139,7 +138,6 @@ function showError(error) {
 }
 
 function loadMap(id, bounds, numObjects) {
-    console.log("Loading session " + id);
     document.getElementById("msg").style.display = "none";
     const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
     const ur =  L.Projection.SphericalMercator.unproject({"x": bounds[1][0], "y":bounds[1][1]});
@@ -169,9 +167,8 @@ function loadMap(id, bounds, numObjects) {
         transparent: true,
     });
 
-	heatmapLayer.addTo(map).on('error', function() {
-        showError("<p>Session has been removed from cache.</p> <p> <a href='javascript:location.reload();'>Resend request</a></p>");
-    });
+	heatmapLayer.addTo(map).on('error', function() {showError(genError);});
+	objectsLayer.on('error', function() {showError(genError);});
 
 	layerControl.addBaseLayer(heatmapLayer, "Heatmap");
 	layerControl.addBaseLayer(objectsLayer, "Objects");
@@ -182,7 +179,8 @@ function loadMap(id, bounds, numObjects) {
 
         fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
           .then(response => response.json())
-          .then(data => openPopup(data));
+          .then(data => openPopup(data))
+          .catch(error => showError(genError));
         });
 
     map.on('zoomend', function(e) {
@@ -193,12 +191,12 @@ function loadMap(id, bounds, numObjects) {
                 curGeojson.remove();
                 curGeojson = getGeoJsonLayer(data);
                 curGeojson.addTo(map);
-            });
+              })
+              .catch(error => showError(genError));
         }
     });
 }
 
-console.log("Loading data from QLever...");
 fetch('query' + window.location.search)
   .then(response => {
       if (!response.ok) return response.text().then(text => {throw new Error(text)});
@@ -209,12 +207,11 @@ fetch('query' + window.location.search)
   .catch(error => {showError(error);});
 
 document.getElementById("export-geojson").onclick = function() {
-    if (sessionId) {
-        let a = document.createElement("a");
-        a.href = "export?id="+ sessionId;
-        a.setAttribute("download", "export.json");
-        a.click();
-    }
+    if (!sessionId) return;
+    let a = document.createElement("a");
+    a.href = "export?id="+ sessionId;
+    a.setAttribute("download", "export.json");
+    a.click();
 }
 
 document.getElementById("export-tsv").onclick = function() {

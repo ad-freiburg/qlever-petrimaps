@@ -19,13 +19,20 @@ add_custom_command(
 )
 
 add_custom_command(
+	OUTPUT style.h
+	COMMAND cd ${PROJECT_BINARY_DIR}/../web/ && sed -e "s/^\\s*//g" -e "s/\\s\\+/ /g" style.css | tr -d '\\n' > build.css && xxd -i build.css > ${CMAKE_CURRENT_BINARY_DIR}/style.h
+	DEPENDS "${PROJECT_BINARY_DIR}/../web/style.css"
+	VERBATIM
+)
+
+add_custom_command(
 	OUTPUT build.h
-	COMMAND cd ${PROJECT_BINARY_DIR}/../web/ && cat leaflet.js NonTiledLayer.js script.js > merged.js && java -jar closurec/compiler.jar -O SIMPLE leaflet.js NonTiledLayer.js script.js > build.js && xxd -i build.js > ${CMAKE_CURRENT_BINARY_DIR}/build.h && rm build.js
+	COMMAND cd ${PROJECT_BINARY_DIR}/../web/ && java -jar closurec/compiler.jar -W QUIET -O SIMPLE leaflet.js NonTiledLayer.js script.js > build.js && xxd -i build.js > ${CMAKE_CURRENT_BINARY_DIR}/build.h && rm build.js
 	DEPENDS "${PROJECT_BINARY_DIR}/../web/script.js" "${PROJECT_BINARY_DIR}/../web/leaflet.js" "${PROJECT_BINARY_DIR}/../web/leaflet-heat.js"
 	VERBATIM
 )
 
-add_custom_target(htmlfiles DEPENDS index.h build.h)
+add_custom_target(htmlfiles DEPENDS index.h build.h style.h)
 
 add_dependencies(qlever_petrimaps_dep htmlfiles)
 
