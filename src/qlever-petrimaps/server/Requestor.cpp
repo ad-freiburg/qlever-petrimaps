@@ -571,8 +571,6 @@ const ResObj Requestor::getGeom(size_t id, double rad) const {
     size_t start = _cache->getLine(obj.first - I_OFFSET);
     size_t end = _cache->getLineEnd(obj.first - I_OFFSET);
 
-    int s = 0;
-
     size_t gi = 0;
 
     double mainX = 0;

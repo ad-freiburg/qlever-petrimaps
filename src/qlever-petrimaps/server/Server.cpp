@@ -14,6 +14,7 @@
 #include <set>
 #include <unordered_set>
 #include <vector>
+#include <memory>
 
 #include "3rdparty/heatmap.h"
 #include "3rdparty/colorschemes/Spectral.h"

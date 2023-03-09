@@ -10,6 +10,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <memory>
 #include <vector>
 
 #include "qlever-petrimaps/GeomCache.h"
