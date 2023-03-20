@@ -150,18 +150,36 @@ function loadMap(id, bounds, numObjects) {
 	const objectsLayer = L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
         maxZoom: 19,
-        opacity: 0.8,
         layers: id,
-		styles: ["objects"],
-        format: 'image/png',
-        transparent: true,
+        styles: ["objects"],
+        format: 'image/png'
     });
 
-	heatmapLayer.addTo(map).on('error', function() {showError(genError);});
+	const autoLayer = L.layerGroup([
+        L.nonTiledLayer.wms('heatmap', {
+            minZoom: 0,
+            maxZoom: 15,
+            opacity: 0.8,
+            layers: id,
+            styles: ["heatmap"],
+            format: 'image/png',
+            transparent: true,
+        }), L.nonTiledLayer.wms('heatmap', {
+            minZoom: 16,
+            maxZoom: 19,
+            layers: id,
+            styles: ["objects"],
+            format: 'image/png'
+        })
+    ]);
+
+	heatmapLayer.on('error', function() {showError(genError);});
 	objectsLayer.on('error', function() {showError(genError);});
+	autoLayer.addTo(map).on('error', function() {showError(genError);});
 
 	layerControl.addBaseLayer(heatmapLayer, "Heatmap");
 	layerControl.addBaseLayer(objectsLayer, "Objects");
+	layerControl.addBaseLayer(autoLayer, "Auto");
 
     map.on('click', function(e) {
         const ll= e.latlng;
