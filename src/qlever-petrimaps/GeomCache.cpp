@@ -41,38 +41,38 @@ using util::geo::latLngToWebMerc;
 // "osmway:170488516 geo:hasGeometry ?geom } ";
 
 // const static std::string QUERY =
-    // "SELECT ?geometry WHERE {"
-    // " ?osm_id <https://www.openstreetmap.org/wiki/Key:building> ?a . "
-    // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry  "
-    // " } ORDER BY ?geometry";
+// "SELECT ?geometry WHERE {"
+// " ?osm_id <https://www.openstreetmap.org/wiki/Key:building> ?a . "
+// " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry  "
+// " } ORDER BY ?geometry";
 
 // const static std::string COUNT_QUERY =
-    // "SELECT (COUNT(?geometry) as ?count) WHERE {"
-    // " ?osm_id <https://www.openstreetmap.org/wiki/Key:building> ?a . "
-    // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry . "
-    // " }";
+// "SELECT (COUNT(?geometry) as ?count) WHERE {"
+// " ?osm_id <https://www.openstreetmap.org/wiki/Key:building> ?a . "
+// " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry . "
+// " }";
 
 // const static std::string QUERY =
-    // "SELECT ?geometry WHERE {"
-    // " ?osm_id <https://www.openstreetmap.org/wiki/Key:highway> ?a . "
-    // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry  "
-    // " } ORDER BY ?geometry";
+// "SELECT ?geometry WHERE {"
+// " ?osm_id <https://www.openstreetmap.org/wiki/Key:highway> ?a . "
+// " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry  "
+// " } ORDER BY ?geometry";
 
 // const static std::string COUNT_QUERY =
-    // "SELECT (COUNT(?geometry) as ?count) WHERE {"
-    // " ?osm_id <https://www.openstreetmap.org/wiki/Key:highway> ?a . "
-    // " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry . "
-    // " }";
+// "SELECT (COUNT(?geometry) as ?count) WHERE {"
+// " ?osm_id <https://www.openstreetmap.org/wiki/Key:highway> ?a . "
+// " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry . "
+// " }";
 
 const static std::string QUERY =
-"SELECT ?geometry WHERE {"
-" ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
-" } ORDER BY ?geometry";
+    "SELECT ?geometry WHERE {"
+    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+    " } ORDER BY ?geometry";
 
 const static std::string COUNT_QUERY =
-"SELECT (COUNT(?osm_id) as ?count) WHERE {"
-" ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
-" }";
+    "SELECT (COUNT(?osm_id) as ?count) WHERE {"
+    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+    " }";
 
 // _____________________________________________________________________________
 size_t GeomCache::writeCb(void* contents, size_t size, size_t nmemb,
@@ -728,19 +728,23 @@ util::geo::FPoint GeomCache::parsePoint(const std::string& a, size_t p) const {
 }
 
 // _____________________________________________________________________________
-std::vector<std::pair<ID_TYPE, ID_TYPE>> GeomCache::getRelObjects(
-    const std::vector<IdMapping>& ids) const {
+std::pair<std::vector<std::pair<ID_TYPE, ID_TYPE>>, size_t>
+GeomCache::getRelObjects(const std::vector<IdMapping>& ids) const {
   // (geom id, result row)
   std::vector<std::pair<ID_TYPE, ID_TYPE>> ret;
 
   // in most cases, the return size will be exactly the size of the ids set
   ret.reserve(ids.size());
 
+  // only counts multi-geometries once
+  size_t numObjects = 0;
+
   size_t i = 0;
   size_t j = 0;
 
   while (i < ids.size() && j < _qidToId.size()) {
     if (ids[i].qid == _qidToId[j].qid) {
+      if (ret.size() == 0 || ret.back().second != ids[i].id) numObjects++;
       ret.push_back({_qidToId[j].id, ids[i].id});
       j++;
     } else if (ids[i].qid < _qidToId[j].qid) {
@@ -768,7 +772,7 @@ std::vector<std::pair<ID_TYPE, ID_TYPE>> GeomCache::getRelObjects(
     }
   }
 
-  return ret;
+  return {ret, numObjects};
 }
 
 // _____________________________________________________________________________

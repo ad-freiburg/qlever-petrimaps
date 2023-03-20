@@ -61,7 +61,7 @@ class GeomCache {
   void parseIds(const char*, size_t size);
   void parseCount(const char*, size_t size);
 
-  std::vector<std::pair<ID_TYPE, ID_TYPE>> getRelObjects(
+  std::pair<std::vector<std::pair<ID_TYPE, ID_TYPE>>, size_t> getRelObjects(
       const std::vector<IdMapping>& id) const;
 
   const std::string& getBackendURL() const { return _backendUrl; }

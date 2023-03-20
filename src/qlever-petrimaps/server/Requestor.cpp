@@ -55,7 +55,9 @@ void Requestor::request(const std::string& qry) {
 
   LOG(INFO) << "[REQUESTOR] Retrieving geoms from cache...";
   // (geom id, result row)
-  _objects = _cache->getRelObjects(reader.ids);
+  const auto& ret = _cache->getRelObjects(reader.ids);
+  _objects = ret.first;
+  _numObjects = ret.second;
   LOG(INFO) << "[REQUESTOR] ... done, got " << _objects.size() << " objects.";
 
   LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";
@@ -417,7 +419,7 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
         double mainX = 0;
         double mainY = 0;
 
-        bool isArea = isMCoord(_cache->getLinePoints()[end - 1].getX());
+        bool isArea = Requestor::isArea(_objects[i].first - I_OFFSET);
 
         util::geo::FLine areaBorder;
 
@@ -439,9 +441,7 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
           util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
                                  mainY * M_COORD_GRANULARITY + cur.getY());
 
-          if (isArea) {
-            areaBorder.push_back(curP);
-          }
+          if (isArea) areaBorder.push_back(curP);
 
           if (s == 0) {
             curPa = curP;
@@ -496,68 +496,43 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
   if (dBest < rad && dBest <= dBestL) {
     return {true,
             nearest,
-            _cache->getPoints()[_objects[nearest].first],
+            geomPointGeoms(nearest),
             requestRow(_objects[nearest].second),
             {},
             {}};
   }
 
   if (dBestL < rad && dBestL <= dBest) {
-    util::geo::FLine fline;
     size_t lineId = _objects[nearestL].first - I_OFFSET;
-    size_t start = _cache->getLine(lineId);
-    size_t end = _cache->getLineEnd(lineId);
 
-    bool isArea = isMCoord(_cache->getLinePoints()[end - 1].getX());
+    bool isArea = Requestor::isArea(lineId);
 
-    double mainX = 0;
-    double mainY = 0;
-
-    size_t gi = 0;
-
-    for (size_t i = start; i < end; i++) {
-      // extract real geom
-      const auto& cur = _cache->getLinePoints()[i];
-
-      if (isMCoord(cur.getX())) {
-        mainX = rmCoord(cur.getX());
-        mainY = rmCoord(cur.getY());
-        continue;
-      }
-
-      // skip bounding box at beginning
-      gi++;
-      if (gi < 3) continue;
-
-      util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
-                             mainY * M_COORD_GRANULARITY + cur.getY());
-      fline.push_back(curP);
-    }
+    const auto& fline = extractLineGeom(lineId);
 
     if (isArea && util::geo::contains(rp, util::geo::FPolygon(fline))) {
       return {true, nearestL,
-              rp,   requestRow(_objects[nearestL].second),
-              {},   util::geo::FPolygon(util::geo::simplify(fline, rad / 10))};
+              {rp}, requestRow(_objects[nearestL].second),
+              {},   geomPolyGeoms(nearestL, rad / 10)};
     } else {
       if (isArea) {
         return {true,
                 nearestL,
-                util::geo::PolyLine<float>(fline).projectOn(rp).p,
+                {util::geo::PolyLine<float>(fline).projectOn(rp).p},
                 requestRow(_objects[nearestL].second),
                 {},
-                util::geo::FPolygon(util::geo::simplify(fline, rad / 10))};
+                geomPolyGeoms(nearestL, rad / 10)};
       } else {
         return {true,
                 nearestL,
-                util::geo::PolyLine<float>(fline).projectOn(rp).p,
+                {util::geo::PolyLine<float>(fline).projectOn(rp).p},
                 requestRow(_objects[nearestL].second),
-                util::geo::simplify(fline, rad / 10),
+                geomLineGeoms(nearestL, rad / 10),
                 {}};
       }
     }
   }
 
-  return {false, 0, {0, 0}, {}, {}, {}};
+  return {false, 0, {{0, 0}}, {}, {}, {}};
 }
 
 // _____________________________________________________________________________
@@ -568,48 +543,124 @@ const ResObj Requestor::getGeom(size_t id, double rad) const {
   auto obj = _objects[id];
 
   if (obj.first >= I_OFFSET) {
-    size_t start = _cache->getLine(obj.first - I_OFFSET);
-    size_t end = _cache->getLineEnd(obj.first - I_OFFSET);
+    size_t lineId = obj.first - I_OFFSET;
 
-    size_t gi = 0;
-
-    double mainX = 0;
-    double mainY = 0;
-
-    bool isArea = isMCoord(_cache->getLinePoints()[end - 1].getX());
-
-    util::geo::FLine fline;
-
-    for (size_t i = start; i < end; i++) {
-      // extract real geom
-      const auto& cur = _cache->getLinePoints()[i];
-
-      if (isMCoord(cur.getX())) {
-        mainX = rmCoord(cur.getX());
-        mainY = rmCoord(cur.getY());
-        continue;
-      }
-
-      // skip bounding box at beginning
-      gi++;
-      if (gi < 3) continue;
-
-      // extract real geometry
-      util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
-                             mainY * M_COORD_GRANULARITY + cur.getY());
-
-      fline.push_back(curP);
-    }
+    bool isArea = Requestor::isArea(lineId);
+    const auto& fline = extractLineGeom(lineId);
 
     if (isArea) {
-      return {
-          true, id, {0, 0},
-          {},   {}, util::geo::FPolygon(util::geo::simplify(fline, rad / 10))};
+      return {true, id, {{0, 0}}, {}, {}, geomPolyGeoms(id, rad / 10)};
     } else {
-      return {true, id, {0, 0}, {}, util::geo::simplify(fline, rad / 10), {}};
+      return {true, id, {{0, 0}}, {}, geomLineGeoms(id, rad / 10), {}};
     }
   } else {
-    auto p = _cache->getPoints()[obj.first];
-    return {true, id, p, {}, {}, {}};
+    return {true, id, geomPointGeoms(id), {}, {}, {}};
   }
+}
+
+// _____________________________________________________________________________
+util::geo::FLine Requestor::extractLineGeom(size_t lineId) const {
+  util::geo::FLine fline;
+
+  size_t start = _cache->getLine(lineId);
+  size_t end = _cache->getLineEnd(lineId);
+
+  double mainX = 0;
+  double mainY = 0;
+
+  size_t gi = 0;
+
+  for (size_t i = start; i < end; i++) {
+    // extract real geom
+    const auto& cur = _cache->getLinePoints()[i];
+
+    if (isMCoord(cur.getX())) {
+      mainX = rmCoord(cur.getX());
+      mainY = rmCoord(cur.getY());
+      continue;
+    }
+
+    // skip bounding box at beginning
+    gi++;
+    if (gi < 3) continue;
+
+    util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
+                           mainY * M_COORD_GRANULARITY + cur.getY());
+    fline.push_back(curP);
+  }
+
+  return fline;
+}
+
+// _____________________________________________________________________________
+bool Requestor::isArea(size_t lineId) const {
+  size_t end = _cache->getLineEnd(lineId);
+
+  return isMCoord(_cache->getLinePoints()[end - 1].getX());
+}
+
+// _____________________________________________________________________________
+util::geo::MultiLine<float> Requestor::geomLineGeoms(size_t oid,
+                                                     double eps) const {
+  std::vector<util::geo::FLine> polys;
+
+  // catch multigeometries
+  for (size_t i = oid;
+       i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
+    if (_objects[oid].first < I_OFFSET) continue;
+    const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
+    polys.push_back(util::geo::simplify(fline, eps));
+  }
+
+  for (size_t i = oid - 1;
+       i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
+    if (_objects[oid].first < I_OFFSET) continue;
+    const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
+    polys.push_back(util::geo::simplify(fline, eps));
+  }
+
+  return polys;
+}
+
+// _____________________________________________________________________________
+util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid) const {
+  std::vector<util::geo::FPoint> points;
+
+  // catch multigeometries
+  for (size_t i = oid;
+       i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
+    if (_objects[oid].first >= I_OFFSET) continue;
+    points.push_back(_cache->getPoints()[_objects[i].first]);
+  }
+
+  for (size_t i = oid - 1;
+       i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
+    if (_objects[oid].first >= I_OFFSET) continue;
+    points.push_back(_cache->getPoints()[_objects[i].first]);
+  }
+
+  return points;
+}
+
+// _____________________________________________________________________________
+util::geo::MultiPolygon<float> Requestor::geomPolyGeoms(size_t oid,
+                                                        double eps) const {
+  std::vector<util::geo::FPolygon> polys;
+
+  // catch multigeometries
+  for (size_t i = oid;
+       i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
+    if (_objects[oid].first < I_OFFSET) continue;
+    const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
+    polys.push_back(util::geo::FPolygon(util::geo::simplify(fline, eps)));
+  }
+
+  for (size_t i = oid - 1;
+       i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
+    if (_objects[oid].first < I_OFFSET) continue;
+    const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
+    polys.push_back(util::geo::FPolygon(util::geo::simplify(fline, eps)));
+  }
+
+  return polys;
 }

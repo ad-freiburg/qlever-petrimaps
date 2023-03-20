@@ -547,7 +547,7 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
 
   std::stringstream json;
 
-  if (res.poly.getOuter().size()) {
+  if (res.poly.size()) {
     GeoJsonOutput out(json);
     out.printLatLng(res.poly, dict);
   } else if (res.line.size()) {
@@ -626,13 +626,13 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
       first = false;
     }
 
-    auto ll = webMercToLatLng<float>(res.pos.getX(), res.pos.getY());
+    auto ll = webMercToLatLng<float>(res.pos.front().getX(), res.pos.front().getY());
 
     json << "]";
     json << std::setprecision(10) << ",\"ll\":{\"lat\" : " << ll.getY()
          << ",\"lng\":" << ll.getX() << "}";
 
-    if (res.poly.getOuter().size()) {
+    if (res.poly.size()) {
       json << ",\"geom\":";
       GeoJsonOutput out(json);
       out.printLatLng(res.poly, {});
@@ -746,7 +746,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   auto bbox = reqor->getPointGrid().getBBox();
   bbox = extendBox(reqor->getLineGrid().getBBox(), bbox);
 
-  size_t numObjs = reqor->getObjects().size();
+  size_t numObjs = reqor->getNumObjects();
 
   auto ll = bbox.getLowerLeft();
   auto ur = bbox.getUpperRight();

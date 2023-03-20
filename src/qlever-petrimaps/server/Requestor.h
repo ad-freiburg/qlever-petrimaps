@@ -8,9 +8,9 @@
 #include <chrono>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string>
-#include <memory>
 #include <vector>
 
 #include "qlever-petrimaps/GeomCache.h"
@@ -23,12 +23,12 @@ namespace petrimaps {
 struct ResObj {
   bool has;
   size_t id;
-  util::geo::FPoint pos;
+  std::vector<util::geo::FPoint> pos;
   std::vector<std::pair<std::string, std::string>> cols;
 
   // the geometry
-  util::geo::FLine line;
-  util::geo::FPolygon poly;
+  std::vector<util::geo::FLine> line;
+  std::vector<util::geo::FPolygon> poly;
 };
 
 struct ReaderCbPair {
@@ -89,6 +89,15 @@ class Requestor {
 
   const ResObj getGeom(size_t id, double rad) const;
 
+  util::geo::MultiPolygon<float> geomPolyGeoms(size_t oid, double eps) const;
+  util::geo::MultiLine<float> geomLineGeoms(size_t oid, double eps) const;
+  util::geo::MultiPoint<float> geomPointGeoms(size_t oid) const;
+
+  util::geo::FLine extractLineGeom(size_t lineId) const;
+  bool isArea(size_t lineId) const;
+
+  size_t getNumObjects() const { return _numObjects; }
+
   std::chrono::time_point<std::chrono::system_clock> createdAt() const {
     return _createdAt;
   }
@@ -115,6 +124,7 @@ class Requestor {
   mutable std::mutex _m;
 
   std::vector<std::pair<ID_TYPE, ID_TYPE>> _objects;
+  size_t _numObjects = 0;
 
   petrimaps::Grid<ID_TYPE, float> _pgrid;
   petrimaps::Grid<ID_TYPE, float> _lgrid;
