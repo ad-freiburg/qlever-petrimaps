@@ -103,6 +103,10 @@ class GeomCache {
                            void* userp);
   static size_t writeCbCount(void* contents, size_t size, size_t nmemb,
                              void* userp);
+  static size_t writeCbString(void* contents, size_t size, size_t nmemb,
+                              void* userp);
+
+  std::string requestIndexHash();
 
   std::string queryUrl(std::string query, size_t offset, size_t limit) const;
 
@@ -112,6 +116,8 @@ class GeomCache {
   static bool pointValid(const util::geo::FPoint& p);
 
   void insertLine(const util::geo::FLine& l, bool isArea);
+
+  std::string indexHashFromDisk(const std::string& fname);
 
   std::vector<util::geo::FPoint> _points;
   std::vector<util::geo::Point<int16_t>> _linePoints;
@@ -141,6 +147,8 @@ class GeomCache {
 
   mutable std::mutex _m;
   bool _ready = false;
+
+  std::string _indexHash;
 };
 }  // namespace petrimaps
 

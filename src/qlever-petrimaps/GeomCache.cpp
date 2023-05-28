@@ -85,6 +85,13 @@ const static std::string COUNT_QUERY_WD =
     "}";
 
 // _____________________________________________________________________________
+size_t GeomCache::writeCbString(void* contents, size_t size, size_t nmemb,
+                                void* userp) {
+  ((std::string*)userp)->append((char*)contents, size * nmemb);
+  return size * nmemb;
+}
+
+// _____________________________________________________________________________
 size_t GeomCache::writeCb(void* contents, size_t size, size_t nmemb,
                           void* userp) {
   size_t realsize = size * nmemb;
@@ -414,6 +421,7 @@ size_t GeomCache::requestSize() {
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
+    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
     // set headers
     struct curl_slist* headers = 0;
@@ -477,6 +485,7 @@ void GeomCache::requestPart(size_t offset) {
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
+    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
     // set headers
     struct curl_slist* headers = 0;
@@ -639,6 +648,7 @@ void GeomCache::requestIds() {
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
+    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
     // set headers
     struct curl_slist* headers = 0;
@@ -907,12 +917,29 @@ util::geo::FBox GeomCache::getLineBBox(size_t lid) const {
 }
 
 // _____________________________________________________________________________
+std::string GeomCache::indexHashFromDisk(const std::string& fname) {
+  std::ifstream f(fname, std::ios::binary);
+  char tmp[100];
+  f.read(tmp, 100);
+  tmp[99] = 0;
+
+  return util::trim(tmp);
+}
+
+// _____________________________________________________________________________
 void GeomCache::fromDisk(const std::string& fname) {
   _points.clear();
   _linePoints.clear();
   _lines.clear();
 
   std::ifstream f(fname, std::ios::binary);
+
+  // load hash
+  char tmp[100];
+  f.read(tmp, 100);
+  tmp[99] = 0;
+
+  _indexHash = util::trim(tmp);
 
   size_t numPoints;
   f.read(reinterpret_cast<char*>(&numPoints), sizeof(size_t));
@@ -941,6 +968,13 @@ void GeomCache::serializeToDisk(const std::string& fname) const {
   std::ofstream f;
   f.open(fname);
 
+  std::string h = _indexHash;
+  h.insert(h.end(), 99 - h.size(), ' ');
+
+  // null byte is 100
+  assert(h.size() == 99);
+  f.write(h.c_str(), 100);
+
   size_t num = _points.size();
   f.write(reinterpret_cast<const char*>(&num), sizeof(size_t));
   f.write(reinterpret_cast<const char*>(&_points[0]),
@@ -963,16 +997,71 @@ void GeomCache::serializeToDisk(const std::string& fname) const {
 }
 
 // _____________________________________________________________________________
+std::string GeomCache::requestIndexHash() {
+  CURLcode res;
+  char errbuf[CURL_ERROR_SIZE];
+  std::string response;
+
+  if (_curl) {
+    std::string url = _backendUrl + "/?cmd=get-index-id";
+    curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbString);
+    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
+    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
+
+    // accept any compression supported
+    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
+    res = curl_easy_perform(_curl);
+
+    if (res != CURLE_OK) {
+      size_t len = strlen(errbuf);
+      if (len > 0) {
+        LOG(ERROR) << "[GEOMCACHE] " << errbuf;
+      } else {
+        LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
+      }
+
+      return "";
+    }
+
+    int httpCode = 0;
+    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    if (httpCode != 200) {
+      LOG(ERROR) << "QLever backend returned status code " << httpCode
+                 << " for index hash.";
+      return "";
+    }
+
+    return response;
+  } else {
+    LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request for index hash.";
+    return "";
+  }
+}
+
+// _____________________________________________________________________________
 void GeomCache::load(const std::string& cacheDir) {
   std::lock_guard<std::mutex> guard(_m);
 
-  if (_ready) return;
+  if (_ready) {
+    auto indexHash = requestIndexHash();
+    if (_indexHash == indexHash) return;
+    LOG(INFO) << "Loaded index hash (" << _indexHash
+              << ") and remote index hash (" << indexHash << ") dont match.";
+    _ready = false;
+  }
 
   if (cacheDir.size()) {
     std::string backend = getBackendURL();
     util::replaceAll(backend, "/", "_");
     std::string cacheFile = cacheDir + "/" + backend;
-    if (access(cacheFile.c_str(), F_OK) != -1) {
+    auto indexHash = requestIndexHash();
+    if (access(cacheFile.c_str(), F_OK) != -1 &&
+        indexHash == indexHashFromDisk(cacheFile)) {
       LOG(INFO) << "Reading from cache file " << cacheFile << "...";
       fromDisk(cacheFile);
       LOG(INFO) << "done ...";
@@ -982,6 +1071,8 @@ void GeomCache::load(const std::string& cacheDir) {
         ss << "No write access to cache dir " << cacheDir;
         throw std::runtime_error(ss.str());
       }
+      _indexHash = requestIndexHash();
+      LOG(INFO) << "Index hash is '" << _indexHash << "'";
       request();
       requestIds();
       LOG(INFO) << "Serializing to cache file " << cacheFile << "...";
@@ -989,6 +1080,8 @@ void GeomCache::load(const std::string& cacheDir) {
       LOG(INFO) << "done ...";
     }
   } else {
+    _indexHash = requestIndexHash();
+    LOG(INFO) << "Index hash is '" << _indexHash << "'";
     request();
     requestIds();
   }
