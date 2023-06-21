@@ -23,51 +23,10 @@ using petrimaps::GeomCache;
 using util::geo::FPoint;
 using util::geo::latLngToWebMerc;
 
-// const static std::string QUERY =
-// "SELECT ?geometry WHERE {"
-// " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry ."
-// "   { ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
-// "<https://www.openstreetmap.org/node> }"
-// " UNION"
-// "     { ?osm_id <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
-// "<https://www.openstreetmap.org/relation> }"
-// " } ORDER BY ?geometry LIMIT "
-// "18446744073709551615";
-//
-// const static std::string QUERY = "PREFIX osmway:"
-// "<https://www.openstreetmap.org/way/>" " PREFIX geo:"
-// "<http://www.opengis.net/ont/geosparql#> " " PREFIX osmrel:"
-// "<https://www.openstreetmap.org/relation/> " " SELECT ?geom WHERE {"
-// "osmway:170488516 geo:hasGeometry ?geom } ";
-
-// const static std::string QUERY =
-// "SELECT ?geometry WHERE {"
-// " ?osm_id <https://www.openstreetmap.org/wiki/Key:building> ?a . "
-// " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry  "
-// " } ORDER BY ?geometry";
-
-// const static std::string COUNT_QUERY =
-// "SELECT (COUNT(?geometry) as ?count) WHERE {"
-// " ?osm_id <https://www.openstreetmap.org/wiki/Key:building> ?a . "
-// " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry . "
-// " }";
-
-// const static std::string QUERY =
-// "SELECT ?geometry WHERE {"
-// " ?osm_id <https://www.openstreetmap.org/wiki/Key:highway> ?a . "
-// " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry  "
-// " } ORDER BY ?geometry";
-
-// const static std::string COUNT_QUERY =
-// "SELECT (COUNT(?geometry) as ?count) WHERE {"
-// " ?osm_id <https://www.openstreetmap.org/wiki/Key:highway> ?a . "
-// " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry . "
-// " }";
-
 const static std::string QUERY =
     "SELECT ?geometry WHERE {"
     " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
-    " } ORDER BY ?geometry";
+    " } INTERNAL SORT BY ?geometry";
 
 const static std::string COUNT_QUERY =
     "SELECT (COUNT(?osm_id) as ?count) WHERE {"
