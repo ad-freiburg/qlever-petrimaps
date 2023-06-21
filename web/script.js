@@ -175,6 +175,8 @@ function loadMap(id, bounds, numObjects) {
 
 	heatmapLayer.on('error', function() {showError(genError);});
 	objectsLayer.on('error', function() {showError(genError);});
+	heatmapLayer.on('load', function() {console.log("Finished loading map!")};);
+	objectsLayer.on('load', function() {console.log("Finished loading map!")};);
 	autoLayer.addTo(map).on('error', function() {showError(genError);});
 
 	layerControl.addBaseLayer(heatmapLayer, "Heatmap");
@@ -205,6 +207,7 @@ function loadMap(id, bounds, numObjects) {
     });
 }
 
+console.log("Fetching results...")
 fetch('query' + window.location.search)
   .then(response => {
       if (!response.ok) return response.text().then(text => {throw new Error(text)});
