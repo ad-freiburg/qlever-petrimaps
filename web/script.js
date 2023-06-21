@@ -175,8 +175,8 @@ function loadMap(id, bounds, numObjects) {
 
 	heatmapLayer.on('error', function() {showError(genError);});
 	objectsLayer.on('error', function() {showError(genError);});
-	heatmapLayer.on('load', function() {console.log("Finished loading map!")};);
-	objectsLayer.on('load', function() {console.log("Finished loading map!")};);
+	heatmapLayer.on('load', function() {console.log("Finished loading map!");});
+	objectsLayer.on('load', function() {console.log("Finished loading map!");});
 	autoLayer.addTo(map).on('error', function() {showError(genError);});
 
 	layerControl.addBaseLayer(heatmapLayer, "Heatmap");
