@@ -700,7 +700,8 @@ util::geo::FLine GeomCache::parseLineString(const std::string& a,
   }
 
   // the 200 is the THRESHOLD from Server.cpp
-  return util::geo::densify(util::geo::simplify(line, 3), 200 * 3);
+  // return util::geo::densify(util::geo::simplify(line, 3), 200 * 3);
+  return util::geo::densify(line, 200 * 3);
 }
 
 // _____________________________________________________________________________
