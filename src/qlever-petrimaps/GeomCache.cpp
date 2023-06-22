@@ -20,6 +20,7 @@
 #include "util/log/Log.h"
 
 using petrimaps::GeomCache;
+using util::geo::DPoint;
 using util::geo::FPoint;
 using util::geo::latLngToWebMerc;
 
@@ -677,15 +678,25 @@ bool GeomCache::pointValid(const FPoint& p) {
 }
 
 // _____________________________________________________________________________
-util::geo::FLine GeomCache::parseLineString(const std::string& a,
+bool GeomCache::pointValid(const DPoint& p) {
+  if (p.getY() > std::numeric_limits<double>::max()) return false;
+  if (p.getY() < std::numeric_limits<double>::lowest()) return false;
+  if (p.getX() > std::numeric_limits<double>::max()) return false;
+  if (p.getX() < std::numeric_limits<double>::lowest()) return false;
+
+  return true;
+}
+
+// _____________________________________________________________________________
+util::geo::DLine GeomCache::parseLineString(const std::string& a,
                                             size_t p) const {
-  util::geo::FLine line;
+  util::geo::DLine line;
   line.reserve(2);
   auto end = memchr(a.c_str() + p, ')', a.size() - p);
   assert(end);
 
   while (true) {
-    auto point = latLngToWebMerc(FPoint(
+    auto point = latLngToWebMerc(DPoint(
         util::atof(a.c_str() + p, 10),
         util::atof(
             static_cast<const char*>(memchr(a.c_str() + p, ' ', a.size() - p)) +
@@ -765,7 +776,7 @@ GeomCache::getRelObjects(const std::vector<IdMapping>& ids) const {
 }
 
 // _____________________________________________________________________________
-void GeomCache::insertLine(const util::geo::FLine& l, bool isArea) {
+void GeomCache::insertLine(const util::geo::DLine& l, bool isArea) {
   // we also add the line's bounding box here to also
   // compress that
   const auto& bbox = util::geo::getBoundingBox(l);
@@ -843,8 +854,8 @@ void GeomCache::insertLine(const util::geo::FLine& l, bool isArea) {
 }
 
 // _____________________________________________________________________________
-util::geo::FBox GeomCache::getLineBBox(size_t lid) const {
-  util::geo::FBox ret;
+util::geo::DBox GeomCache::getLineBBox(size_t lid) const {
+  util::geo::DBox ret;
   size_t start = getLine(lid);
 
   bool s = false;
@@ -861,7 +872,7 @@ util::geo::FBox GeomCache::getLineBBox(size_t lid) const {
       continue;
     }
 
-    util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
+    util::geo::DPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
                            mainY * M_COORD_GRANULARITY + cur.getY());
 
     if (!s) {

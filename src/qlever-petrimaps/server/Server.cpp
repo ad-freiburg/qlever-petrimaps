@@ -9,20 +9,20 @@
 #include <codecvt>
 #include <csignal>
 #include <locale>
+#include <memory>
 #include <parallel/algorithm>
 #include <random>
 #include <set>
 #include <unordered_set>
 #include <vector>
-#include <memory>
 
 #include "3rdparty/heatmap.h"
 #include "3rdparty/colorschemes/Spectral.h"
 #include "qlever-petrimaps/build.h"
-#include "qlever-petrimaps/style.h"
 #include "qlever-petrimaps/index.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "qlever-petrimaps/server/Server.h"
+#include "qlever-petrimaps/style.h"
 #include "util/Misc.h"
 #include "util/String.h"
 #include "util/geo/Geo.h"
@@ -37,8 +37,6 @@ using util::geo::densify;
 using util::geo::DLine;
 using util::geo::DPoint;
 using util::geo::extendBox;
-using util::geo::FLine;
-using util::geo::FPoint;
 using util::geo::intersection;
 using util::geo::intersects;
 using util::geo::LineSegment;
@@ -89,8 +87,9 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
       a.params["Cache-Control"] = "public, max-age=10000";
     } else if (cmd == "/build.css") {
       a = util::http::Answer(
-          "200 OK", std::string(build_css, build_css + sizeof build_css /
-                                                         sizeof build_css[0]));
+          "200 OK",
+          std::string(build_css,
+                      build_css + sizeof build_css / sizeof build_css[0]));
       a.params["Content-Type"] = "text/css; charset=utf-8";
       a.params["Cache-Control"] = "public, max-age=10000";
     } else if (cmd == "/heatmap") {
@@ -151,15 +150,16 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   LOG(INFO) << "[SERVER] Begin heat for session " << id;
 
-  float x1 = std::atof(box[0].c_str());
-  float y1 = std::atof(box[1].c_str());
-  float x2 = std::atof(box[2].c_str());
-  float y2 = std::atof(box[3].c_str());
+  double x1 = std::atof(box[0].c_str());
+  double y1 = std::atof(box[1].c_str());
+  double x2 = std::atof(box[2].c_str());
+  double y2 = std::atof(box[3].c_str());
 
   double mercW = fabs(x2 - x1);
   double mercH = fabs(y2 - y1);
 
-  auto bbox = FBox({x1, y1}, {x2, y2});
+  auto bbox = DBox({x1, y1}, {x2, y2});
+  auto fbbox = FBox({x1, y1}, {x2, y2});
 
   int w = atoi(pars.find("width")->second.c_str());
   int h = atoi(pars.find("height")->second.c_str());
@@ -180,24 +180,24 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   LOG(INFO) << "[SERVER] Num virt cells: " << subCellSize * subCellSize;
 
   std::vector<std::vector<uint32_t>> points(NUM_THREADS);
-  std::vector<std::vector<float>> points2(NUM_THREADS);
+  std::vector<std::vector<double>> points2(NUM_THREADS);
 
   // initialize vectors to 0
   for (size_t i = 0; i < NUM_THREADS; i++) points2[i].resize(w * h, 0);
 
   double THRESHOLD = 200;
 
-  if (intersects(r->getPointGrid().getBBox(), bbox)) {
+  if (intersects(r->getPointGrid().getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display points...";
     if (res < THRESHOLD) {
       std::vector<ID_TYPE> ret;
 
       // duplicates are not possible with points
-      r->getPointGrid().get(bbox, &ret);
+      r->getPointGrid().get(fbbox, &ret);
 
       for (size_t i : ret) {
         const auto& p = r->getPoint(r->getObjects()[i].first);
-        if (!contains(p, bbox)) continue;
+        if (!contains(p, fbbox)) continue;
 
         int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
         int py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
@@ -206,7 +206,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
       }
     } else {
       // they intersect, we checked this above
-      auto iBox = intersection(r->getPointGrid().getBBox(), bbox);
+      auto iBox = intersection(r->getPointGrid().getBBox(), fbbox);
       const auto& grid = r->getPointGrid();
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
@@ -254,12 +254,12 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   const auto& lgrid = r->getLineGrid();
 
-  if (intersects(lgrid.getBBox(), bbox)) {
+  if (intersects(lgrid.getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display lines...";
     if (res < THRESHOLD) {
       std::vector<ID_TYPE> ret;
 
-      lgrid.get(bbox, &ret);
+      lgrid.get(fbbox, &ret);
 
       // sort to avoid duplicates
       __gnu_parallel::sort(ret.begin(), ret.end());
@@ -278,7 +278,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         // ___________________________________
         bool isects = false;
 
-        FPoint curPa, curPb;
+        DPoint curPa, curPb;
         int s = 0;
 
         double mainX = 0;
@@ -298,7 +298,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           if (gi < 3) continue;
 
           // extract real geometry
-          const FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
+          const DPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
                             mainY * M_COORD_GRANULARITY + cur.getY());
           if (s == 0) {
             curPa = curP;
@@ -310,7 +310,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
           if (s == 2) {
             s = 1;
-            if (intersects(LineSegment<float>(curPa, curPb), bbox)) {
+            if (intersects(LineSegment<double>(curPa, curPb), bbox)) {
               isects = true;
               break;
             }
@@ -364,7 +364,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
       }
     } else {
       const auto& lpgrid = r->getLinePointGrid();
-      auto iBox = intersection(lpgrid.getBBox(), bbox);
+      auto iBox = intersection(lpgrid.getBBox(), fbbox);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t x = lpgrid.getCellXFromX(iBox.getLowerLeft().getX());
@@ -626,7 +626,8 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
       first = false;
     }
 
-    auto ll = webMercToLatLng<float>(res.pos.front().getX(), res.pos.front().getY());
+    auto ll =
+        webMercToLatLng<float>(res.pos.front().getX(), res.pos.front().getY());
 
     json << "]";
     json << std::setprecision(10) << ",\"ll\":{\"lat\" : " << ll.getY()
@@ -759,8 +760,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   std::stringstream json;
   json << std::fixed << "{\"qid\" : \"" << sessionId << "\",\"bounds\":[["
        << llX << "," << llY << "],[" << urX << "," << urY << "]]"
-       << ",\"numobjects\":" << numObjs
-       << "}";
+       << ",\"numobjects\":" << numObjs << "}";
 
   auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";
@@ -987,28 +987,28 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
           if (wkt.size()) wkt[0] = ' ';  // drop " at beginning
 
           try {
-            auto geom = util::geo::polygonFromWKT<float>(wkt);
+            auto geom = util::geo::polygonFromWKT<double>(wkt);
             if (first) ss << ",";
             geoJsonOut.print(geom, dict);
             first = true;
           } catch (std::runtime_error& e) {
           }
           try {
-            auto geom = util::geo::multiPolygonFromWKT<float>(wkt);
+            auto geom = util::geo::multiPolygonFromWKT<double>(wkt);
             if (first) ss << ",";
             geoJsonOut.print(geom, dict);
             first = true;
           } catch (std::runtime_error& e) {
           }
           try {
-            auto geom = util::geo::pointFromWKT<float>(wkt);
+            auto geom = util::geo::pointFromWKT<double>(wkt);
             if (first) ss << ",";
             geoJsonOut.print(geom, dict);
             first = true;
           } catch (std::runtime_error& e) {
           }
           try {
-            auto geom = util::geo::lineFromWKT<float>(wkt);
+            auto geom = util::geo::lineFromWKT<double>(wkt);
             if (first) ss << ",";
             geoJsonOut.print(geom, dict);
             first = true;
@@ -1050,8 +1050,9 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
 }
 
 // _____________________________________________________________________________
-void Server::drawPoint(std::vector<uint32_t>& points, std::vector<float>& points2,
-                       int px, int py, int w, int h, MapStyle style) const {
+void Server::drawPoint(std::vector<uint32_t>& points,
+                       std::vector<double>& points2, int px, int py, int w,
+                       int h, MapStyle style) const {
   if (style == OBJECTS) {
     // for the raw style, increase the size of the points a bit
     for (int x = px - 2; x < px + 2; x++) {

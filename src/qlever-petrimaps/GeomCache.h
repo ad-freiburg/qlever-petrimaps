@@ -77,7 +77,7 @@ class GeomCache {
   util::geo::FBox getPointBBox(size_t id) const {
     return util::geo::getBoundingBox(_points[id]);
   }
-  util::geo::FBox getLineBBox(size_t id) const;
+  util::geo::DBox getLineBBox(size_t id) const;
 
   void serializeToDisk(const std::string& fname) const;
 
@@ -110,12 +110,13 @@ class GeomCache {
 
   std::string queryUrl(std::string query, size_t offset, size_t limit) const;
 
-  util::geo::FLine parseLineString(const std::string& a, size_t p) const;
+  util::geo::DLine parseLineString(const std::string& a, size_t p) const;
   util::geo::FPoint parsePoint(const std::string& a, size_t p) const;
 
   static bool pointValid(const util::geo::FPoint& p);
+  static bool pointValid(const util::geo::DPoint& p);
 
-  void insertLine(const util::geo::FLine& l, bool isArea);
+  void insertLine(const util::geo::DLine& l, bool isArea);
 
   std::string indexHashFromDisk(const std::string& fname);
 

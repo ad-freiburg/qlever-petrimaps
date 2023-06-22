@@ -65,9 +65,10 @@ void Requestor::request(const std::string& qry) {
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
   std::vector<util::geo::FBox> pointBoxes(NUM_THREADS);
-  std::vector<util::geo::FBox> lineBoxes(NUM_THREADS);
+  std::vector<util::geo::DBox> lineBoxes(NUM_THREADS);
   std::vector<size_t> numLines(NUM_THREADS, 0);
-  util::geo::FBox pointBbox, lineBbox;
+  util::geo::FBox pointBbox;
+  util::geo::DBox lineBbox;
   size_t numLinesAll = 0;
 
   size_t batch = ceil(static_cast<double>(_objects.size()) / NUM_THREADS);
@@ -141,10 +142,14 @@ void Requestor::request(const std::string& qry) {
   checkMem(8 * (lxWidth * lyHeight), _maxMemory);
   checkMem(8 * (lxWidth * lyHeight), _maxMemory);
 
+  util::geo::FBox fLineBbox = {
+      {lineBbox.getLowerLeft().getX(), lineBbox.getLowerLeft().getY()},
+      {lineBbox.getUpperRight().getX(), lineBbox.getUpperRight().getY()}};
+
   _pgrid = petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, pointBbox);
-  _lgrid = petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, lineBbox);
+  _lgrid = petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, fLineBbox);
   _lpgrid = petrimaps::Grid<util::geo::Point<uint8_t>, float>(
-      GRID_SIZE, GRID_SIZE, lineBbox);
+      GRID_SIZE, GRID_SIZE, fLineBbox);
 
   std::exception_ptr ePtr;
 
@@ -180,7 +185,11 @@ void Requestor::request(const std::string& qry) {
         if (l.first >= I_OFFSET &&
             l.first < std::numeric_limits<ID_TYPE>::max()) {
           auto geomId = l.first - I_OFFSET;
-          _lgrid.add(_cache->getLineBBox(geomId), i);
+          auto box = _cache->getLineBBox(geomId);
+          util::geo::FBox fbox = {
+              {box.getLowerLeft().getX(), box.getLowerLeft().getY()},
+              {box.getUpperRight().getX(), box.getUpperRight().getY()}};
+          _lgrid.add(fbox, i);
         }
         i++;
 
@@ -351,11 +360,14 @@ std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
 }
 
 // _____________________________________________________________________________
-const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
+const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad) const {
   if (!_cache->ready()) {
     throw std::runtime_error("Geom cache not ready");
   }
   auto box = pad(getBoundingBox(rp), rad);
+  auto fbox = pad(getBoundingBox(util::geo::FPoint(rp.getX(), rp.getY())), rad);
+
+  auto frp = util::geo::FPoint{rp.getX(), rp.getY()};
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
@@ -376,15 +388,15 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
       // points
 
       std::vector<ID_TYPE> ret;
-      _pgrid.get(box, &ret);
+      _pgrid.get(fbox, &ret);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t idx = 0; idx < ret.size(); idx++) {
         const auto& i = ret[idx];
         auto p = _cache->getPoints()[_objects[i].first];
-        if (!util::geo::contains(p, box)) continue;
+        if (!util::geo::contains(p, fbox)) continue;
 
-        double d = util::geo::dist(p, rp);
+        double d = util::geo::dist(p, frp);
 
         if (d < dBestVec[omp_get_thread_num()]) {
           nearestVec[omp_get_thread_num()] = i;
@@ -397,7 +409,7 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
     {
       // lines
       std::vector<ID_TYPE> retL;
-      _lgrid.get(box, &retL);
+      _lgrid.get(fbox, &retL);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t idx = 0; idx < retL.size(); idx++) {
@@ -411,7 +423,7 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
         // TODO _____________________ own function
         double d = std::numeric_limits<double>::infinity();
 
-        util::geo::FPoint curPa, curPb;
+        util::geo::DPoint curPa, curPb;
         int s = 0;
 
         size_t gi = 0;
@@ -421,7 +433,7 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
 
         bool isArea = Requestor::isArea(_objects[i].first - I_OFFSET);
 
-        util::geo::FLine areaBorder;
+        util::geo::DLine areaBorder;
 
         for (size_t i = start; i < end; i++) {
           // extract real geom
@@ -438,7 +450,7 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
           if (gi < 3) continue;
 
           // extract real geometry
-          util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
+          util::geo::DPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
                                  mainY * M_COORD_GRANULARITY + cur.getY());
 
           if (isArea) areaBorder.push_back(curP);
@@ -465,7 +477,7 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
         // TODO _____________________ own function
 
         if (isArea) {
-          if (util::geo::contains(rp, util::geo::FPolygon(areaBorder))) {
+          if (util::geo::contains(rp, util::geo::DPolygon(areaBorder))) {
             // set it to rad/4 - this allows selecting smaller objects
             // inside the polgon
             d = rad / 4;
@@ -507,24 +519,25 @@ const ResObj Requestor::getNearest(util::geo::FPoint rp, double rad) const {
 
     bool isArea = Requestor::isArea(lineId);
 
-    const auto& fline = extractLineGeom(lineId);
+    const auto& dline = extractLineGeom(lineId);
 
-    if (isArea && util::geo::contains(rp, util::geo::FPolygon(fline))) {
-      return {true, nearestL,
-              {rp}, requestRow(_objects[nearestL].second),
-              {},   geomPolyGeoms(nearestL, rad / 10)};
+    if (isArea && util::geo::contains(rp, util::geo::DPolygon(dline))) {
+      return {true,  nearestL,
+              {frp}, requestRow(_objects[nearestL].second),
+              {},    geomPolyGeoms(nearestL, rad / 10)};
     } else {
       if (isArea) {
-        return {true,
-                nearestL,
-                {util::geo::PolyLine<float>(fline).projectOn(rp).p},
-                requestRow(_objects[nearestL].second),
-                {},
-                geomPolyGeoms(nearestL, rad / 10)};
+        auto p = util::geo::PolyLine<double>(dline).projectOn(rp).p;
+        auto fp = util::geo::FPoint(p.getX(), p.getY());
+        return {true, nearestL,
+                {fp}, requestRow(_objects[nearestL].second),
+                {},   geomPolyGeoms(nearestL, rad / 10)};
       } else {
+        auto p = util::geo::PolyLine<double>(dline).projectOn(rp).p;
+        auto fp = util::geo::FPoint(p.getX(), p.getY());
         return {true,
                 nearestL,
-                {util::geo::PolyLine<float>(fline).projectOn(rp).p},
+                {fp},
                 requestRow(_objects[nearestL].second),
                 geomLineGeoms(nearestL, rad / 10),
                 {}};
@@ -559,8 +572,8 @@ const ResObj Requestor::getGeom(size_t id, double rad) const {
 }
 
 // _____________________________________________________________________________
-util::geo::FLine Requestor::extractLineGeom(size_t lineId) const {
-  util::geo::FLine fline;
+util::geo::DLine Requestor::extractLineGeom(size_t lineId) const {
+  util::geo::DLine dline;
 
   size_t start = _cache->getLine(lineId);
   size_t end = _cache->getLineEnd(lineId);
@@ -584,12 +597,12 @@ util::geo::FLine Requestor::extractLineGeom(size_t lineId) const {
     gi++;
     if (gi < 3) continue;
 
-    util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
+    util::geo::DPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
                            mainY * M_COORD_GRANULARITY + cur.getY());
-    fline.push_back(curP);
+    dline.push_back(curP);
   }
 
-  return fline;
+  return dline;
 }
 
 // _____________________________________________________________________________
@@ -600,9 +613,9 @@ bool Requestor::isArea(size_t lineId) const {
 }
 
 // _____________________________________________________________________________
-util::geo::MultiLine<float> Requestor::geomLineGeoms(size_t oid,
-                                                     double eps) const {
-  std::vector<util::geo::FLine> polys;
+util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t oid,
+                                                      double eps) const {
+  std::vector<util::geo::DLine> polys;
 
   // catch multigeometries
   for (size_t i = oid;
@@ -643,23 +656,23 @@ util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid) const {
 }
 
 // _____________________________________________________________________________
-util::geo::MultiPolygon<float> Requestor::geomPolyGeoms(size_t oid,
-                                                        double eps) const {
-  std::vector<util::geo::FPolygon> polys;
+util::geo::MultiPolygon<double> Requestor::geomPolyGeoms(size_t oid,
+                                                         double eps) const {
+  std::vector<util::geo::DPolygon> polys;
 
   // catch multigeometries
   for (size_t i = oid;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
     if (_objects[oid].first < I_OFFSET) continue;
-    const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
-    polys.push_back(util::geo::FPolygon(util::geo::simplify(fline, eps)));
+    const auto& dline = extractLineGeom(_objects[i].first - I_OFFSET);
+    polys.push_back(util::geo::DPolygon(util::geo::simplify(dline, eps)));
   }
 
   for (size_t i = oid - 1;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
     if (_objects[oid].first < I_OFFSET) continue;
-    const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
-    polys.push_back(util::geo::FPolygon(util::geo::simplify(fline, eps)));
+    const auto& dline = extractLineGeom(_objects[i].first - I_OFFSET);
+    polys.push_back(util::geo::DPolygon(util::geo::simplify(dline, eps)));
   }
 
   return polys;

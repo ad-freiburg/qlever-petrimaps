@@ -27,8 +27,8 @@ struct ResObj {
   std::vector<std::pair<std::string, std::string>> cols;
 
   // the geometry
-  std::vector<util::geo::FLine> line;
-  std::vector<util::geo::FPolygon> poly;
+  std::vector<util::geo::DLine> line;
+  std::vector<util::geo::DPolygon> poly;
 };
 
 struct ReaderCbPair {
@@ -81,19 +81,19 @@ class Requestor {
     return _cache->getLinePoints();
   }
 
-  util::geo::FBox getLineBBox(ID_TYPE id) const {
+  util::geo::DBox getLineBBox(ID_TYPE id) const {
     return _cache->getLineBBox(id);
   }
 
-  const ResObj getNearest(util::geo::FPoint p, double rad) const;
+  const ResObj getNearest(util::geo::DPoint p, double rad) const;
 
   const ResObj getGeom(size_t id, double rad) const;
 
-  util::geo::MultiPolygon<float> geomPolyGeoms(size_t oid, double eps) const;
-  util::geo::MultiLine<float> geomLineGeoms(size_t oid, double eps) const;
+  util::geo::MultiPolygon<double> geomPolyGeoms(size_t oid, double eps) const;
+  util::geo::MultiLine<double> geomLineGeoms(size_t oid, double eps) const;
   util::geo::MultiPoint<float> geomPointGeoms(size_t oid) const;
 
-  util::geo::FLine extractLineGeom(size_t lineId) const;
+  util::geo::DLine extractLineGeom(size_t lineId) const;
   bool isArea(size_t lineId) const;
 
   size_t getNumObjects() const { return _numObjects; }

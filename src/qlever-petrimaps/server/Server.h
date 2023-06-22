@@ -6,10 +6,10 @@
 #define PETRIMAPS_SERVER_SERVER_H_
 
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
-#include <memory>
 
 #include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/server/Requestor.h"
@@ -51,8 +51,8 @@ class Server : public util::http::Handler {
 
   static void writePNG(const unsigned char* data, size_t w, size_t h, int sock);
 
-  void drawPoint(std::vector<uint32_t>& points, std::vector<float>& points2,
-                         int px, int py, int w, int h, MapStyle style) const;
+  void drawPoint(std::vector<uint32_t>& points, std::vector<double>& points2,
+                 int px, int py, int w, int h, MapStyle style) const;
 
   size_t _maxMemory;
 
