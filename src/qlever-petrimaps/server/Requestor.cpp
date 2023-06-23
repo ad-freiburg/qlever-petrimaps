@@ -238,8 +238,8 @@ void Requestor::request(const std::string& qry) {
             if (++gi < 3) continue;
 
             // extract real geometry
-            util::geo::FPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
-                                   mainY * M_COORD_GRANULARITY + cur.getY());
+            util::geo::FPoint curP((mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
+                                   (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
 
             size_t cellX = _lpgrid.getCellXFromX(curP.getX());
             size_t cellY = _lpgrid.getCellYFromY(curP.getY());
@@ -450,8 +450,8 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad) const {
           if (gi < 3) continue;
 
           // extract real geometry
-          util::geo::DPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
-                                 mainY * M_COORD_GRANULARITY + cur.getY());
+          util::geo::DPoint curP((mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
+                                 (mainY * M_COORD_GRANULARITY + cur.getY())/ 10.0);
 
           if (isArea) areaBorder.push_back(curP);
 
@@ -597,8 +597,8 @@ util::geo::DLine Requestor::extractLineGeom(size_t lineId) const {
     gi++;
     if (gi < 3) continue;
 
-    util::geo::DPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
-                           mainY * M_COORD_GRANULARITY + cur.getY());
+    util::geo::DPoint curP((mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
+                           (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
     dline.push_back(curP);
   }
 

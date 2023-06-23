@@ -781,8 +781,8 @@ void GeomCache::insertLine(const util::geo::DLine& l, bool isArea) {
   // compress that
   const auto& bbox = util::geo::getBoundingBox(l);
 
-  int16_t mainX = bbox.getLowerLeft().getX() / M_COORD_GRANULARITY;
-  int16_t mainY = bbox.getLowerLeft().getY() / M_COORD_GRANULARITY;
+  int16_t mainX = (bbox.getLowerLeft().getX() * 10.0) / M_COORD_GRANULARITY;
+  int16_t mainY = (bbox.getLowerLeft().getY() * 10.0) / M_COORD_GRANULARITY;
 
   if (mainX != 0 || mainY != 0) {
     util::geo::Point<int16_t> p{mCoord(mainX), mCoord(mainY)};
@@ -792,8 +792,10 @@ void GeomCache::insertLine(const util::geo::DLine& l, bool isArea) {
   }
 
   // add bounding box lower left
-  int16_t minorXLoc = bbox.getLowerLeft().getX() - mainX * M_COORD_GRANULARITY;
-  int16_t minorYLoc = bbox.getLowerLeft().getY() - mainY * M_COORD_GRANULARITY;
+  int16_t minorXLoc =
+      (bbox.getLowerLeft().getX() * 10.0) - mainX * M_COORD_GRANULARITY;
+  int16_t minorYLoc =
+      (bbox.getLowerLeft().getY() * 10.0) - mainY * M_COORD_GRANULARITY;
 
   util::geo::Point<int16_t> p{minorXLoc, minorYLoc};
   _linePointsF.write(reinterpret_cast<const char*>(&p),
@@ -801,10 +803,12 @@ void GeomCache::insertLine(const util::geo::DLine& l, bool isArea) {
   _linePointsFSize++;
 
   // add bounding box upper left
-  int16_t mainXLoc = bbox.getUpperRight().getX() / M_COORD_GRANULARITY;
-  int16_t mainYLoc = bbox.getUpperRight().getY() / M_COORD_GRANULARITY;
-  minorXLoc = bbox.getUpperRight().getX() - mainXLoc * M_COORD_GRANULARITY;
-  minorYLoc = bbox.getUpperRight().getY() - mainYLoc * M_COORD_GRANULARITY;
+  int16_t mainXLoc = (bbox.getUpperRight().getX() * 10.0) / M_COORD_GRANULARITY;
+  int16_t mainYLoc = (bbox.getUpperRight().getY() * 10.0) / M_COORD_GRANULARITY;
+  minorXLoc =
+      (bbox.getUpperRight().getX() * 10.0) - mainXLoc * M_COORD_GRANULARITY;
+  minorYLoc =
+      (bbox.getUpperRight().getY() * 10.0) - mainYLoc * M_COORD_GRANULARITY;
   if (mainXLoc != mainX || mainYLoc != mainY) {
     mainX = mainXLoc;
     mainY = mainYLoc;
@@ -821,8 +825,8 @@ void GeomCache::insertLine(const util::geo::DLine& l, bool isArea) {
 
   // add line points
   for (const auto& p : l) {
-    mainXLoc = p.getX() / M_COORD_GRANULARITY;
-    mainYLoc = p.getY() / M_COORD_GRANULARITY;
+    mainXLoc = (p.getX() * 10.0) / M_COORD_GRANULARITY;
+    mainYLoc = (p.getY() * 10.0) / M_COORD_GRANULARITY;
 
     if (mainXLoc != mainX || mainYLoc != mainY) {
       mainX = mainXLoc;
@@ -834,8 +838,8 @@ void GeomCache::insertLine(const util::geo::DLine& l, bool isArea) {
       _linePointsFSize++;
     }
 
-    int16_t minorXLoc = p.getX() - mainXLoc * M_COORD_GRANULARITY;
-    int16_t minorYLoc = p.getY() - mainYLoc * M_COORD_GRANULARITY;
+    int16_t minorXLoc = (p.getX() * 10.0) - mainXLoc * M_COORD_GRANULARITY;
+    int16_t minorYLoc = (p.getY() * 10.0) - mainYLoc * M_COORD_GRANULARITY;
 
     util::geo::Point<int16_t> pp{minorXLoc, minorYLoc};
     _linePointsF.write(reinterpret_cast<const char*>(&pp),
@@ -872,8 +876,8 @@ util::geo::DBox GeomCache::getLineBBox(size_t lid) const {
       continue;
     }
 
-    util::geo::DPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
-                           mainY * M_COORD_GRANULARITY + cur.getY());
+    util::geo::DPoint curP((mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
+                           (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
 
     if (!s) {
       ret.setLowerLeft(curP);

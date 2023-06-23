@@ -22,8 +22,10 @@
 const static ID_TYPE I_OFFSET = 500000000;
 const static size_t MAXROWS = 18446744073709551615u;
 
-const static int16_t M_COORD_GRANULARITY = 1000;
-const static int16_t M_COORD_OFFSET = M_COORD_GRANULARITY;
+// major coordinates will fit into 2^15, as coordinates go from
+// -200375083.427892 to +200375083.427892
+const static int16_t M_COORD_GRANULARITY = 12230;
+const static int16_t M_COORD_OFFSET = 16384;
 
 namespace petrimaps {
 

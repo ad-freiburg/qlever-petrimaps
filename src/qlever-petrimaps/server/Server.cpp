@@ -298,8 +298,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           if (gi < 3) continue;
 
           // extract real geometry
-          const DPoint curP(mainX * M_COORD_GRANULARITY + cur.getX(),
-                            mainY * M_COORD_GRANULARITY + cur.getY());
+          const DPoint curP((mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
+                            (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
           if (s == 0) {
             curPa = curP;
             s++;
@@ -343,8 +343,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           gi++;
           if (gi < 3) continue;
 
-          DPoint p(mainX * M_COORD_GRANULARITY + cur.getX(),
-                   mainY * M_COORD_GRANULARITY + cur.getY());
+          DPoint p((mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
+                   (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
           extrLine.push_back(p);
         }
 
