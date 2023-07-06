@@ -940,6 +940,7 @@ inline double dist(const Point<T>& p1, const Point<T>& p2) {
 template <typename T>
 inline Point<T> pointFromWKT(std::string wkt) {
   wkt = util::normalizeWhiteSpace(util::trim(wkt));
+  for (size_t i = 0; i < 6;i++) wkt[i] = toupper(wkt[i]);
   if (wkt.rfind("POINT") == 0 || wkt.rfind("MPOINT") == 0) {
     size_t b = wkt.find("(") + 1;
     size_t e = wkt.find(")", b);
@@ -957,6 +958,7 @@ inline Point<T> pointFromWKT(std::string wkt) {
 template <typename T>
 inline Line<T> lineFromWKT(std::string wkt) {
   wkt = util::normalizeWhiteSpace(util::trim(wkt));
+  for (size_t i = 0; i < 11;i++) wkt[i] = toupper(wkt[i]);
   if (wkt.rfind("LINESTRING") == 0 || wkt.rfind("MLINESTRING") == 0) {
     Line<T> ret;
     size_t b = wkt.find("(") + 1;
@@ -979,6 +981,7 @@ inline Line<T> lineFromWKT(std::string wkt) {
 template <typename T>
 inline MultiPolygon<T> multiPolygonFromWKT(std::string wkt) {
   wkt = util::normalizeWhiteSpace(util::trim(wkt));
+  for (size_t i = 0; i < 13;i++) wkt[i] = toupper(wkt[i]);
   util::replaceAll(wkt, "))", ")!");
   util::replaceAll(wkt, ") )", ")!");
   if (wkt.rfind("MULTIPOLYGON") == 0 || wkt.rfind("MMULTIPOLYGON") == 0) {
@@ -1028,6 +1031,7 @@ inline MultiPolygon<T> multiPolygonFromWKT(std::string wkt) {
 template <typename T>
 inline Polygon<T> polygonFromWKT(std::string wkt) {
   wkt = util::normalizeWhiteSpace(util::trim(wkt));
+  for (size_t i = 0; i < 8;i++) wkt[i] = toupper(wkt[i]);
   if (wkt.rfind("POLYGON") == 0 || wkt.rfind("MPOLYGON") == 0) {
     Polygon<T> ret;
     size_t b = wkt.find("(") + 1;

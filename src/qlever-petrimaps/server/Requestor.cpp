@@ -36,6 +36,8 @@ void Requestor::request(const std::string& qry) {
   _query = qry;
   _ready = false;
   _objects.clear();
+  _clusterObjects.clear();
+
 
   RequestReader reader(_cache->getBackendURL(), _maxMemory);
   _query = qry;
@@ -158,11 +160,34 @@ void Requestor::request(const std::string& qry) {
 #pragma omp section
     {
       size_t i = 0;
-      for (const auto& p : _objects) {
+      size_t j = _objects.size();
+
+      for (size_t k = 0; k < _objects.size(); k++) {
+        const auto& p = _objects[k];
         auto geomId = p.first;
-        if (geomId < I_OFFSET) {
+        if (geomId >= I_OFFSET) continue;
+
+        size_t clusterI = 0;
+        // cluster if they have same geometry, dont do for multigeoms
+        while (k < _objects.size() - 1 && geomId == _objects[k+1].first && p.second != _objects[k+1].second) {
+          clusterI++;
+
+          k++;
+          i++;
+        }
+
+        if (clusterI > 0) {
+          for (size_t m = 0; m < clusterI; m++) {
+            const auto& p = _objects[k - m];
+            auto geomId = p.first;
+            _pgrid.add(_cache->getPoints()[geomId], j);
+            _clusterObjects.push_back({k - m, {m, clusterI}});
+            j++;
+          }
+        } else {
           _pgrid.add(_cache->getPoints()[geomId], i);
         }
+
         i++;
 
         // every 100000 objects, check memory...
@@ -360,7 +385,7 @@ std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
 }
 
 // _____________________________________________________________________________
-const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad) const {
+const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res) const {
   if (!_cache->ready()) {
     throw std::runtime_error("Geom cache not ready");
   }
@@ -392,8 +417,16 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad) const {
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t idx = 0; idx < ret.size(); idx++) {
-        const auto& i = ret[idx];
-        auto p = _cache->getPoints()[_objects[i].first];
+        auto i = ret[idx];
+        util::geo::FPoint p;
+        if (i >= _objects.size()) {
+          size_t cid = i - _objects.size();
+          p = clusterGeom(cid, res);
+
+        } else {
+          p = _cache->getPoints()[_objects[i].first];
+        }
+
         if (!util::geo::contains(p, fbox)) continue;
 
         double d = util::geo::dist(p, frp);
@@ -506,10 +539,13 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad) const {
   }
 
   if (dBest < rad && dBest <= dBestL) {
+    size_t row = 0;
+    if (nearest >= _objects.size()) row = _objects[_clusterObjects[nearest - _objects.size()].first].second;
+    else row = _objects[nearest].second;
     return {true,
-            nearest,
-            geomPointGeoms(nearest),
-            requestRow(_objects[nearest].second),
+            nearest >= _objects.size() ? nearest - _objects.size() : nearest,
+            geomPointGeoms(nearest, res),
+            requestRow(row),
             {},
             {}};
   }
@@ -637,7 +673,20 @@ util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t oid,
 
 // _____________________________________________________________________________
 util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid) const {
+  return geomPointGeoms(oid, -1);
+}
+
+// _____________________________________________________________________________
+util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid, double res) const {
   std::vector<util::geo::FPoint> points;
+
+  if (!(res < 0) && oid >= _objects.size()) {
+    return {clusterGeom(oid - _objects.size(), res)};
+  }
+
+  if (oid >= _objects.size()) {
+    oid = _clusterObjects[oid - _objects.size()].first;
+  }
 
   // catch multigeometries
   for (size_t i = oid;
@@ -676,4 +725,35 @@ util::geo::MultiPolygon<double> Requestor::geomPolyGeoms(size_t oid,
   }
 
   return polys;
+}
+
+// _____________________________________________________________________________
+util::geo::FPoint Requestor::clusterGeom(size_t cid, double res) const {
+    size_t oid = _clusterObjects[cid].first;
+    const auto& pp = _cache->getPoints()[_objects[oid].first];
+
+    if (res < 0) return {pp};
+
+    size_t num = _clusterObjects[cid].second.first;
+    size_t tot = _clusterObjects[cid].second.second;
+
+    if (tot > 50) {
+      float rad = 2 * 50;
+
+      int row = num / 50;
+
+      float x = pp.getX() + (rad + row * 13) * res * sin((num - 50 * row)  * (2 * 3.14 / 50));
+      float y = pp.getY() + (rad + row * 13) * res * cos((num - 50 * row) * (2 * 3.14 / 50));
+
+      return util::geo::FPoint{x, y};
+    } else {
+      float rad = 2 * tot;
+
+      float x = pp.getX() + rad * res * sin(num * (2 * 3.14 / tot));
+      float y = pp.getY() + rad * res * cos(num * (2 * 3.14 / tot));
+
+      return util::geo::FPoint{x, y};
+
+    }
+
 }

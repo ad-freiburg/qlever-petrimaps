@@ -215,8 +215,11 @@ unsigned char* heatmap_render_saturated_to(const heatmap_t* h, const heatmap_col
              */
             const size_t idx = (size_t)((float)(colorscheme->ncolors-1)*val + 0.5f);
 
-            /* Just copy over the color from the colorscheme. */
-            memcpy(colorline, colorscheme->colors + idx*4, 4);
+			// dont copy zero values
+			if (*(colorscheme->colors + idx*4 + 3) > 0) {
+				/* Just copy over the color from the colorscheme. */
+				memcpy(colorline, colorscheme->colors + idx*4, 4);
+			}
             colorline += 4;
 
 			 ++bufline;

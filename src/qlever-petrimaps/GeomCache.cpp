@@ -37,7 +37,7 @@ const static std::string COUNT_QUERY =
 const static std::string QUERY_WD =
     "SELECT ?coord WHERE {"
     "  ?ob <http://www.wikidata.org/prop/direct/P625> ?coord ."
-    "}";
+    "} INTERNAL SORT BY ?coord";
 
 const static std::string COUNT_QUERY_WD =
     "SELECT (COUNT(?ob) as ?count) WHERE {"
@@ -746,7 +746,7 @@ GeomCache::getRelObjects(const std::vector<IdMapping>& ids) const {
     if (ids[i].qid == _qidToId[j].qid) {
       if (ret.size() == 0 || ret.back().second != ids[i].id) numObjects++;
       ret.push_back({_qidToId[j].id, ids[i].id});
-      j++;
+      i++;
     } else if (ids[i].qid < _qidToId[j].qid) {
       i++;
     } else {

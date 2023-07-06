@@ -187,7 +187,20 @@ function loadMap(id, bounds, numObjects) {
         const ll= e.latlng;
         const pos = L.Projection.SphericalMercator.project(ll);
 
-        fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
+        const w = map.getPixelBounds().max.x - map.getPixelBounds().min.x;
+        const h = map.getPixelBounds().max.y - map.getPixelBounds().min.y;
+
+        const sw = L.Projection.SphericalMercator.project((map.getBounds().getSouthWest()));
+        const ne = L.Projection.SphericalMercator.project((map.getBounds().getNorthEast()));
+
+        const bounds = [sw.x, sw.y, ne.x, ne.y];
+
+        let styles = "objects";
+        if (map.hasLayer(heatmapLayer)) styles = "heatmap";
+        if (map.hasLayer(objectsLayer)) styles = "objects";
+        if (map.hasLayer(objectsLayer)) styles = "objects";
+
+        fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=[' + bounds.join(',') + ']&styles=' + styles)
           .then(response => response.json())
           .then(data => openPopup(data))
           .catch(error => showError(genError));

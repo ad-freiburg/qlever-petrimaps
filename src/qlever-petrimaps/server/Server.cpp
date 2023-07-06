@@ -42,6 +42,8 @@ using util::geo::intersects;
 using util::geo::LineSegment;
 using util::geo::webMercToLatLng;
 
+const static double THRESHOLD = 200;
+
 // _____________________________________________________________________________
 Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime)
     : _maxMemory(maxMemory),
@@ -179,13 +181,13 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   LOG(INFO) << "[SERVER] Virt cell size: " << virtCellSize;
   LOG(INFO) << "[SERVER] Num virt cells: " << subCellSize * subCellSize;
 
+  std::vector<unsigned char> image(w * h * 4);
+
   std::vector<std::vector<uint32_t>> points(NUM_THREADS);
   std::vector<std::vector<double>> points2(NUM_THREADS);
 
   // initialize vectors to 0
   for (size_t i = 0; i < NUM_THREADS; i++) points2[i].resize(w * h, 0);
-
-  double THRESHOLD = 200;
 
   if (intersects(r->getPointGrid().getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display points...";
@@ -195,14 +197,37 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
       // duplicates are not possible with points
       r->getPointGrid().get(fbbox, &ret);
 
-      for (size_t i : ret) {
-        const auto& p = r->getPoint(r->getObjects()[i].first);
-        if (!contains(p, fbbox)) continue;
+      for (size_t j = 0; j < ret.size(); j++) {
+        size_t i = ret[j];
 
-        int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
-        int py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
+        const auto& objs = r->getObjects();
 
-        drawPoint(points[0], points2[0], px, py, w, h, style);
+        if (i >= objs.size() && style == OBJECTS) {
+          size_t cid = i - objs.size();
+          const auto& p = r->getPoint(objs[r->getClusters()[cid].first].first);
+
+          if (!contains(p, fbbox)) continue;
+
+          const auto& cp = r->clusterGeom(cid, res);
+
+          int px = ((cp.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
+          int py = h - ((cp.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
+
+          int ppx = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
+          int ppy = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
+
+          drawPoint(points[0], points2[0], px, py, w, h, style);
+          drawLine(image.data(), ppx, ppy, px, py, w, h);
+        } else {
+          if (i >= objs.size()) i = r->getClusters()[i - objs.size()].first;
+          const auto& p = r->getPoint(objs[i].first);
+          if (!contains(p, fbbox)) continue;
+
+          int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
+          int py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
+
+          drawPoint(points[0], points2[0], px, py, w, h, style);
+        }
       }
     } else {
       // they intersect, we checked this above
@@ -235,7 +260,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
             drawPoint(points[omp_get_thread_num()],
                       points2[omp_get_thread_num()], px, py, w, h, style);
           } else {
-            for (const auto& i : *cell) {
+            for (auto i : *cell) {
+              if (i >= r->getObjects().size())
+                i = r->getClusters()[i - r->getObjects().size()].first;
               const auto& p = r->getPoint(r->getObjects()[i].first);
 
               int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
@@ -441,8 +468,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   LOG(INFO) << "[SERVER] ...done";
   LOG(INFO) << "[SERVER] Rendering heatmap...";
 
-  std::vector<unsigned char> image(w * h * 4);
-
   if (style == OBJECTS) {
     static const unsigned char discrete_data[] = {
         0,   0,   0,   0,   0,   0,   0,   0,   51,  136, 255, 16,  51,  136,
@@ -586,6 +611,33 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
     throw std::invalid_argument("No rad (?rad=) specified.");
   auto rad = std::atof(pars.find("rad")->second.c_str());
 
+  if (pars.count("width") == 0 || pars.find("width")->second.empty())
+    throw std::invalid_argument("No width (?width=) specified.");
+  if (pars.count("height") == 0 || pars.find("height")->second.empty())
+    throw std::invalid_argument("No height (?height=) specified.");
+
+  if (pars.count("bbox") == 0 || pars.find("bbox")->second.empty())
+    throw std::invalid_argument("No bbox specified.");
+  auto box = util::split(pars.find("bbox")->second, ',');
+
+  MapStyle style = HEATMAP;
+  if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
+    if (pars.find("styles")->second == "objects") style = OBJECTS;
+  }
+
+  if (box.size() != 4) throw std::invalid_argument("Invalid request.");
+
+  double y1 = std::atof(box[1].c_str());
+  double y2 = std::atof(box[3].c_str());
+  double mercH = fabs(y2 - y1);
+
+  int h = atoi(pars.find("height")->second.c_str());
+
+  double reso = mercH / h;
+
+  // res of -1 means dont render clusters
+  if (style == HEATMAP || reso >= THRESHOLD) reso = -1;
+
   LOG(INFO) << "[SERVER] Click at " << x << ", " << y;
 
   std::shared_ptr<Requestor> reqor;
@@ -604,7 +656,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   }
   // as soon as we are ready, the reqor can be read concurrently
 
-  auto res = reqor->getNearest({x, y}, rad);
+  auto res = reqor->getNearest({x, y}, rad, reso);
 
   std::stringstream json;
 
@@ -1105,5 +1157,39 @@ void Server::loadCache(const std::string& backend) const {
     if (it != _caches.end()) _caches.erase(it);
 
     throw;
+  }
+}
+
+// _____________________________________________________________________________
+void Server::drawLine(unsigned char* image, int x0, int y0, int x1, int y1,
+                      int w, int h) const {
+  // Bresenham
+  int dx = abs(x1 - x0);
+  int sx = x0 < x1 ? 1 : -1;
+  int dy = -abs(y1 - y0);
+  int sy = y0 < y1 ? 1 : -1;
+  int error = dx + dy;
+
+  while (true) {
+    if (x0 >= 0 && y0 >= 0 && x0 < w && y0 < h) {
+      size_t coord = y0 * w * 4 + x0 * 4;
+      image[coord] = 51;
+      image[coord + 1] = 136;
+      image[coord + 2] = 255;
+      image[coord + 3] = 150;
+    }
+
+    if (x0 == x1 && y0 == y1) break;
+
+    if (2 * error >= dy) {
+      if (x0 == x1) break;
+      error += dy;
+      x0 += sx;
+    }
+    if (2 * error <= dx) {
+      if (y0 == y1) break;
+      error += dx;
+      y0 += sy;
+    }
   }
 }
