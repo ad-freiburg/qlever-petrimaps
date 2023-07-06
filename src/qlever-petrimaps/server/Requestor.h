@@ -89,7 +89,7 @@ class Requestor {
     return _cache->getLineBBox(id);
   }
 
-  const ResObj getNearest(util::geo::DPoint p, double rad, double res) const;
+  const ResObj getNearest(util::geo::DPoint p, double rad, double res, util::geo::FBox box) const;
 
   const ResObj getGeom(size_t id, double rad) const;
 

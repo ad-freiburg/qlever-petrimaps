@@ -38,7 +38,6 @@ void Requestor::request(const std::string& qry) {
   _objects.clear();
   _clusterObjects.clear();
 
-
   RequestReader reader(_cache->getBackendURL(), _maxMemory);
   _query = qry;
 
@@ -159,36 +158,32 @@ void Requestor::request(const std::string& qry) {
   {
 #pragma omp section
     {
-      size_t i = 0;
       size_t j = _objects.size();
 
-      for (size_t k = 0; k < _objects.size(); k++) {
-        const auto& p = _objects[k];
+      for (size_t i = 0; i < _objects.size(); i++) {
+        const auto& p = _objects[i];
         auto geomId = p.first;
         if (geomId >= I_OFFSET) continue;
 
         size_t clusterI = 0;
-        // cluster if they have same geometry, dont do for multigeoms
-        while (k < _objects.size() - 1 && geomId == _objects[k+1].first && p.second != _objects[k+1].second) {
+        // cluster if they have same geometry, don't do for multigeoms
+        while (i < _objects.size() - 1 && geomId == _objects[i + 1].first &&
+               p.second != _objects[i + 1].second) {
           clusterI++;
-
-          k++;
           i++;
         }
 
         if (clusterI > 0) {
           for (size_t m = 0; m < clusterI; m++) {
-            const auto& p = _objects[k - m];
+            const auto& p = _objects[i - m];
             auto geomId = p.first;
             _pgrid.add(_cache->getPoints()[geomId], j);
-            _clusterObjects.push_back({k - m, {m, clusterI}});
+            _clusterObjects.push_back({i - m, {m, clusterI}});
             j++;
           }
         } else {
           _pgrid.add(_cache->getPoints()[geomId], i);
         }
-
-        i++;
 
         // every 100000 objects, check memory...
         if (i % 100000 == 0) {
@@ -263,8 +258,9 @@ void Requestor::request(const std::string& qry) {
             if (++gi < 3) continue;
 
             // extract real geometry
-            util::geo::FPoint curP((mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
-                                   (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
+            util::geo::FPoint curP(
+                (mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
+                (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
 
             size_t cellX = _lpgrid.getCellXFromX(curP.getX());
             size_t cellY = _lpgrid.getCellYFromY(curP.getY());
@@ -385,7 +381,8 @@ std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
 }
 
 // _____________________________________________________________________________
-const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res) const {
+const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
+                                   util::geo::FBox fullbox) const {
   if (!_cache->ready()) {
     throw std::runtime_error("Geom cache not ready");
   }
@@ -413,7 +410,11 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res)
       // points
 
       std::vector<ID_TYPE> ret;
-      _pgrid.get(fbox, &ret);
+
+      if (res > 0)
+        _pgrid.get(fullbox, &ret);
+      else
+        _pgrid.get(fbox, &ret);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t idx = 0; idx < ret.size(); idx++) {
@@ -483,8 +484,9 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res)
           if (gi < 3) continue;
 
           // extract real geometry
-          util::geo::DPoint curP((mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
-                                 (mainY * M_COORD_GRANULARITY + cur.getY())/ 10.0);
+          util::geo::DPoint curP(
+              (mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
+              (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
 
           if (isArea) areaBorder.push_back(curP);
 
@@ -540,8 +542,10 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res)
 
   if (dBest < rad && dBest <= dBestL) {
     size_t row = 0;
-    if (nearest >= _objects.size()) row = _objects[_clusterObjects[nearest - _objects.size()].first].second;
-    else row = _objects[nearest].second;
+    if (nearest >= _objects.size())
+      row = _objects[_clusterObjects[nearest - _objects.size()].first].second;
+    else
+      row = _objects[nearest].second;
     return {true,
             nearest >= _objects.size() ? nearest - _objects.size() : nearest,
             geomPointGeoms(nearest, res),
@@ -677,7 +681,8 @@ util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid) const {
 }
 
 // _____________________________________________________________________________
-util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid, double res) const {
+util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid,
+                                                       double res) const {
   std::vector<util::geo::FPoint> points;
 
   if (!(res < 0) && oid >= _objects.size()) {
@@ -729,31 +734,41 @@ util::geo::MultiPolygon<double> Requestor::geomPolyGeoms(size_t oid,
 
 // _____________________________________________________________________________
 util::geo::FPoint Requestor::clusterGeom(size_t cid, double res) const {
-    size_t oid = _clusterObjects[cid].first;
-    const auto& pp = _cache->getPoints()[_objects[oid].first];
+  size_t oid = _clusterObjects[cid].first;
+  const auto& pp = _cache->getPoints()[_objects[oid].first];
 
-    if (res < 0) return {pp};
+  if (res < 0) return {pp};
 
-    size_t num = _clusterObjects[cid].second.first;
-    size_t tot = _clusterObjects[cid].second.second;
+  size_t num = _clusterObjects[cid].second.first;
+  size_t tot = _clusterObjects[cid].second.second;
 
-    if (tot > 50) {
-      float rad = 2 * 50;
+  double a = 25;
+  double b = 6;
 
-      int row = num / 50;
+  if (tot > a) {
+    double rad = 2 * a;
 
-      float x = pp.getX() + (rad + row * 13) * res * sin((num - 50 * row)  * (2 * 3.14 / 50));
-      float y = pp.getY() + (rad + row * 13) * res * cos((num - 50 * row) * (2 * 3.14 / 50));
+    int row = ((-a - b / 2.0) + sqrt((a + b / 2.0) * (a + b / 2.0) +
+                                     2.0 * b * (std::max(0.0, num - a + 2)))) /
+              b;
 
-      return util::geo::FPoint{x, y};
-    } else {
-      float rad = 2 * tot;
+    double g = b * ((row * row + row) / 2.0);
 
-      float x = pp.getX() + rad * res * sin(num * (2 * 3.14 / tot));
-      float y = pp.getY() + rad * res * cos(num * (2 * 3.14 / tot));
+    double relpos = num - (a * row + (g - row * b));
+    double tot = a + row * b;
 
-      return util::geo::FPoint{x, y};
+    double x = pp.getX() + (rad + row * 13.0) * res *
+                               sin(relpos * (2.0 * 3.14159265359 / tot));
+    double y = pp.getY() + (rad + row * 13.0) * res *
+                               cos(relpos * (2.0 * 3.14159265359 / tot));
 
-    }
+    return util::geo::FPoint{x, y};
+  } else {
+    float rad = 2 * tot;
 
+    float x = pp.getX() + rad * res * sin(num * (2 * 3.14159265359 / tot));
+    float y = pp.getY() + rad * res * cos(num * (2 * 3.14159265359 / tot));
+
+    return util::geo::FPoint{x, y};
+  }
 }

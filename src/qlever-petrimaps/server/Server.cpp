@@ -261,8 +261,11 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                       points2[omp_get_thread_num()], px, py, w, h, style);
           } else {
             for (auto i : *cell) {
-              if (i >= r->getObjects().size())
+              if (i >= r->getObjects().size()) {
+                assert(i - r->getObjects().size() < r->getClusters().size());
                 i = r->getClusters()[i - r->getObjects().size()].first;
+              }
+              assert(i < r->getObjects().size());
               const auto& p = r->getPoint(r->getObjects()[i].first);
 
               int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
@@ -377,7 +380,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
         // the factor depends on the render thickness of the line, make
         // this configurable!
-        const auto& denseLine = densify(extrLine, res * 3);
+        const auto& denseLine = densify(extrLine, res);
 
         for (const auto& p : denseLine) {
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
@@ -627,9 +630,13 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
 
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
 
+  double x1 = std::atof(box[0].c_str());
   double y1 = std::atof(box[1].c_str());
+  double x2 = std::atof(box[2].c_str());
   double y2 = std::atof(box[3].c_str());
   double mercH = fabs(y2 - y1);
+
+  auto fbbox = FBox({x1, y1}, {x2, y2});
 
   int h = atoi(pars.find("height")->second.c_str());
 
@@ -656,7 +663,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   }
   // as soon as we are ready, the reqor can be read concurrently
 
-  auto res = reqor->getNearest({x, y}, rad, reso);
+  auto res = reqor->getNearest({x, y}, rad, reso, fbbox);
 
   std::stringstream json;
 
