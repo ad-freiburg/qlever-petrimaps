@@ -97,11 +97,13 @@ size_t GeomCache::writeCbCount(void* contents, size_t size, size_t nmemb,
 void GeomCache::parse(const char* c, size_t size) {
   const char* start = c;
   while (c < start + size) {
+    if (_raw.size() < 10000) _raw.push_back(*c);
     switch (_state) {
       case IN_HEADER:
         if (*c == '\n') {
           _state = IN_ROW;
           c++;
+          continue;
         } else {
           c++;
           continue;
@@ -319,6 +321,7 @@ void GeomCache::parse(const char* c, size_t size) {
 // _____________________________________________________________________________
 void GeomCache::parseIds(const char* c, size_t size) {
   for (size_t i = 0; i < size; i++) {
+    if (_raw.size() < 10000) _raw.push_back(c[i]);
     _curId.bytes[_curByte] = c[i];
     _curByte = (_curByte + 1) % 8;
 
@@ -355,6 +358,7 @@ void GeomCache::parseIds(const char* c, size_t size) {
 // _____________________________________________________________________________
 void GeomCache::parseCount(const char* c, size_t size) {
   for (size_t i = 0; i < size; i++) {
+    if (_raw.size() < 10000) _raw.push_back(c[i]);
     if (c[i] == '\n') _state = IN_ROW;
     if (_state == IN_ROW) _dangling += c[i];
   }
@@ -365,6 +369,8 @@ size_t GeomCache::requestSize() {
   _state = IN_HEADER;
   _dangling.clear();
   _dangling.reserve(10000);
+  _raw.clear();
+  _raw.reserve(10000);
 
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
@@ -399,7 +405,10 @@ size_t GeomCache::requestSize() {
 
     if (httpCode != 200) {
       std::stringstream ss;
-      ss << "QLever backend returned status code " << httpCode;
+      ss << "QLever backend returned status code " << httpCode
+        << " during count query";
+      ss << "\n";
+      ss << _raw;
       throw std::runtime_error(ss.str());
     }
 
@@ -430,6 +439,8 @@ void GeomCache::requestPart(size_t offset) {
   _state = IN_HEADER;
   _dangling.clear();
   _dangling.reserve(10000);
+  _raw.clear();
+  _raw.reserve(10000);
 
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
@@ -463,7 +474,10 @@ void GeomCache::requestPart(size_t offset) {
 
     if (httpCode != 200) {
       std::stringstream ss;
-      ss << "QLever backend returned status code " << httpCode;
+      ss << "QLever backend returned status code " << httpCode
+        << " during query (offset=" << offset << ")";
+      ss << "\n";
+      ss << _raw;
       throw std::runtime_error(ss.str());
     }
 
@@ -500,6 +514,9 @@ void GeomCache::request() {
   _qidToId.clear();
 
   _lastQidToId = {-1, -1};
+
+  _raw.clear();
+  _raw.reserve(100000);
 
   char* pointsFName = strdup("pointsXXXXXX");
   int i = mkstemp(pointsFName);
@@ -627,6 +644,8 @@ void GeomCache::requestIds() {
     if (httpCode != 200) {
       std::stringstream ss;
       ss << "QLever backend returned status code " << httpCode;
+      ss << "\n";
+      ss << _raw;
       throw std::runtime_error(ss.str());
     }
 

@@ -120,11 +120,15 @@ function getGeoJsonLayer(geom) {
 }
 
 function showError(error) {
+    error = error.toString();
+    console.log(error);
     document.getElementById("msg").style.display = "block";
     document.getElementById("loader").style.display = "none";
     document.getElementById("msg-inner").style.color = "red";
     document.getElementById("msg-inner").style.fontSize = "20px";
-    document.getElementById("msg-inner").innerHTML = error;
+    document.getElementById("msg-inner").innerHTML = error.split("\n")[0];
+    if (error.search("\n") > 0) document.getElementById("msg-inner-desc").innerHTML = "<pre>" + error.substring(error.search("\n")) + "</pre>";
+    else document.getElementById("msg-inner-desc").innerHTML = "";
 }
 
 function loadMap(id, bounds, numObjects) {

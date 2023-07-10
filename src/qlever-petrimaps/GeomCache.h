@@ -140,7 +140,7 @@ class GeomCache {
 
   std::vector<IdMapping> _qidToId;
 
-  std::string _dangling, _prev;
+  std::string _dangling, _prev, _raw;
   ParseState _state;
 
   size_t _maxMemory;

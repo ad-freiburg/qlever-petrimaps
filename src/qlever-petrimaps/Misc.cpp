@@ -18,6 +18,9 @@ void RequestReader::requestIds(const std::string& query) {
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
 
+  _raw.clear();
+  _raw.reserve(10000);
+
   if (_curl) {
     auto url = queryUrl(query);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
@@ -45,6 +48,8 @@ void RequestReader::requestIds(const std::string& query) {
     if (httpCode != 200) {
       std::stringstream ss;
       ss << "QLever backend returned status code " << httpCode;
+      ss << "\n";
+      ss << _raw;
       throw std::runtime_error(ss.str());
     }
 
@@ -83,6 +88,9 @@ void RequestReader::requestRows(const std::string& query,
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
 
+  _raw.clear();
+  _raw.reserve(10000);
+
   if (_curl) {
     auto url = queryUrl(query);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
@@ -110,6 +118,8 @@ void RequestReader::requestRows(const std::string& query,
     if (httpCode != 200) {
       std::stringstream ss;
       ss << "QLever backend returned status code " << httpCode;
+      ss << "\n";
+      ss << _raw;
       throw std::runtime_error(ss.str());
     }
 
@@ -180,6 +190,7 @@ void RequestReader::parseIds(const char* c, size_t size) {
   checkMem(size, _maxMemory);
 
   for (size_t i = 0; i < size; i++) {
+    if (_raw.size() < 10000) _raw.push_back(c[i]);
     _curId.bytes[_curByte] = c[i];
     _curByte = (_curByte + 1) % 8;
 
@@ -196,6 +207,7 @@ void RequestReader::parse(const char* c, size_t size) {
 
   const char* start = c;
   while (c < start + size) {
+    if (_raw.size() < 10000) _raw.push_back(*c);
     switch (_state) {
       case IN_HEADER:
         if (*c == '\t' || *c == '\n') {

@@ -66,6 +66,16 @@ h1, #msg-inner {
   opacity: 0.8;
 }
 
+#msg-inner-desc {
+  font: 0.9em mono;
+  text-align: left;
+  background-color: #fefefe;
+  width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
 #loader {
   display: inline-block;
   width: 35px;

@@ -115,7 +115,7 @@ struct RequestReader {
   size_t _curCol = 0;
   size_t _curRow = 0;
 
-  std::string _dangling;
+  std::string _dangling, _raw;
   ParseState _state = IN_HEADER;
 
   std::vector<std::vector<std::pair<std::string, std::string>>> rows;
