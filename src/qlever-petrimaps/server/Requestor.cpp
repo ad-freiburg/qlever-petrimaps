@@ -55,6 +55,7 @@ void Requestor::request(const std::string& qry) {
   LOG(INFO) << "[REQUESTOR] ... done";
 
   LOG(INFO) << "[REQUESTOR] Retrieving geoms from cache...";
+
   // (geom id, result row)
   const auto& ret = _cache->getRelObjects(reader.ids);
   _objects = ret.first;
@@ -317,6 +318,8 @@ std::vector<std::pair<std::string, std::string>> Requestor::requestRow(
             << _query;
   auto query = prepQueryRow(_query, row);
 
+  LOG(INFO) << "[REQUESTOR] Row query is " << query;
+
   reader.requestRows(query);
 
   if (reader.rows.size() == 0) return {};
@@ -360,12 +363,12 @@ void Requestor::requestRows(
 // _____________________________________________________________________________
 std::string Requestor::prepQuery(std::string query) const {
   // only use last column
-  std::regex expr("select\\s*(\\?[A-Z0-9_\\-+]*\\s*)+\\s*where\\s*\\{",
+  std::regex expr("select[^{]*(\\?[A-Z0-9_\\-+]*)+[^{]*where\\s*\\{",
                   std::regex_constants::icase);
 
   // only remove columns the first (=outer) SELECT statement
-  query = std::regex_replace(query, expr, "SELECT $1 WHERE {",
-                             std::regex_constants::format_first_only);
+  query = std::regex_replace(query, expr, "SELECT $1 WHERE {$&",
+                             std::regex_constants::format_first_only) + "}";
 
   if (util::toLower(query).find("limit") == std::string::npos) {
     query += " LIMIT 18446744073709551615";
@@ -423,7 +426,6 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
         if (i >= _objects.size()) {
           size_t cid = i - _objects.size();
           p = clusterGeom(cid, res);
-
         } else {
           p = _cache->getPoints()[_objects[i].first];
         }
@@ -546,6 +548,7 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
       row = _objects[_clusterObjects[nearest - _objects.size()].first].second;
     else
       row = _objects[nearest].second;
+
     return {true,
             nearest >= _objects.size() ? nearest - _objects.size() : nearest,
             geomPointGeoms(nearest, res),

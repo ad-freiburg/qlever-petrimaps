@@ -43,7 +43,7 @@ union ID {
 
 inline bool operator<(const IdMapping& lh, const IdMapping& rh) {
   if (lh.qid < rh.qid) return true;
-  if (lh.qid == rh.qid && lh.id < rh.id) return true;
+  // if (lh.qid == rh.qid && lh.id < rh.id) return true;
   return false;
 }
 

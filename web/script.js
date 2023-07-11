@@ -204,7 +204,7 @@ function loadMap(id, bounds, numObjects) {
         if (map.hasLayer(objectsLayer)) styles = "objects";
         if (map.hasLayer(objectsLayer)) styles = "objects";
 
-        fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=[' + bounds.join(',') + ']&styles=' + styles)
+        fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=' + bounds.join(',') + '&styles=' + styles)
           .then(response => response.json())
           .then(data => openPopup(data))
           .catch(error => showError(genError));

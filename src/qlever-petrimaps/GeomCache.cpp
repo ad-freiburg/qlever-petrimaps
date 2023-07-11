@@ -25,22 +25,22 @@ using util::geo::FPoint;
 using util::geo::latLngToWebMerc;
 
 const static std::string QUERY =
-    "SELECT ?geometry WHERE {"
+    "SELECT DISTINCT ?geometry WHERE {"
     " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
     " } INTERNAL SORT BY ?geometry";
 
 const static std::string COUNT_QUERY =
-    "SELECT (COUNT(?osm_id) as ?count) WHERE {"
+    "SELECT (COUNT(DISTINCT ?geometry) as ?count) WHERE {"
     " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
     " }";
 
 const static std::string QUERY_WD =
-    "SELECT ?coord WHERE {"
+    "SELECT DISTINCT ?coord WHERE {"
     "  ?ob <http://www.wikidata.org/prop/direct/P625> ?coord ."
     "} INTERNAL SORT BY ?coord";
 
 const static std::string COUNT_QUERY_WD =
-    "SELECT (COUNT(?ob) as ?count) WHERE {"
+    "SELECT (COUNT(DISTINCT ?coord) as ?count) WHERE {"
     "  ?ob <http://www.wikidata.org/prop/direct/P625> ?coord ."
     "}";
 
@@ -320,6 +320,7 @@ void GeomCache::parse(const char* c, size_t size) {
 
 // _____________________________________________________________________________
 void GeomCache::parseIds(const char* c, size_t size) {
+  size_t lastQid = -1;
   for (size_t i = 0; i < size; i++) {
     if (_raw.size() < 10000) _raw.push_back(c[i]);
     _curId.bytes[_curByte] = c[i];
@@ -332,7 +333,22 @@ void GeomCache::parseIds(const char* c, size_t size) {
       }
 
       if (_curRow < _qidToId.size() && _qidToId[_curRow].qid == 0) {
-        _qidToId[_curRow].qid = _curId.val;
+        // if we have two consecutive and equivalent QLever ids, the geometry
+        // was returned multiple times in the fill query. This can happen if the
+        // same WKT string is used in multiple distinct objects, but then stored
+        // in qlever using the same internal qlever ID. To avoid a false multi-
+        // plication of results (all geoms of matching qlever ID are joined), we
+        // set such repeated qlever IDs to an unnsed dummy value.
+        // NOTE: because of the DISTNCT queries above, this should never happen
+        if (lastQid == _curId.val) {
+          LOG(WARN) << "Found duplicate internal qlever ID " << _curId.val
+                    << " for row " << _curRow
+                    << ", ignoring this geometry duplicate!";
+          _qidToId[_curRow].qid = -1;
+        } else {
+          _qidToId[_curRow].qid = _curId.val;
+        }
+        lastQid = _curId.val;
         if (_curId.val > _maxQid) _maxQid = _curId.val;
       } else {
         LOG(WARN) << "The results for the binary IDs are out of sync.";
@@ -342,7 +358,7 @@ void GeomCache::parseIds(const char* c, size_t size) {
       }
 
       // if a qlever entity contained multiple geometries (MULTILINESTRING,
-      // MULTIPOLYGON, MULTIPOIN), they appear consecutively in
+      // MULTIPOLYGON, MULTIPOINT), they appear consecutively in
       // _qidToId; continuation geometries are marked by a
       // preliminary qlever ID of 1, while the first geometry always has a
       // preliminary id of 0
@@ -406,7 +422,7 @@ size_t GeomCache::requestSize() {
     if (httpCode != 200) {
       std::stringstream ss;
       ss << "QLever backend returned status code " << httpCode
-        << " during count query";
+         << " during count query";
       ss << "\n";
       ss << _raw;
       throw std::runtime_error(ss.str());
@@ -475,7 +491,7 @@ void GeomCache::requestPart(size_t offset) {
     if (httpCode != 200) {
       std::stringstream ss;
       ss << "QLever backend returned status code " << httpCode
-        << " during query (offset=" << offset << ")";
+         << " during query (offset=" << offset << ")";
       ss << "\n";
       ss << _raw;
       throw std::runtime_error(ss.str());
@@ -660,7 +676,7 @@ void GeomCache::requestIds() {
 
   // sorting by qlever id
   LOG(INFO) << "[GEOMCACHE] Sorting results by qlever ID...";
-  std::sort(_qidToId.begin(), _qidToId.end());
+  std::stable_sort(_qidToId.begin(), _qidToId.end());
   LOG(INFO) << "[GEOMCACHE] ... done";
 }
 
@@ -763,8 +779,15 @@ GeomCache::getRelObjects(const std::vector<IdMapping>& ids) const {
 
   while (i < ids.size() && j < _qidToId.size()) {
     if (ids[i].qid == _qidToId[j].qid) {
-      if (ret.size() == 0 || ret.back().second != ids[i].id) numObjects++;
-      ret.push_back({_qidToId[j].id, ids[i].id});
+      size_t prefJ = j;
+
+      while (j < _qidToId.size() && ids[i].qid == _qidToId[j].qid) {
+        if (ret.size() == 0 || ret.back().second != ids[i].id) numObjects++;
+        ret.push_back({_qidToId[j].id, ids[i].id});
+        j++;
+      }
+
+      j = prefJ;
       i++;
     } else if (ids[i].qid < _qidToId[j].qid) {
       i++;
