@@ -1,15 +1,19 @@
 # QLever petrimaps
 
-Visualization of geospatial SPARQL query results for QLever as a heatmap. Can handle millions of result rows, tested with up to 60 million results (all buildings in Germany). Implemented as a middle-end / middleware.
+Visualization of geospatial SPARQL query results for QLever on a map, either as individual objeckts or as a heatmap. Can handle hundreds of millions of result rows, tested with ove 200 million results (all streets in OSM). Implemented as a middle-end / middleware.
 This is still very much hacked-together, use with care.
 
 Examples: [All railway lines in OSM](https://qlever.cs.uni-freiburg.de/mapui-petri/?query=PREFIX%20osm%3A%20%3Chttps%3A%2F%2Fwww.openstreetmap.org%2F%3E%0APREFIX%20rdf%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E%0APREFIX%20geo%3A%20%3Chttp%3A%2F%2Fwww.opengis.net%2Font%2Fgeosparql%23%3E%0APREFIX%20osmkey%3A%20%3Chttps%3A%2F%2Fwww.openstreetmap.org%2Fwiki%2FKey%3A%3E%0ASELECT%20%3Fosm_id%20%3Fgeometry%20WHERE%20%7B%0A%20%20%3Fosm_id%20osmkey%3Arailway%20%3Frail%20.%0A%20%20%3Fosm_id%20rdf%3Atype%20osm%3Away%20.%0A%20%20%3Fosm_id%20geo%3AhasGeometry%20%3Fgeometry%20.%0A%7D&backend=https%3A%2F%2Fqlever.cs.uni-freiburg.de%2Fapi%2Fosm-planet), [All buildings in Germany in OSM](https://qlever.cs.uni-freiburg.de/mapui-petri/?query=PREFIX%20osm2rdf%3A%20%3Chttps%3A%2F%2Fosm2rdf.cs.uni-freiburg.de%2Frdf%23%3EPREFIX%20geo%3A%20%3Chttp%3A%2F%2Fwww.opengis.net%2Font%2Fgeosparql%23%3E%20PREFIX%20osmkey%3A%20%3Chttps%3A%2F%2Fwww.openstreetmap.org%2Fwiki%2FKey%3A%3E%20PREFIX%20ogc%3A%20%3Chttp%3A%2F%2Fwww.opengis.net%2Frdf%23%3E%20PREFIX%20osmrel%3A%20%3Chttps%3A%2F%2Fwww.openstreetmap.org%2Frelation%2F%3E%20SELECT%20%3Fosm_id%20%3Fhasgeometry%20WHERE%20%7B%20%7B%20osmrel%3A51477%20osm2rdf%3Acontains_area%2B%20%3Fqlm_i%20.%20%3Fqlm_i%20osm2rdf%3Acontains_nonarea%20%3Fosm_id%20.%20%3Fosm_id%20geo%3AhasGeometry%20%3Fhasgeometry%20.%20%3Fosm_id%20osmkey%3Abuilding%20%3Fbuilding%20%7D%20UNION%20%7B%20%7B%20osmrel%3A51477%20osm2rdf%3Acontains_area%2B%20%3Fosm_id%20.%20%3Fosm_id%20geo%3AhasGeometry%20%3Fhasgeometry%20.%20%3Fosm_id%20osmkey%3Abuilding%20%3Fbuilding%20%7D%20UNION%20%7B%20osmrel%3A51477%20osm2rdf%3Acontains_nonarea%20%3Fosm_id%20.%20%3Fosm_id%20geo%3AhasGeometry%20%3Fhasgeometry%20.%20%3Fosm_id%20osmkey%3Abuilding%20%3Fbuilding%20%7D%20%7D%20%7D&backend=https%3A%2F%2Fqlever.cs.uni-freiburg.de%2Fapi%2Fosm-planet)
 
 ## Requirements
 * gcc > 5.0 || clang > 3.9
-* zlib (for gzip compression)
-* libcurl (curl *must* use GnuTLS, not OpenSSL, as the latter is not thread safe per default)
+* libcurl
 * libpng (for PNG rendering)
+* Java Runtime Environment (for compiling the JS of the web frontend)
+
+## Optional Requirements
+* zlib (for gzip compression)
+* OpenMP
 
 ## Installation
 
