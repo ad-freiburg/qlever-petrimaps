@@ -22,12 +22,19 @@
 			 <button id='ex-geojson'>Export as GeoJSON</button>
 		 </div>
 		 <div id='stats'>
-		 </div>
+       </div>
       </main>
 	  <div id='msg'>
 		  <div id='msg-inner'>Loading results from QLever...</div>
 		  <div id='msg-inner-desc'></div>
-        <div id="loader"></div>
+        
+         <div id="load">
+            <div id="load-bar"></div>
+            <div id="load-text">75%</div>
+            <div id="load-spinner"></div>
+            </div>
+         </div>
+        
 	  </div>
       <script src='build.js' defer></script>
    </body>
