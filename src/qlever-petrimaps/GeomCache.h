@@ -89,6 +89,8 @@ class GeomCache {
     return id + 1 < _lines.size() ? _lines[id + 1] : _linePoints.size();
   }
 
+  double getLoadStatusPercent();
+
  private:
   std::string _backendUrl;
   CURL* _curl;

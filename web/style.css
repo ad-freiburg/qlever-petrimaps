@@ -712,7 +712,7 @@ h1, #msg-inner {
     grid-column: 1;
     grid-row: 1;
 
-    width: 75%;
+    width: 0%;
     height: 30px;
     background-color: #04AA6D;
 }

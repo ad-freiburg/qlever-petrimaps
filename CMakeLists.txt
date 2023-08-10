@@ -2,9 +2,23 @@ cmake_minimum_required (VERSION 2.8)
 
 project (qlever-mapui)
 
+include(CMakePrintHelpers)
+
+cmake_print_variables(CMAKE_BUILD_TYPE)
+
+# only change first char
 if (CMAKE_BUILD_TYPE)
-	string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
+	string(SUBSTRING ${CMAKE_BUILD_TYPE} 0 1 FIRST_CHAR)
+	string(TOUPPER ${FIRST_CHAR} FIRST_CHAR)
+	string(REGEX REPLACE "^.(.*)" "${FIRST_CHAR}\\1" CMAKE_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
 endif()
+
+# old solution
+#if (CMAKE_BUILD_TYPE)
+#	string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
+#endif()
+
+cmake_print_variables(CMAKE_BUILD_TYPE)
 
 enable_testing()
 

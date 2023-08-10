@@ -291,8 +291,7 @@ void GeomCache::parse(const char* c, size_t size) {
               LOG(INFO) << "[GEOMCACHE] "
                         << "@ row " << _curRow << " (" << std::fixed
                         << std::setprecision(2)
-                        << (static_cast<double>(_curRow) /
-                            static_cast<double>(_totalSize) * 100)
+                        << getLoadStatusPercent()
                         << "%, " << _pointsFSize << " points, " << _linesFSize
                         << " (open) polygons)";
             }
@@ -315,6 +314,14 @@ void GeomCache::parse(const char* c, size_t size) {
       default:
         break;
     }
+  }
+}
+
+double GeomCache::getLoadStatusPercent() {
+  if (_totalSize == 0) {
+    return 0.0;
+  } else {
+    return (static_cast<double>(_curRow) / static_cast<double>(_totalSize) * 100);
   }
 }
 
