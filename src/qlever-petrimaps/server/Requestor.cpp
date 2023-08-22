@@ -363,7 +363,7 @@ void Requestor::requestRows(
 // _____________________________________________________________________________
 std::string Requestor::prepQuery(std::string query) const {
   // only use last column
-  std::regex expr("select[^{]*(\\?[A-Z0-9_\\-+]*)+[^{]*where\\s*\\{",
+  std::regex expr("select[^{]*(\\?[A-Z0-9_\\-+]*)+[^{]*\\s*\\{",
                   std::regex_constants::icase);
 
   // only remove columns the first (=outer) SELECT statement
