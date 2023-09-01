@@ -34,6 +34,16 @@ const static std::string COUNT_QUERY =
     " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
     " }";
 
+const static std::string QUERY_ASWKT =
+    "SELECT DISTINCT ?geometry WHERE {"
+    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry>/<http://www.opengis.net/ont/geosparql#asWKT> ?geometry "
+    " } INTERNAL SORT BY ?geometry";
+
+const static std::string COUNT_QUERY_ASWKT =
+    "SELECT (COUNT(DISTINCT ?geometry) as ?count) WHERE {"
+    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry>/<http://www.opengis.net/ont/geosparql#asWKT> ?geometry "
+    " }";
+
 const static std::string QUERY_WD =
     "SELECT DISTINCT ?coord WHERE {"
     "  ?ob <http://www.wikidata.org/prop/direct/P625> ?coord ."
@@ -46,17 +56,27 @@ const static std::string COUNT_QUERY_WD =
 
 // _____________________________________________________________________________
 const std::string& GeomCache::getQuery(const std::string& backendUrl) const {
-  bool is_wd = util::endsWith(backendUrl, "wikidata") ||
-               util::endsWith(backendUrl, "dblp-plus");
-  return is_wd ? QUERY_WD : QUERY;
+  if (util::endsWith(backendUrl, "wikidata") ||
+      util::endsWith(backendUrl, "dblp-plus")) {
+    return QUERY_WD;
+  }
+  if (util::endsWith(backendUrl, "osm-germany")) {
+    return QUERY_ASWKT;
+  }
+  return QUERY;
 }
 
 // _____________________________________________________________________________
 const std::string& GeomCache::getCountQuery(
     const std::string& backendUrl) const {
-  bool is_wd = util::endsWith(backendUrl, "wikidata") ||
-               util::endsWith(backendUrl, "dblp-plus");
-  return is_wd ? COUNT_QUERY_WD : COUNT_QUERY;
+  if (util::endsWith(backendUrl, "wikidata") ||
+      util::endsWith(backendUrl, "dblp-plus")) {
+    return COUNT_QUERY_WD;
+  }
+  if (util::endsWith(backendUrl, "osm-germany")) {
+    return COUNT_QUERY_ASWKT;
+  }
+  return COUNT_QUERY;
 }
 
 // _____________________________________________________________________________
