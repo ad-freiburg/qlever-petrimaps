@@ -25,24 +25,30 @@ using util::geo::FPoint;
 using util::geo::latLngToWebMerc;
 
 const static std::string QUERY =
+    "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
     "SELECT DISTINCT ?geometry WHERE {"
-    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+    " ?osm_id geo:hasGeometry ?geometry "
     " } INTERNAL SORT BY ?geometry";
 
 const static std::string COUNT_QUERY =
-    "SELECT (COUNT(DISTINCT ?geometry) as ?count) WHERE {"
-    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
-    " }";
+    "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
+    "SELECT (COUNT(?geometry) as ?count) WHERE { "
+    "SELECT DISTINCT ?geometry WHERE {"
+    " ?osm_id geo:hasGeometry ?geometry "
+    "} INTERNAL SORT BY ?geometry }";
 
 const static std::string QUERY_WD =
+    "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
     "SELECT DISTINCT ?coord WHERE {"
-    "  ?ob <http://www.wikidata.org/prop/direct/P625> ?coord ."
+    "  ?ob wdt:P625 ?coord"
     "} INTERNAL SORT BY ?coord";
 
 const static std::string COUNT_QUERY_WD =
-    "SELECT (COUNT(DISTINCT ?coord) as ?count) WHERE {"
-    "  ?ob <http://www.wikidata.org/prop/direct/P625> ?coord ."
-    "}";
+    "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
+    "SELECT (COUNT(?coord) as ?count) WHERE { "
+    "SELECT DISTINCT ?coord WHERE {"
+    "  ?ob wdt:P625 ?coord"
+    "} INTERNAL SORT BY ?coord }";
 
 // _____________________________________________________________________________
 const std::string& GeomCache::getQuery(const std::string& backendUrl) const {
