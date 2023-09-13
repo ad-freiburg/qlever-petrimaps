@@ -379,7 +379,13 @@ std::string Requestor::prepQuery(std::string query) const {
 
 // _____________________________________________________________________________
 std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
-  query += " OFFSET " + std::to_string(row) + " LIMIT 1";
+  // replace first select
+  std::regex expr("select[^{]*\\?[A-Z0-9_\\-+]*+[^{]*\\s*\\{",
+                  std::regex_constants::icase);
+
+  query = std::regex_replace(query, expr, "SELECT * {$&",
+                             std::regex_constants::format_first_only) + "}";
+  query += "OFFSET " + std::to_string(row) + " LIMIT 1";
   return query;
 }
 

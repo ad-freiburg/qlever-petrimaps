@@ -26,24 +26,45 @@ using util::geo::FPoint;
 using util::geo::latLngToWebMerc;
 
 const static std::string QUERY =
+    "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
     "SELECT DISTINCT ?geometry WHERE {"
-    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
+    " ?osm_id geo:hasGeometry ?geometry "
     " } INTERNAL SORT BY ?geometry";
 
 const static std::string COUNT_QUERY =
-    "SELECT (COUNT(DISTINCT ?geometry) as ?count) WHERE {"
-    " ?osm_id <http://www.opengis.net/ont/geosparql#hasGeometry> ?geometry "
-    " }";
+    "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
+    "SELECT (COUNT(?geometry) as ?count) WHERE { "
+    "SELECT DISTINCT ?geometry WHERE {"
+    " ?osm_id geo:hasGeometry ?geometry "
+    "} INTERNAL SORT BY ?geometry }";
 
 const static std::string QUERY_WD =
+    "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
     "SELECT DISTINCT ?coord WHERE {"
-    "  ?ob <http://www.wikidata.org/prop/direct/P625> ?coord ."
+    "  ?ob wdt:P625 ?coord"
     "} INTERNAL SORT BY ?coord";
 
 const static std::string COUNT_QUERY_WD =
-    "SELECT (COUNT(DISTINCT ?coord) as ?count) WHERE {"
-    "  ?ob <http://www.wikidata.org/prop/direct/P625> ?coord ."
-    "}";
+    "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
+    "SELECT (COUNT(?coord) as ?count) WHERE { "
+    "SELECT DISTINCT ?coord WHERE {"
+    "  ?ob wdt:P625 ?coord"
+    "} INTERNAL SORT BY ?coord }";
+
+// _____________________________________________________________________________
+const std::string& GeomCache::getQuery(const std::string& backendUrl) const {
+  bool is_wd = util::endsWith(backendUrl, "wikidata") ||
+               util::endsWith(backendUrl, "dblp-plus");
+  return is_wd ? QUERY_WD : QUERY;
+}
+
+// _____________________________________________________________________________
+const std::string& GeomCache::getCountQuery(
+    const std::string& backendUrl) const {
+  bool is_wd = util::endsWith(backendUrl, "wikidata") ||
+               util::endsWith(backendUrl, "dblp-plus");
+  return is_wd ? COUNT_QUERY_WD : COUNT_QUERY;
+}
 
 // _____________________________________________________________________________
 size_t GeomCache::writeCbString(void* contents, size_t size, size_t nmemb,
@@ -426,11 +447,7 @@ size_t GeomCache::requestSize() {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    auto qUrl =
-        queryUrl((util::endsWith(_backendUrl, "wikidata") ? COUNT_QUERY_WD
-                                                          : COUNT_QUERY),
-                 0, 1);
-
+    auto qUrl = queryUrl(getCountQuery(_backendUrl), 0, 1);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbCount);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
@@ -496,10 +513,7 @@ void GeomCache::requestPart(size_t offset) {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    auto qUrl =
-        queryUrl((util::endsWith(_backendUrl, "wikidata") ? QUERY_WD : QUERY),
-                 offset, 1000000);
-
+    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 1000000);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
@@ -612,7 +626,7 @@ void GeomCache::request() {
 
   LOG(INFO) << "[GEOMCACHE] Total request size: " << _totalSize;
   LOG(INFO) << "[GEOMCACHE] Query is:\n"
-            << (util::endsWith(_backendUrl, "wikidata") ? QUERY_WD : QUERY);
+            << getQuery(_backendUrl);
 
   while (lastNum != 0) {
     size_t offset = _curRow;
@@ -663,12 +677,10 @@ void GeomCache::requestIds() {
   _exceptionPtr = 0;
 
   LOG(INFO) << "[GEOMCACHE] Query is "
-            << (util::endsWith(_backendUrl, "wikidata") ? QUERY_WD : QUERY);
+            << getQuery(_backendUrl);
 
   if (_curl) {
-    auto qUrl =
-        queryUrl((util::endsWith(_backendUrl, "wikidata") ? QUERY_WD : QUERY),
-                 0, MAXROWS);
+    auto qUrl = queryUrl(getQuery(_backendUrl), 0, MAXROWS);
     LOG(INFO) << "[GEOMCACHE] Binary ID query URL is " << qUrl;
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbIds);

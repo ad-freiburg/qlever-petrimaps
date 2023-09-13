@@ -112,6 +112,10 @@ class GeomCache {
   static size_t writeCbString(void* contents, size_t size, size_t nmemb,
                               void* userp);
 
+  // Get the right SPARQL query for the given backend.
+  const std::string& getQuery(const std::string& backendUrl) const;
+  const std::string& getCountQuery(const std::string& backendUrl) const;
+
   std::string requestIndexHash();
 
   std::string queryUrl(std::string query, size_t offset, size_t limit) const;
