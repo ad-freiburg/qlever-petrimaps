@@ -1119,7 +1119,11 @@ util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
   createCache(backend);
   std::shared_ptr<GeomCache> cache = _caches[backend];
   double loadStatusPercent = cache->getLoadStatusPercent();
-  util::http::Answer ans = util::http::Answer("200 OK", std::to_string(loadStatusPercent));
+  int loadStatusStage = cache->getLoadStatusStage();
+
+  std::stringstream json;
+  json << "{\"percent\": " << loadStatusPercent << ", \"stage\": " << loadStatusStage << "}";
+  util::http::Answer ans = util::http::Answer("200 OK", json.str());
   
   return ans;
 }

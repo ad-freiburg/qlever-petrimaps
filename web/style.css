@@ -698,11 +698,11 @@ h1, #msg-inner {
     background: white;
 }
 
-#load {
+#load-status {
     display: grid;
     
     width: 100%;
-    background-color: #ddd;
+    background-color: white;
 
     border-radius: 4px;
     border: solid 1px black;
@@ -714,10 +714,11 @@ h1, #msg-inner {
 
     width: 0%;
     height: 30px;
-    background-color: #04AA6D;
+    background-color: black;
+    transition: width 500ms;
 }
 
-#load-text {
+#load-percent {
     grid-column: 1;
     grid-row: 1;
 
@@ -725,6 +726,7 @@ h1, #msg-inner {
     font-size: 15px;
     line-height: 30px;
     color: white;
+    mix-blend-mode: difference;
 }
 
 #load-spinner {

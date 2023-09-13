@@ -226,15 +226,25 @@ function loadMap(id, bounds, numObjects) {
     });
 }
 
-function updateLoad(percent) {
+function updateLoad(stage, percent) {
+    const stageElem = document.getElementById("load-stage");
     const barElem = document.getElementById("load-bar");
-    const textElem = document.getElementById("load-text");
+    const percentElem = document.getElementById("load-percent");
+    switch (stage) {
+        case 1:
+            stageElem.innerHTML = "Parsing geometry... (1/2)";
+            break;
+        case 2:
+            stageElem.innerHTML = "Parsing geometry Ids... (2/2)";
+            break;
+    }
     barElem.style.width = percent + "%";
-    textElem.innerHTML = percent.toString() + "%";
+    percentElem.innerHTML = percent.toString() + "%";
 }
 
 function fetchResults() {
     console.log("Fetching results...");
+    
     fetch('query' + window.location.search)
     .then(response => {
         if (!response.ok) return response.text().then(text => {throw new Error(text)});
@@ -249,11 +259,11 @@ function fetchResults() {
 }
 
 function fetchLoadStatusInterval(interval) {
-    fetchLoadStatus(interval);
+    fetchLoadStatus();
     loadStatusIntervalId = setInterval(fetchLoadStatus, interval);
 }
 
-async function fetchLoadStatus(interval) {
+async function fetchLoadStatus() {
     console.log("Fetching load status...");
 
     fetch('loadstatus?backend=' + qleverBackend)
@@ -261,9 +271,12 @@ async function fetchLoadStatus(interval) {
         if (!response.ok) return response.text().then(text => {throw new Error(text)});
         return response;
         })
-    .then(response => response.text())
-    .then(percentText => parseFloat(percentText).toFixed(2))
-    .then(percent => updateLoad(percent))
+    .then(response => response.json())
+    .then(data => {
+        var stage = data["stage"];
+        var percent = parseFloat(data["percent"]).toFixed(2);
+        updateLoad(stage, percent);
+    })
     .catch(error => {
         showError(error);
         clearInterval(loadStatusIntervalId);
