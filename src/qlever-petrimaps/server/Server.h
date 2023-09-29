@@ -40,7 +40,9 @@ class Server : public util::http::Handler {
   util::http::Answer handleLoadReq(const Params& pars) const;
 
   util::http::Answer handleExportReq(const Params& pars, int sock) const;
+  util::http::Answer handleLoadStatusReq(const Params& pars) const;
 
+  void createCache(const std::string& backend) const;
   void loadCache(const std::string& backend) const;
 
   void clearSession(const std::string& id) const;

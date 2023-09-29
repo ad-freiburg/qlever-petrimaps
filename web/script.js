@@ -1,26 +1,29 @@
-var sessionId;
-var curGeojson;
-var curGeojsonId = -1;
+let sessionId;
+let curGeojson;
+let curGeojsonId = -1;
 
-var urlParams = new URLSearchParams(window.location.search);
-var qleverBackend = urlParams.get("backend");
-var query = urlParams.get("query");
+let urlParams = new URLSearchParams(window.location.search);
+let qleverBackend = urlParams.get("backend");
+let query = urlParams.get("query");
 
-var map = L.map('m', {
+// id of SetInterval to stop loadStatus requests on error or load finish
+let loadStatusIntervalId = -1;
+
+let map = L.map('m', {
     renderer: L.canvas(),
     preferCanvas: true
 }).setView([47.9965, 7.8469], 13);
 map.attributionControl.setPrefix('University of Freiburg');
 
-var layerControl = L.control.layers([], [], {collapsed:true, position: 'topleft'}).addTo(map);
+let layerControl = L.control.layers([], [], {collapsed:true, position: 'topleft'}).addTo(map);
 
-var osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+let osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a rel="noreferrer" target="_blank" href="#">OpenStreetMap</a>',
     maxZoom: 19,
     opacity:0.9
 }).addTo(map);
 
-var genError = "<p>Session has been removed from cache.</p> <p> <a href='javascript:location.reload();'>Resend request</a></p>";
+let genError = "<p>Session has been removed from cache.</p> <p> <a href='javascript:location.reload();'>Resend request</a></p>";
 
 function openPopup(data) {
     if (data.length > 0) {
@@ -71,7 +74,7 @@ function openPopup(data) {
           // the result value as another. Reformat a bit, so that it looks nice in
           // an HTML table.
           let key = variable.substring(1);
-          if (row[i] == null) { row[i] = "---"; }
+          if (row[i] == null) { row[i] = "---" }
           let value = row[i].replace(/\\([()])/g, "$1")
                         .replace(/<((.*)\/(.*))>/,
                          "<a class=\"link\" href=\"$1\" target=\"_blank\">$3</a>")
@@ -116,14 +119,13 @@ function getGeoJsonLayer(geom) {
                     opacity: 1,
                     fillOpacity: 0.2
                 });}
-            })
+            });
 }
 
 function showError(error) {
     error = error.toString();
-    console.log(error);
     document.getElementById("msg").style.display = "block";
-    document.getElementById("loader").style.display = "none";
+    document.getElementById("load").style.display = "none";
     document.getElementById("msg-inner").style.color = "red";
     document.getElementById("msg-inner").style.fontSize = "20px";
     document.getElementById("msg-inner").innerHTML = error.split("\n")[0];
@@ -188,7 +190,7 @@ function loadMap(id, bounds, numObjects) {
 	layerControl.addBaseLayer(autoLayer, "Auto");
 
     map.on('click', function(e) {
-        const ll= e.latlng;
+        const ll = e.latlng;
         const pos = L.Projection.SphericalMercator.project(ll);
 
         const w = map.getPixelBounds().max.x - map.getPixelBounds().min.x;
@@ -227,15 +229,65 @@ function loadMap(id, bounds, numObjects) {
     });
 }
 
-console.log("Fetching results...")
-fetch('query' + window.location.search)
-  .then(response => {
-      if (!response.ok) return response.text().then(text => {throw new Error(text)});
-      return response;
+function updateLoad(stage, percent) {
+    const stageElem = document.getElementById("load-stage");
+    const barElem = document.getElementById("load-bar");
+    const percentElem = document.getElementById("load-percent");
+    switch (stage) {
+        case 1:
+            stageElem.innerHTML = "Parsing geometry... (1/2)";
+            break;
+        case 2:
+            stageElem.innerHTML = "Parsing geometry Ids... (2/2)";
+            break;
+    }
+    barElem.style.width = percent + "%";
+    percentElem.innerHTML = percent.toString() + "%";
+}
+
+function fetchResults() {
+    console.log("Fetching results...");
+    
+    fetch('query' + window.location.search)
+    .then(response => {
+        if (!response.ok) return response.text().then(text => {throw new Error(text)});
+        return response;
+        })
+    .then(response => response.json())
+    .then(data => {
+        clearInterval(loadStatusIntervalId);
+        loadMap(data["qid"], data["bounds"], data["numobjects"]);
     })
-  .then(response => response.json())
-  .then(data => loadMap(data["qid"], data["bounds"], data["numobjects"]))
-  .catch(error => {showError(error);});
+    .catch(error => showError(error));
+}
+
+function fetchLoadStatusInterval(interval) {
+    fetchLoadStatus();
+    loadStatusIntervalId = setInterval(fetchLoadStatus, interval);
+}
+
+async function fetchLoadStatus() {
+    console.log("Fetching load status...");
+
+    fetch('loadstatus?backend=' + qleverBackend)
+    .then(response => {
+        if (!response.ok) return response.text().then(text => {throw new Error(text)});
+        return response;
+        })
+    .then(response => response.json())
+    .then(data => {
+        var stage = data["stage"];
+        var percent = parseFloat(data["percent"]).toFixed(2);
+        updateLoad(stage, percent);
+    })
+    .catch(error => {
+        showError(error);
+        clearInterval(loadStatusIntervalId);
+    });
+}
+
+fetchResults();
+fetchLoadStatusInterval(1000);
 
 document.getElementById("ex-geojson").onclick = function() {
     if (!sessionId) return;

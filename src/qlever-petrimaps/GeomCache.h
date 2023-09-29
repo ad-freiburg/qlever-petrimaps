@@ -89,6 +89,9 @@ class GeomCache {
     return id + 1 < _lines.size() ? _lines[id + 1] : _linePoints.size();
   }
 
+  double getLoadStatusPercent();
+  int getLoadStatusStage();
+
  private:
   std::string _backendUrl;
   CURL* _curl;
@@ -97,6 +100,9 @@ class GeomCache {
   ID _curId;
   QLEVER_ID_TYPE _maxQid;
   size_t _curRow, _curUniqueGeom;
+  
+  enum _LoadStatusStages {Parse = 1, ParseIds};
+  _LoadStatusStages _loadStatusStage;
 
   static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
   static size_t writeCbIds(void* contents, size_t size, size_t nmemb,

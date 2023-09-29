@@ -16,19 +16,28 @@
    <body>
       <main>
          <div id='m'></div>
-		 <div id='ex'>
-			 <button id='ex-csv'>Export as CSV</button>
-			 <button id='ex-tsv'>Export as TSV</button>
-			 <button id='ex-geojson'>Export as GeoJSON</button>
-		 </div>
-		 <div id='stats'>
-		 </div>
+		   <div id='ex'>
+			   <button id='ex-csv'>Export as CSV</button>
+			   <button id='ex-tsv'>Export as TSV</button>
+			   <button id='ex-geojson'>Export as GeoJSON</button>
+		   </div>
+		   <div id='stats'></div>
       </main>
-	  <div id='msg'>
-		  <div id='msg-inner'>Loading results from QLever...</div>
-		  <div id='msg-inner-desc'></div>
-        <div id="loader"></div>
-	  </div>
+	   <div id='msg'>
+		   <div id='msg-inner'>Loading results from QLever</div>
+		   <div id='msg-inner-desc'></div>
+        
+         <div id="load">
+            <div id="load-stage">Parsing geometry... (1/2)</div>
+            <div id="load-status">
+               <div id="load-bar"></div>
+               <div id="load-percent">0.00%</div>
+               <div id="load-spinner"></div>
+            </div>
+         </div>
+      </div>
+        
+	   </div>
       <script src='build.js' defer></script>
    </body>
 </html>

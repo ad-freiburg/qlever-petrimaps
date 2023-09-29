@@ -81,6 +81,8 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
       a = handlePosReq(params);
     } else if (cmd == "/export") {
       a = handleExportReq(params, con);
+    } else if (cmd == "/loadstatus") {
+      a = handleLoadStatusReq(params);
     } else if (cmd == "/build.js") {
       a = util::http::Answer(
           "200 OK", std::string(build_js, build_js + sizeof build_js /
@@ -745,6 +747,7 @@ util::http::Answer Server::handleLoadReq(const Params& pars) const {
 
   LOG(INFO) << "[SERVER] Queried backend is " << backend;
 
+  createCache(backend);
   loadCache(backend);
 
   auto answ = util::http::Answer("200 OK", "{}");
@@ -764,6 +767,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   LOG(INFO) << "[SERVER] Queried backend is " << backend;
   LOG(INFO) << "[SERVER] Query is:\n" << query;
 
+  createCache(backend);
   loadCache(backend);
 
   std::string queryId = backend + "$" + query;
@@ -1108,6 +1112,22 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
   return aw;
 }
 
+util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
+  if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
+    throw std::invalid_argument("No backend (?backend=) specified.");
+  auto backend = pars.find("backend")->second;
+  createCache(backend);
+  std::shared_ptr<GeomCache> cache = _caches[backend];
+  double loadStatusPercent = cache->getLoadStatusPercent();
+  int loadStatusStage = cache->getLoadStatusStage();
+
+  std::stringstream json;
+  json << "{\"percent\": " << loadStatusPercent << ", \"stage\": " << loadStatusStage << "}";
+  util::http::Answer ans = util::http::Answer("200 OK", json.str());
+  
+  return ans;
+}
+
 // _____________________________________________________________________________
 void Server::drawPoint(std::vector<uint32_t>& points,
                        std::vector<double>& points2, int px, int py, int w,
@@ -1140,9 +1160,7 @@ std::string Server::getSessionId() const {
   return std::to_string(d(rng));
 }
 
-// _____________________________________________________________________________
-void Server::loadCache(const std::string& backend) const {
-  std::shared_ptr<Requestor> reqor;
+void Server::createCache(const std::string& backend) const {
   std::shared_ptr<GeomCache> cache;
 
   {
@@ -1154,6 +1172,12 @@ void Server::loadCache(const std::string& backend) const {
       _caches[backend] = cache;
     }
   }
+}
+
+// _____________________________________________________________________________
+void Server::loadCache(const std::string& backend) const {
+  //std::shared_ptr<Requestor> reqor;
+  std::shared_ptr<GeomCache> cache = _caches[backend];
 
   try {
     cache->load(_cacheDir);
