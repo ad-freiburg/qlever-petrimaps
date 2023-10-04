@@ -5,12 +5,12 @@
 #include <curl/curl.h>
 #include <stdlib.h>
 
+#include <atomic>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <parallel/algorithm>
 #include <sstream>
-#include <atomic>
 
 #include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/Misc.h"
@@ -118,7 +118,7 @@ size_t GeomCache::writeCbCount(void* contents, size_t size, size_t nmemb,
 // _____________________________________________________________________________
 void GeomCache::parse(const char* c, size_t size) {
   _loadStatusStage = _LoadStatusStages::Parse;
-  
+
   const char* start = c;
   while (c < start + size) {
     if (_raw.size() < 10000) _raw.push_back(*c);
@@ -314,8 +314,7 @@ void GeomCache::parse(const char* c, size_t size) {
             if (_curRow % 1000000 == 0) {
               LOG(INFO) << "[GEOMCACHE] "
                         << "@ row " << _curRow << " (" << std::fixed
-                        << std::setprecision(2)
-                        << getLoadStatusPercent()
+                        << std::setprecision(2) << getLoadStatusPercent(true)
                         << "%, " << _pointsFSize << " points, " << _linesFSize
                         << " (open) polygons)";
             }
@@ -341,40 +340,48 @@ void GeomCache::parse(const char* c, size_t size) {
   }
 }
 
-double GeomCache::getLoadStatusPercent() {
+// _____________________________________________________________________________
+double GeomCache::getLoadStatusPercent(bool raw) {
   /*
   There are 2 loading stages: Parse, afterwards ParseIds.
-  Because ParseIds is usually pretty short, we merge the progress of both stages to one total progress.
-  Progress is calculated by _curRow / _totalSize, which are handled by each stage individually.
+  Because ParseIds is usually pretty short, we merge the progress of both stages
+  to one total progress. Progress is calculated by _curRow / _totalSize, which
+  are handled by each stage individually.
   */
   if (_totalSize == 0) {
     return 0.0;
   }
 
+  if (raw) {
+    return std::atomic<size_t>(_curRow) / static_cast<double>(_totalSize) *
+           100.0f;
+  }
+
   float parsePercent = 95.0f;
   float parseIdsPercent = 5.0f;
   float totalPercent = 0.0f;
-  switch(_loadStatusStage) {
+  switch (_loadStatusStage) {
     case _LoadStatusStages::Parse:
-      totalPercent = std::atomic<size_t>(_curRow) / static_cast<double>(_totalSize) * parsePercent;
+      totalPercent = std::atomic<size_t>(_curRow) /
+                     static_cast<double>(_totalSize) * parsePercent;
       break;
     case _LoadStatusStages::ParseIds:
       totalPercent = parsePercent;
-      totalPercent += std::atomic<size_t>(_curRow) / static_cast<double>(_totalSize) * parseIdsPercent;
+      totalPercent += std::atomic<size_t>(_curRow) /
+                      static_cast<double>(_totalSize) * parseIdsPercent;
       break;
   }
 
   return totalPercent;
 }
 
-int GeomCache::getLoadStatusStage() {
-  return _loadStatusStage;
-}
+// _____________________________________________________________________________
+int GeomCache::getLoadStatusStage() { return _loadStatusStage; }
 
 // _____________________________________________________________________________
 void GeomCache::parseIds(const char* c, size_t size) {
   _loadStatusStage = _LoadStatusStages::ParseIds;
-  
+
   size_t lastQid = -1;
   for (size_t i = 0; i < size; i++) {
     if (_raw.size() < 10000) _raw.push_back(c[i]);
@@ -625,8 +632,7 @@ void GeomCache::request() {
   size_t lastNum = -1;
 
   LOG(INFO) << "[GEOMCACHE] Total request size: " << _totalSize;
-  LOG(INFO) << "[GEOMCACHE] Query is:\n"
-            << getQuery(_backendUrl);
+  LOG(INFO) << "[GEOMCACHE] Query is:\n" << getQuery(_backendUrl);
 
   while (lastNum != 0) {
     size_t offset = _curRow;
@@ -676,8 +682,7 @@ void GeomCache::requestIds() {
   _maxQid = 0;
   _exceptionPtr = 0;
 
-  LOG(INFO) << "[GEOMCACHE] Query is "
-            << getQuery(_backendUrl);
+  LOG(INFO) << "[GEOMCACHE] Query is " << getQuery(_backendUrl);
 
   if (_curl) {
     auto qUrl = queryUrl(getQuery(_backendUrl), 0, MAXROWS);
