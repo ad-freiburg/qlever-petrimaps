@@ -3,12 +3,14 @@
 //
 
 #include <string>
+#include <clocale>
 #include "util/Misc.h"
 #include "util/Nullable.h"
 #include "util/String.h"
 #include "util/tests/QuadTreeTest.h"
 #include "util/geo/Geo.h"
 #include "util/geo/Grid.h"
+#include "util/geo/RTree.h"
 #include "util/graph/Algorithm.h"
 #include "util/graph/Dijkstra.h"
 #include "util/graph/BiDijkstra.h"
@@ -27,8 +29,6 @@ using util::approx;
 int main(int argc, char** argv) {
 	UNUSED(argc);
 	UNUSED(argv);
-
-  std::setlocale(LC_ALL, "en_US.utf8");
 
   QuadTreeTest quadTreeTest;
   quadTreeTest.run();
@@ -64,9 +64,9 @@ int main(int argc, char** argv) {
     TEST(util::btsSimi("Milner Road / Wandlee Road", "Wandlee Road"), ==, approx(1));
     TEST(util::btsSimi("bla blubb blob", "blubb blib"), ==, approx(0.9));
     TEST(util::btsSimi("St Pancras International", "London St Pancras"), ==, approx(0.588235));
-    TEST(util::btsSimi("Reiterstraße", "Reiterstraße Freiburg im Breisgau"), ==, approx(1));
-    TEST(util::btsSimi("Reiterstraße", "Reiter Freiburg im Breisgau"), ==, approx(.466666666));
-    TEST(util::btsSimi("AA", "Reiterstraße, Freiburg im Breisgau"), ==, approx(0));
+    TEST(util::btsSimi("Reiterstrasse", "Reiterstrasse Freiburg im Breisgau"), ==, approx(1));
+    TEST(util::btsSimi("Reiterstrasse", "Reiter Freiburg im Breisgau"), ==, approx(.53333333));
+    TEST(util::btsSimi("AA", "Reiterstrasse, Freiburg im Breisgau"), ==, approx(0));
     TEST(util::btsSimi("blibb blabbel bla blubb blob", "blubb blib blabb"), ==, approx(0.875));
     TEST(util::btsSimi("blibb blabbel bla blubb blobo", "blubb blib blabb blabo"), ==, approx(0.84));
     TEST(util::btsSimi("blubb blib blabb", "blibb blabbel bla blubb blob"), ==, approx(0.875));
@@ -79,14 +79,14 @@ int main(int argc, char** argv) {
 
   // ___________________________________________________________________________
   {
-    std::string test = u8"Zürich, Hauptbahnhof (Nord)";
+    std::string test = u8"Zuerich, Hauptbahnhof (Nord)";
     auto tokens = util::tokenize(test);
 
     TEST(tokens.size(), ==, 3);
 
-    TEST(util::jaccardSimi("Zürich Hauptbahnhof Nord", "Zürich, Hauptbahnhof (Nord)"), ==, approx(1));
-    TEST(util::jaccardSimi("Zürich Hauptbahnhof", "Zürich, Hauptbahnhof ()"), ==, approx(1));
-    TEST(util::jaccardSimi("Zürich Hauptbahnhof", "Zürich, Hauptbahnhof (Nord)"), ==, approx(2./3.));
+    TEST(util::jaccardSimi("Zuerich Hauptbahnhof Nord", "Zuerich, Hauptbahnhof (Nord)"), ==, approx(1));
+    TEST(util::jaccardSimi("Zuerich Hauptbahnhof", "Zuerich, Hauptbahnhof ()"), ==, approx(1));
+    TEST(util::jaccardSimi("Zuerich Hauptbahnhof", "Zuerich, Hauptbahnhof (Nord)"), ==, approx(2./3.));
   }
 
   // ___________________________________________________________________________
@@ -265,6 +265,64 @@ int main(int argc, char** argv) {
     ret.clear();
     g.getNeighbors(1, 0.55, &ret);
     TEST(ret.size(), ==, (size_t)2);
+
+    g.remove(1);
+    ret.clear();
+    g.getNeighbors(1, 0, &ret);
+    TEST(ret.size(), ==, (size_t)0);
+
+    g.remove(2);
+    ret.clear();
+    g.getNeighbors(1, 10, &ret);
+    TEST(ret.size(), ==, (size_t)0);
+
+    // TODO: more test cases
+  }
+
+  // ___________________________________________________________________________
+  {
+    RTree<int, Line, double> g;
+
+    Line<double> l;
+    l.push_back(Point<double>(0, 0));
+    l.push_back(Point<double>(1.5, 2));
+
+    Line<double> l2;
+    l2.push_back(Point<double>(2.5, 1));
+    l2.push_back(Point<double>(2.5, 2));
+
+    g.add(l, 1);
+    g.add(l2, 2);
+
+    std::set<int> ret;
+
+    Box<double> req(Point<double>(.5, 1), Point<double>(1, 1.5));
+    g.get(req, &ret);
+    TEST(ret.size(), ==, (size_t)1);
+
+    ret.clear();
+    Box<double> req2(Point<double>(.5, 1), Point<double>(2.5, 2));
+    g.get(req2, &ret);
+    TEST(ret.size(), ==, (size_t)2);
+
+    ret.clear();
+    g.getNeighbors(1, 0, &ret);
+    TEST(ret.size(), ==, (size_t)1);
+
+    ret.clear();
+    g.getNeighbors(1, 1.55, &ret);
+    TEST(ret.size(), ==, (size_t)2);
+
+
+    g.remove(1);
+    ret.clear();
+    g.getNeighbors(1, 0, &ret);
+    TEST(ret.size(), ==, (size_t)0);
+
+    g.remove(2);
+    ret.clear();
+    g.getNeighbors(1, 10, &ret);
+    TEST(ret.size(), ==, (size_t)0);
 
     // TODO: more test cases
   }

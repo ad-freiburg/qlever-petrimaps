@@ -8,14 +8,12 @@
 #define _USE_MATH_DEFINES
 
 #include <math.h>
-
 #include <algorithm>
 #include <cassert>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
-
 #include "util/Misc.h"
 #include "util/String.h"
 #include "util/geo/Box.h"
@@ -711,6 +709,25 @@ inline Point<T> intersection(const LineSegment<T>& s1,
 
 // _____________________________________________________________________________
 template <typename T>
+inline std::vector<Point<T>> intersection(const Line<T>& l1,
+                             const Line<T>& l2) {
+
+  std::vector<Point<T>> ret;
+
+  // TODO: better implementation than this naive baseline
+  for (size_t i = 1; i < l1.size(); i++) {
+    for (size_t j = 1; j < l2.size(); j++) {
+      LineSegment<T> a = {l1[i-1], l1[i]};
+      LineSegment<T> b = {l2[j-1], l2[j]};
+      if (intersects(a, b)) ret.push_back(intersection(a, b));
+    }
+  }
+
+  return ret;
+}
+
+// _____________________________________________________________________________
+template <typename T>
 inline Box<T> intersection(const Box<T>& b1, const Box<T>& b2) {
   if (!intersects(b1, b2)) return Box<T>();
 
@@ -928,6 +945,27 @@ inline double crossProd(const Point<T>& p, const LineSegment<T>& ls) {
       Point<T>(ls.second.getX() - ls.first.getX(),
                ls.second.getY() - ls.first.getY()),
       Point<T>(p.getX() - ls.first.getX(), p.getY() - ls.first.getY()));
+}
+
+// _____________________________________________________________________________
+template <typename T>
+inline double dist(const Polygon<T>& poly1, const Polygon<T>& poly2) {
+  if (contains(poly1, poly2) || contains(poly2, poly1)) return 0;
+  return dist(poly1.getOuter(), poly2.getOuter());
+}
+
+// _____________________________________________________________________________
+template <typename T>
+inline double dist(const Line<T>& l, const Polygon<T>& poly) {
+  if (contains(l, poly)) return 0;
+  return dist(l, poly.getOuter());
+}
+
+// _____________________________________________________________________________
+template <typename T>
+inline double dist(const Point<T>& p, const Polygon<T>& poly) {
+  if (contains(p, poly)) return 0;
+  return dist(p, poly.getOuter());
 }
 
 // _____________________________________________________________________________
@@ -1197,6 +1235,43 @@ inline double len(const Line<T>& g) {
   double ret = 0;
   for (size_t i = 1; i < g.size(); i++) ret += dist(g[i - 1], g[i]);
   return ret;
+}
+
+// _____________________________________________________________________________
+template <typename T>
+inline bool shorterThan(const Line<T>& g, double d) {
+  double ret = 0;
+  for (size_t i = 1; i < g.size(); i++) {
+    ret += dist(g[i - 1], g[i]);
+    if (ret >= d) return false;
+  }
+  return true;
+}
+
+// _____________________________________________________________________________
+template <typename T>
+inline bool longerThan(const Line<T>& g, double d) {
+  double ret = 0;
+  for (size_t i = 1; i < g.size(); i++) {
+    ret += dist(g[i - 1], g[i]);
+    if (ret > d) return true;
+  }
+  return false;
+}
+
+// _____________________________________________________________________________
+template <typename T>
+inline bool longerThan(const Line<T>& a, const Line<T>& b, double d) {
+  double ret = 0;
+  for (size_t i = 1; i < a.size(); i++) {
+    ret += dist(a[i - 1], a[i]);
+    if (ret > d) return true;
+  }
+  for (size_t i = 1; i < b.size(); i++) {
+    ret += dist(b[i - 1], b[i]);
+    if (ret > d) return true;
+  }
+  return false;
 }
 
 // _____________________________________________________________________________
@@ -1585,10 +1660,14 @@ inline Polygon<T> convexHull(const RotatedBox<T>& b) {
 template <typename T>
 inline size_t convexHullImpl(const MultiPoint<T>& a, size_t p1, size_t p2,
                              Line<T>* h) {
+  // emergency stop
+  if (h->size() >= a.size() + 1) return 0;
+
   // quickhull by Barber, Dobkin & Huhdanpaa
   Point<T> pa;
   bool found = false;
   double maxDist = 0;
+
   for (const auto& p : a) {
     double tmpDist = distToSegment((*h)[p1], (*h)[p2], p);
     double cp = crossProd(p, LineSegment<T>((*h)[p1], (*h)[p2]));
@@ -1612,11 +1691,11 @@ inline Polygon<T> convexHull(const MultiPoint<T>& l) {
   if (l.size() == 2) return convexHull(LineSegment<T>(l[0], l[1]));
   if (l.size() == 1) return convexHull(l[0]);
 
-  Point<T> left(std::numeric_limits<T>::max(), 0);
-  Point<T> right(std::numeric_limits<T>::lowest(), 0);
+  Point<T> left(std::numeric_limits<T>::max(), std::numeric_limits<T>::max());
+  Point<T> right(std::numeric_limits<T>::lowest(), std::numeric_limits<T>::lowest());
   for (const auto& p : l) {
-    if (p.getX() < left.getX()) left = p;
-    if (p.getX() > right.getX()) right = p;
+    if (p.getX() < left.getX() || (p.getX() == left.getX() && p.getY() < left.getY())) left = p;
+    if (p.getX() > right.getX() || (p.getX() == right.getX() && p.getY() > right.getY())) right = p;
   }
 
   Line<T> hull{left, right};
@@ -2172,9 +2251,9 @@ inline double accFrechetDistCHav(const Line<T>& a, const Line<T>& b, double d) {
 template <typename T>
 inline Point<T> latLngToWebMerc(double lat, double lng) {
   double x = 6378137.0 * lng * 0.017453292519943295;
-  double sina = sin(lat * 0.017453292519943295);
+  double a = lat * 0.017453292519943295;
 
-  double y = 3189068.5 * log((1.0 + sina) / (1.0 - sina));
+  double y = 3189068.5 * log((1.0 + sin(a)) / (1.0 - sin(a)));
   return Point<T>(x, y);
 }
 

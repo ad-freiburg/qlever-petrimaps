@@ -100,9 +100,9 @@ class GeomCache {
   ID _curId;
   QLEVER_ID_TYPE _maxQid;
   size_t _curRow, _curUniqueGeom;
-  
+
   enum _LoadStatusStages {Parse = 1, ParseIds};
-  _LoadStatusStages _loadStatusStage;
+  _LoadStatusStages _loadStatusStage = Parse;
 
   static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
   static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
@@ -144,7 +144,7 @@ class GeomCache {
   std::fstream _linesF;
   std::fstream _qidToIdF;
 
-  size_t _totalSize;
+  size_t _totalSize = 0;
 
   IdMapping _lastQidToId;
 

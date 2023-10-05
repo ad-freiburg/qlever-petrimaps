@@ -3,6 +3,7 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <iomanip>
+#include <limits>
 #include "Writer.h"
 #include "util/String.h"
 using namespace util;
@@ -87,7 +88,7 @@ void Writer::val(int v) {
 }
 
 // _____________________________________________________________________________
-void Writer::val(size_t v) {
+void Writer::val(uint64_t v) {
   valCheck();
   *_out << v;
 }
@@ -95,7 +96,13 @@ void Writer::val(size_t v) {
 // _____________________________________________________________________________
 void Writer::val(double v) {
   valCheck();
-  *_out << std::fixed << std::setprecision(_floatPrec) << v;
+  if (v > std::numeric_limits<double>::max())
+    *_out << std::numeric_limits<double>::max();
+  else if (std::isnan(v))
+    *_out << "NaN";
+  else {
+    *_out << std::fixed << std::setprecision(_floatPrec) << v;
+  }
 }
 
 // _____________________________________________________________________________

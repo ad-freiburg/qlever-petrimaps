@@ -341,6 +341,7 @@ void GeomCache::parse(const char* c, size_t size) {
   }
 }
 
+// _____________________________________________________________________________
 double GeomCache::getLoadStatusPercent() {
   /*
   There are 2 loading stages: Parse, afterwards ParseIds.
@@ -367,6 +368,7 @@ double GeomCache::getLoadStatusPercent() {
   return totalPercent;
 }
 
+// _____________________________________________________________________________
 int GeomCache::getLoadStatusStage() {
   return _loadStatusStage;
 }
@@ -1094,7 +1096,7 @@ std::string GeomCache::requestIndexHash() {
     curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
     if (httpCode != 200) {
-      LOG(ERROR) << "QLever backend returned status code " << httpCode
+      LOG(WARN) << "QLever backend returned status code " << httpCode
                  << " for index hash.";
       return "";
     }

@@ -15,8 +15,8 @@ class Point {
  public:
   Point() : _x(0), _y(0) {}
   Point(T x, T y) : _x(x), _y(y) {}
-  const T& getX() const { return _x; }
-  const T& getY() const { return _y; }
+  T getX() const { return _x; }
+  T getY() const { return _y; }
 
   void setX(T x) { _x = x; }
   void setY(T y) { _y = y; }
@@ -29,12 +29,20 @@ class Point {
     return Point<T>(_x - p.getX(), _y - p.getY());
   }
 
+  // bool operator==(const Point<T>& p) const {
+    // return p.getX() == _x && p.getY() == _y;
+  // }
+
   bool operator==(const Point<T>& p) const {
-    return p.getX() == _x && p.getY() == _y;
+    return fabs(p.getX() - _x) < 0.00001 && fabs(p.getY() - _y) < 0.00001;
   }
 
   bool operator!=(const Point<T>& p) const {
     return !(*this == p);
+  }
+
+  bool operator<(const Point<T>& p) const {
+    return _x < p.getX() || (_x == p.getX() && _y < p.getY());
   }
 
  private:
