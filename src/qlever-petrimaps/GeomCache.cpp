@@ -314,7 +314,7 @@ void GeomCache::parse(const char* c, size_t size) {
             if (_curRow % 1000000 == 0) {
               LOG(INFO) << "[GEOMCACHE] "
                         << "@ row " << _curRow << " (" << std::fixed
-                        << std::setprecision(2) << getLoadStatusPercent(true)
+                        << std::setprecision(2) << getLoadStatusPercent()
                         << "%, " << _pointsFSize << " points, " << _linesFSize
                         << " (open) polygons)";
             }
@@ -341,7 +341,7 @@ void GeomCache::parse(const char* c, size_t size) {
 }
 
 // _____________________________________________________________________________
-double GeomCache::getLoadStatusPercent(bool raw) {
+double GeomCache::getLoadStatusPercent(bool total) {
   /*
   There are 2 loading stages: Parse, afterwards ParseIds.
   Because ParseIds is usually pretty short, we merge the progress of both stages
@@ -352,7 +352,7 @@ double GeomCache::getLoadStatusPercent(bool raw) {
     return 0.0;
   }
 
-  if (raw) {
+  if (!total) {
     return std::atomic<size_t>(_curRow) / static_cast<double>(_totalSize) *
            100.0f;
   }
