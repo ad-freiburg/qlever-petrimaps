@@ -1,11 +1,16 @@
 file(GLOB_RECURSE QLEVER_PETRIMAPS_SRC *.cpp)
+find_package(PNG REQUIRED)
+
 
 set(qlever_petrimaps_main PetriMapsMain.cpp)
 
 list(REMOVE_ITEM QLEVER_PETRIMAPS_SRC ${qlever_petrimaps_main})
 
+message("PNG INCLUDE:" ${PNG_INCLUDE_DIRS} "A")
+
 include_directories(
 	${QLEVER_PETRIMAPS_INCLUDE_DIR}
+	${PNG_INCLUDE_DIRS}_
 )
 
 add_executable(petrimaps ${qlever_petrimaps_main})
@@ -36,4 +41,4 @@ add_custom_target(htmlfiles DEPENDS index.h build.h style.h)
 
 add_dependencies(qlever_petrimaps_dep htmlfiles)
 
-target_link_libraries(petrimaps qlever_petrimaps_dep 3rdparty_dep util -lpthread -lcurl -lpng)
+target_link_libraries(petrimaps qlever_petrimaps_dep 3rdparty_dep util ${PNG_LIBRARIES} -lpthread -lcurl)

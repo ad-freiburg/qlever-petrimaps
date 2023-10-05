@@ -9,8 +9,7 @@ using namespace geo;
 using namespace output;
 
 // _____________________________________________________________________________
-GeoJsonOutput::GeoJsonOutput(std::ostream& str) : GeoJsonOutput(str, false) {
-}
+GeoJsonOutput::GeoJsonOutput(std::ostream& str) : GeoJsonOutput(str, false) {}
 
 // _____________________________________________________________________________
 GeoJsonOutput::GeoJsonOutput(std::ostream& str, bool raw) : _wr(&str, 10, true) {

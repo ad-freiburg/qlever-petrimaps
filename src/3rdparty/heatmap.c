@@ -24,7 +24,6 @@
 
 #include "heatmap.h"
 
-#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h> /* malloc, calloc, free */
 #include <string.h> /* memcpy, memset */

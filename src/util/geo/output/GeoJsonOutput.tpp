@@ -121,48 +121,7 @@ void GeoJsonOutput::print(const Polygon<T>& poly, json::Val attrs) {
 // _____________________________________________________________________________
 template <typename T>
 void GeoJsonOutput::print(const MultiPolygon<T>& mpoly, json::Val attrs) {
-  if (!mpoly.size()) return;
-  _wr.obj();
-  _wr.keyVal("type", "Feature");
-
-  _wr.key("geometry");
-  _wr.obj();
-  _wr.keyVal("type", "MultiPolygon");
-  _wr.key("coordinates");
-
-  _wr.arr();
-
-  for (const auto& poly : mpoly) {
-    _wr.arr();
-
-    _wr.arr();
-    for (auto p : poly.getOuter()) {
-      _wr.arr();
-      _wr.val(p.getX());
-      _wr.val(p.getY());
-      _wr.close();
-    }
-    _wr.close();
-
-    for (const auto& inner : poly.getInners()) {
-      _wr.arr();
-      for (auto p : inner) {
-        _wr.arr();
-        _wr.val(p.getX());
-        _wr.val(p.getY());
-        _wr.close();
-      }
-      _wr.close();
-    }
-
-    _wr.close();
-  }
-
-  _wr.close();
-  _wr.close();
-  _wr.key("properties");
-  _wr.val(attrs);
-  _wr.close();
+  for (const auto& p : mpoly) print(p, attrs);
 }
 
 // _____________________________________________________________________________
@@ -195,15 +154,7 @@ void GeoJsonOutput::printLatLng(const Line<T>& line, json::Val attrs) {
 // _____________________________________________________________________________
 template <typename T>
 void GeoJsonOutput::printLatLng(const MultiLine<T>& mline, json::Val attrs) {
-  std::vector<Line<T>> projLs;
-  for (auto line : mline) {
-    projLs.emplace_back(Line<T>());
-    for (auto p : line) {
-      projLs.back().push_back(util::geo::webMercToLatLng<T>(p.getX(), p.getY()));
-    }
-  }
-
-  print(projLs, attrs);
+  for (const auto& l : mline) printLatLng(l, attrs);
 }
 
 // _____________________________________________________________________________
@@ -219,13 +170,5 @@ void GeoJsonOutput::printLatLng(const Polygon<T>& poly, json::Val attrs) {
 // _____________________________________________________________________________
 template <typename T>
 void GeoJsonOutput::printLatLng(const MultiPolygon<T>& mpoly, json::Val attrs) {
-  std::vector<Polygon<T>> projPs;
-  for (auto poly : mpoly) {
-    projPs.emplace_back(Polygon<T>());
-    for (auto p : poly.getOuter()) {
-      projPs.back().getOuter().push_back(util::geo::webMercToLatLng<T>(p.getX(), p.getY()));
-    }
-  }
-
-  print(projPs, attrs);
+  for (const auto& p : mpoly) printLatLng(p, attrs);
 }
