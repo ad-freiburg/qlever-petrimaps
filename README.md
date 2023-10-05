@@ -1,3 +1,4 @@
+[![Build](https://github.com/ad-freiburg/qlever-petrimaps/actions/workflows/build.yml/badge.svg)](https://github.com/ad-freiburg/qlever-petrimaps/actions/workflows/build.yml)
 # QLever petrimaps
 
 Visualization of geospatial SPARQL query results for QLever on a map, either as individual objeckts or as a heatmap. Can handle hundreds of millions of result rows, tested with over 200 million results (all streets in OSM). Implemented as a middle-end / middleware.
