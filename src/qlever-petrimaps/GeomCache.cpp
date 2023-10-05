@@ -393,7 +393,10 @@ void GeomCache::parseIds(const char* c, size_t size) {
     if (_curByte == 0) {
       if (_curRow % 1000000 == 0) {
         LOG(INFO) << "[GEOMCACHE] "
-                  << "@ row " << _curRow;
+                  << "@ row " << _curRow << " (" << std::fixed
+                  << std::setprecision(2) << getLoadStatusPercent()
+                  << "%, " << _pointsFSize << " points, " << _linesFSize
+                  << " (open) polygons)";
       }
 
       if (_curRow < _qidToId.size() && _qidToId[_curRow].qid == 0) {
