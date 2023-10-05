@@ -9,7 +9,7 @@
 #include <csignal>
 #include <locale>
 #include <memory>
-#include <parallel/algorithm>
+#include <algorithm>
 #include <random>
 #include <set>
 #include <unordered_set>
@@ -299,7 +299,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
       lgrid.get(fbbox, &ret);
 
       // sort to avoid duplicates
-      __gnu_parallel::sort(ret.begin(), ret.end());
+      std::sort(ret.begin(), ret.end());
 
       for (size_t idx = 0; idx < ret.size(); idx++) {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;

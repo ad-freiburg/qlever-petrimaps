@@ -8,7 +8,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
-#include <parallel/algorithm>
+#include <algorithm>
 #include <sstream>
 #include <atomic>
 
