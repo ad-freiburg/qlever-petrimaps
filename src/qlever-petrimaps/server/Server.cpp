@@ -2,7 +2,6 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
-#include <omp.h>
 #include <png.h>
 
 #include <chrono>
@@ -29,6 +28,11 @@
 #include "util/geo/output/GeoJsonOutput.cpp"
 #include "util/http/Server.h"
 #include "util/log/Log.h"
+#ifdef _OPENMP
+#include <omp.h>
+#else
+#define omp_get_thread_num() 0
+#endif
 
 using petrimaps::Params;
 using petrimaps::Server;
@@ -244,6 +248,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           if (x >= grid.getXWidth() || y >= grid.getYHeight()) {
             continue;
           }
+
           auto cell = grid.getCell(x, y);
           if (!cell || cell->size() == 0) continue;
           const auto& cellBox = grid.getBox(x, y);
