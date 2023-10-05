@@ -21,11 +21,10 @@ namespace petrimaps {
 
 class GeomCache {
  public:
-  GeomCache() : _backendUrl(""), _curl(0), _maxMemory(-1) {}
-  explicit GeomCache(const std::string& backendUrl, size_t maxMemory)
+  GeomCache() : _backendUrl(""), _curl(0) {}
+  explicit GeomCache(const std::string& backendUrl)
       : _backendUrl(backendUrl),
-        _curl(curl_easy_init()),
-        _maxMemory(maxMemory) {}
+        _curl(curl_easy_init()) {}
 
   GeomCache& operator=(GeomCache&& o) {
     _backendUrl = o._backendUrl;
@@ -153,7 +152,6 @@ class GeomCache {
   std::string _dangling, _prev, _raw;
   ParseState _state;
 
-  size_t _maxMemory;
   std::exception_ptr _exceptionPtr;
 
   mutable std::mutex _m;

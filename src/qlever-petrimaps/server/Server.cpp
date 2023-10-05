@@ -1174,7 +1174,7 @@ void Server::createCache(const std::string& backend) const {
     if (_caches.count(backend)) {
       cache = _caches[backend];
     } else {
-      cache = std::shared_ptr<GeomCache>(new GeomCache(backend, _maxMemory));
+      cache = std::shared_ptr<GeomCache>(new GeomCache(backend));
       _caches[backend] = cache;
     }
   }
