@@ -4,12 +4,12 @@
 
 #include <png.h>
 
+#include <algorithm>
 #include <chrono>
 #include <codecvt>
 #include <csignal>
 #include <locale>
 #include <memory>
-#include <algorithm>
 #include <random>
 #include <set>
 #include <unordered_set>
@@ -1128,7 +1128,8 @@ util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
   int loadStatusStage = cache->getLoadStatusStage();
 
   std::stringstream json;
-  json << "{\"percent\": " << loadStatusPercent << ", \"stage\": " << loadStatusStage << "}";
+  json << "{\"percent\": " << loadStatusPercent
+       << ", \"stage\": " << loadStatusStage << "}";
   util::http::Answer ans = util::http::Answer("200 OK", json.str());
 
   return ans;
@@ -1182,7 +1183,7 @@ void Server::createCache(const std::string& backend) const {
 
 // _____________________________________________________________________________
 void Server::loadCache(const std::string& backend) const {
-  //std::shared_ptr<Requestor> reqor;
+  // std::shared_ptr<Requestor> reqor;
   std::shared_ptr<GeomCache> cache = _caches[backend];
 
   try {

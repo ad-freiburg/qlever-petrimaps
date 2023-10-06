@@ -354,12 +354,12 @@ double GeomCache::getLoadStatusPercent(bool total) {
 
   if (!total) {
     return std::atomic<size_t>(_curRow) / static_cast<double>(_totalSize) *
-           100.0f;
+           100.0;
   }
 
-  float parsePercent = 95.0f;
-  float parseIdsPercent = 5.0f;
-  float totalPercent = 0.0f;
+  double parsePercent = 95.0;
+  double parseIdsPercent = 5.0;
+  double totalPercent = 0.0;
   switch (_loadStatusStage) {
     case _LoadStatusStages::Parse:
       totalPercent = std::atomic<size_t>(_curRow) /
