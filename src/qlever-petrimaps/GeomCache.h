@@ -88,7 +88,8 @@ class GeomCache {
     return id + 1 < _lines.size() ? _lines[id + 1] : _linePoints.size();
   }
 
-  double getLoadStatusPercent();
+  double getLoadStatusPercent(bool total);
+  double getLoadStatusPercent() { return getLoadStatusPercent(false); };
   int getLoadStatusStage();
 
  private:

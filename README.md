@@ -8,6 +8,7 @@ Examples: [All railway lines in OSM](https://qlever.cs.uni-freiburg.de/mapui-pet
 
 ## Requirements
 * gcc > 5.0 || clang > 3.9
+* xxd
 * libcurl
 * libpng (for PNG rendering)
 * Java Runtime Environment (for compiling the JS of the web frontend)
