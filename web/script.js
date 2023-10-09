@@ -287,7 +287,7 @@ async function fetchLoadStatus() {
 }
 
 fetchResults();
-fetchLoadStatusInterval(1000);
+fetchLoadStatusInterval(333);
 
 document.getElementById("ex-geojson").onclick = function() {
     if (!sessionId) return;

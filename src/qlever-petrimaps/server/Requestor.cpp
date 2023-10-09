@@ -4,7 +4,7 @@
 
 #include <cstring>
 #include <iostream>
-#include <parallel/algorithm>
+#include <algorithm>
 #include <regex>
 #include <sstream>
 
@@ -14,6 +14,11 @@
 #include "util/geo/Geo.h"
 #include "util/geo/PolyLine.h"
 #include "util/log/Log.h"
+#ifdef _OPENMP
+#include <omp.h>
+#else
+#define omp_get_thread_num() 0
+#endif
 
 using petrimaps::GeomCache;
 using petrimaps::Requestor;
@@ -51,7 +56,7 @@ void Requestor::request(const std::string& qry) {
 
   // sort by qlever id
   LOG(INFO) << "[REQUESTOR] Sorting results by qlever ID...";
-  __gnu_parallel::sort(reader.ids.begin(), reader.ids.end());
+  std::sort(reader.ids.begin(), reader.ids.end());
   LOG(INFO) << "[REQUESTOR] ... done";
 
   LOG(INFO) << "[REQUESTOR] Retrieving geoms from cache...";
@@ -71,8 +76,6 @@ void Requestor::request(const std::string& qry) {
   std::vector<size_t> numLines(NUM_THREADS, 0);
   util::geo::FBox pointBbox;
   util::geo::DBox lineBbox;
-  size_t numLinesAll = 0;
-
   size_t batch = ceil(static_cast<double>(_objects.size()) / NUM_THREADS);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
@@ -101,10 +104,6 @@ void Requestor::request(const std::string& qry) {
 
   for (const auto& box : lineBoxes) {
     lineBbox = util::geo::extendBox(box, lineBbox);
-  }
-
-  for (size_t l : numLines) {
-    numLinesAll += l;
   }
 
   // to avoid zero area boxes if only one point is requested
@@ -608,7 +607,6 @@ const ResObj Requestor::getGeom(size_t id, double rad) const {
     size_t lineId = obj.first - I_OFFSET;
 
     bool isArea = Requestor::isArea(lineId);
-    const auto& fline = extractLineGeom(lineId);
 
     if (isArea) {
       return {true, id, {{0, 0}}, {}, {}, geomPolyGeoms(id, rad / 10)};

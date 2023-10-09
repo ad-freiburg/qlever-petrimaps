@@ -21,11 +21,10 @@ namespace petrimaps {
 
 class GeomCache {
  public:
-  GeomCache() : _backendUrl(""), _curl(0), _maxMemory(-1) {}
-  explicit GeomCache(const std::string& backendUrl, size_t maxMemory)
+  GeomCache() : _backendUrl(""), _curl(0) {}
+  explicit GeomCache(const std::string& backendUrl)
       : _backendUrl(backendUrl),
-        _curl(curl_easy_init()),
-        _maxMemory(maxMemory) {}
+        _curl(curl_easy_init()) {}
 
   GeomCache& operator=(GeomCache&& o) {
     _backendUrl = o._backendUrl;
@@ -89,7 +88,8 @@ class GeomCache {
     return id + 1 < _lines.size() ? _lines[id + 1] : _linePoints.size();
   }
 
-  double getLoadStatusPercent();
+  double getLoadStatusPercent(bool total);
+  double getLoadStatusPercent() { return getLoadStatusPercent(false); };
   int getLoadStatusStage();
 
  private:
@@ -100,9 +100,9 @@ class GeomCache {
   ID _curId;
   QLEVER_ID_TYPE _maxQid;
   size_t _curRow, _curUniqueGeom;
-  
+
   enum _LoadStatusStages {Parse = 1, ParseIds};
-  _LoadStatusStages _loadStatusStage;
+  _LoadStatusStages _loadStatusStage = Parse;
 
   static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
   static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
@@ -144,7 +144,7 @@ class GeomCache {
   std::fstream _linesF;
   std::fstream _qidToIdF;
 
-  size_t _totalSize;
+  size_t _totalSize = 0;
 
   IdMapping _lastQidToId;
 
@@ -153,7 +153,6 @@ class GeomCache {
   std::string _dangling, _prev, _raw;
   ParseState _state;
 
-  size_t _maxMemory;
   std::exception_ptr _exceptionPtr;
 
   mutable std::mutex _m;

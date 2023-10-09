@@ -2,15 +2,14 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
-#include <omp.h>
 #include <png.h>
 
+#include <algorithm>
 #include <chrono>
 #include <codecvt>
 #include <csignal>
 #include <locale>
 #include <memory>
-#include <parallel/algorithm>
 #include <random>
 #include <set>
 #include <unordered_set>
@@ -29,6 +28,11 @@
 #include "util/geo/output/GeoJsonOutput.cpp"
 #include "util/http/Server.h"
 #include "util/log/Log.h"
+#ifdef _OPENMP
+#include <omp.h>
+#else
+#define omp_get_thread_num() 0
+#endif
 
 using petrimaps::Params;
 using petrimaps::Server;
@@ -244,6 +248,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           if (x >= grid.getXWidth() || y >= grid.getYHeight()) {
             continue;
           }
+
           auto cell = grid.getCell(x, y);
           if (!cell || cell->size() == 0) continue;
           const auto& cellBox = grid.getBox(x, y);
@@ -294,7 +299,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
       lgrid.get(fbbox, &ret);
 
       // sort to avoid duplicates
-      __gnu_parallel::sort(ret.begin(), ret.end());
+      std::sort(ret.begin(), ret.end());
 
       for (size_t idx = 0; idx < ret.size(); idx++) {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
@@ -1112,19 +1117,21 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
   return aw;
 }
 
+// _____________________________________________________________________________
 util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
   auto backend = pars.find("backend")->second;
   createCache(backend);
   std::shared_ptr<GeomCache> cache = _caches[backend];
-  double loadStatusPercent = cache->getLoadStatusPercent();
+  double loadStatusPercent = cache->getLoadStatusPercent(true);
   int loadStatusStage = cache->getLoadStatusStage();
 
   std::stringstream json;
-  json << "{\"percent\": " << loadStatusPercent << ", \"stage\": " << loadStatusStage << "}";
+  json << "{\"percent\": " << loadStatusPercent
+       << ", \"stage\": " << loadStatusStage << "}";
   util::http::Answer ans = util::http::Answer("200 OK", json.str());
-  
+
   return ans;
 }
 
@@ -1168,7 +1175,7 @@ void Server::createCache(const std::string& backend) const {
     if (_caches.count(backend)) {
       cache = _caches[backend];
     } else {
-      cache = std::shared_ptr<GeomCache>(new GeomCache(backend, _maxMemory));
+      cache = std::shared_ptr<GeomCache>(new GeomCache(backend));
       _caches[backend] = cache;
     }
   }
@@ -1176,7 +1183,7 @@ void Server::createCache(const std::string& backend) const {
 
 // _____________________________________________________________________________
 void Server::loadCache(const std::string& backend) const {
-  //std::shared_ptr<Requestor> reqor;
+  // std::shared_ptr<Requestor> reqor;
   std::shared_ptr<GeomCache> cache = _caches[backend];
 
   try {

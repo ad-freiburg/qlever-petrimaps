@@ -1,3 +1,4 @@
+[![Build](https://github.com/ad-freiburg/qlever-petrimaps/actions/workflows/build.yml/badge.svg)](https://github.com/ad-freiburg/qlever-petrimaps/actions/workflows/build.yml)
 # QLever petrimaps
 
 Visualization of geospatial SPARQL query results for QLever on a map, either as individual objeckts or as a heatmap. Can handle hundreds of millions of result rows, tested with over 200 million results (all streets in OSM). Implemented as a middle-end / middleware.
@@ -7,6 +8,7 @@ Examples: [All railway lines in OSM](https://qlever.cs.uni-freiburg.de/mapui-pet
 
 ## Requirements
 * gcc > 5.0 || clang > 3.9
+* xxd
 * libcurl
 * libpng (for PNG rendering)
 * Java Runtime Environment (for compiling the JS of the web frontend)

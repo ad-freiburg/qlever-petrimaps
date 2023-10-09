@@ -700,7 +700,6 @@ h1, #msg-inner {
 
 #load-status {
     display: grid;
-    
     width: 100%;
     background-color: white;
 
@@ -715,7 +714,8 @@ h1, #msg-inner {
     width: 0%;
     height: 30px;
     background-color: black;
-    transition: width 500ms;
+    transition: width 400ms;
+    transition-timing-function: linear;
 }
 
 #load-percent {
