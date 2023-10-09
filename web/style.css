@@ -630,6 +630,14 @@ tt {
     margin: 5px -10px 5px -6px;
 }
 
+.leaflet-popup-content img {
+    width: 200px;
+}
+
+.leaflet-popup-content a {
+    border: none;
+}
+
 h1, #msg-inner {
     font: 1.5em sans-serif;
     margin-bottom: 40px;
@@ -646,7 +654,7 @@ h1, #msg-inner {
     background-color: white;
     border: solid 1px black;
     text-align: center;
-    z-index: 99999;
+    z-index: 99998;
     padding: 50px;
 }
 
@@ -672,19 +680,45 @@ h1, #msg-inner {
     }
 }
 
-.leaflet-popup-content img {
-    width: 200px;
-}
-
-.leaflet-popup-content a {
-    border: none;
-}
-
-#ex {
+#options {
     position: absolute;
     top: 10px;
     right: 10px;
-    z-index: 9999;
+    z-index: 9998;
+}
+
+#options-submit {
+    display: inline-block;
+}
+
+#options-ex {
+    display: none;
+}
+
+button {
+    padding: 6px 12px;
+    margin-bottom: 0;
+    font-size: 15px;
+    -ms-touch-action: manipulation;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    border: 1px solid #9d9d9d;
+    border-radius: 4px;
+    margin-left: 10px;
+    cursor: pointer;
+    vertical-align: middle;
+    font-weight: 400;
+    line-height: 1.42857143;
+    text-align: center;
+    white-space: nowrap;
+    background-color: white;
+}
+
+#button:hover {
+    background-color: #f4f4f4;
 }
 
 #stats {
@@ -698,11 +732,80 @@ h1, #msg-inner {
     background: white;
 }
 
+#msg {
+    display: none;
+}
+
+#submit {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40%;
+    height: 40%;
+    max-width: 40%;
+    border-radius: 4px;
+    background-color: white;
+    border: solid 1px black;
+    z-index: 99999;
+}
+
+.submit-tabs {
+    overflow: hidden;
+    border: 1px solid #ccc;
+    background-color: #f1f1f1;
+}
+
+.submit-tabs button {
+    background-color: inherit;
+    float: left;
+    border: none;
+    border-radius: 0px;
+    margin-left: 0px;
+    outline: none;
+    cursor: pointer;
+    padding: 14px 16px;
+    transition: 0.3s;
+    width: 50%;
+}
+
+.submit-tabs button.active {
+    background-color: #ccc;
+}
+
+.submit-tab_content {
+    display: none;
+    box-sizing: border-box;
+    padding-left: 12px;
+    padding-right: 12px;
+    text-align: left;
+}
+
+.submit-text_input {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: 30px;
+}
+
+#submit-button {
+    position: absolute;
+    bottom: 12px;
+    left: 0;
+    right: 0;
+    width: 72px;
+    margin: auto;
+}
+
+#load {
+    display: none;
+}
+
 #load-status {
     display: grid;
     width: 100%;
     background-color: white;
-
     border-radius: 4px;
     border: solid 1px black;
 }
@@ -745,32 +848,6 @@ h1, #msg-inner {
 
 #stats span {
     padding: 5px;
-}
-
-#ex button {
-    padding: 6px 12px;
-    margin-bottom: 0;
-    font-size: 15px;
-    -ms-touch-action: manipulation;
-    touch-action: manipulation;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-    border: 1px solid #9d9d9d;
-    border-radius: 4px;
-    margin-left: 10px;
-    cursor: pointer;
-    vertical-align: middle;
-    font-weight: 400;
-    line-height: 1.42857143;
-    text-align: center;
-    white-space: nowrap;
-    background-color: white;
-}
-
-#ex button:hover {
-    background-color: #f4f4f4;
 }
 
 .export-link {

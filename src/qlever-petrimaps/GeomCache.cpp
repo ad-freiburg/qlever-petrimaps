@@ -477,7 +477,7 @@ size_t GeomCache::requestSize() {
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     res = curl_easy_perform(_curl);
 
-    int httpCode = 0;
+    long httpCode = 0;
     curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
     curl_slist_free_all(headers);
@@ -543,7 +543,7 @@ void GeomCache::requestPart(size_t offset) {
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     res = curl_easy_perform(_curl);
 
-    int httpCode = 0;
+    long httpCode = 0;
     curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
     curl_slist_free_all(headers);
@@ -708,7 +708,7 @@ void GeomCache::requestIds() {
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_perform(_curl);
 
-    int httpCode = 0;
+    long httpCode = 0;
     curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
     curl_slist_free_all(headers);
@@ -1100,7 +1100,7 @@ std::string GeomCache::requestIndexHash() {
       return "";
     }
 
-    int httpCode = 0;
+    long httpCode = 0;
     curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
     if (httpCode != 200) {

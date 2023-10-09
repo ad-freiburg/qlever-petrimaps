@@ -40,7 +40,7 @@ void RequestReader::requestIds(const std::string& query) {
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
     res = curl_easy_perform(_curl);
 
-    int httpCode = 0;
+    long httpCode = 0;
     curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
     curl_slist_free_all(headers);
@@ -110,7 +110,7 @@ void RequestReader::requestRows(const std::string& query,
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
     res = curl_easy_perform(_curl);
 
-    int httpCode = 0;
+    long httpCode = 0;
     curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
     curl_slist_free_all(headers);
