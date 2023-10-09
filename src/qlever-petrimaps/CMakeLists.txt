@@ -6,7 +6,7 @@ set(qlever_petrimaps_main PetriMapsMain.cpp)
 
 list(REMOVE_ITEM QLEVER_PETRIMAPS_SRC ${qlever_petrimaps_main})
 
-message("PNG INCLUDE:" ${PNG_INCLUDE_DIRS} "A")
+message("PNG INCLUDE:" ${PNG_INCLUDE_DIRS})
 
 include_directories(
 	${QLEVER_PETRIMAPS_INCLUDE_DIR}

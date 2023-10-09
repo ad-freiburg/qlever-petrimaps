@@ -7,6 +7,7 @@
 
 #include <curl/curl.h>
 
+#include <atomic>
 #include <fstream>
 #include <map>
 #include <mutex>
@@ -21,10 +22,10 @@ namespace petrimaps {
 
 class GeomCache {
  public:
-  GeomCache() : _backendUrl(""), _curl(0) {}
+  GeomCache() : _backendUrl(""), _curl(0), _curRow(0) {}
   explicit GeomCache(const std::string& backendUrl)
       : _backendUrl(backendUrl),
-        _curl(curl_easy_init()) {}
+        _curl(curl_easy_init()), _curRow(0) {}
 
   GeomCache& operator=(GeomCache&& o) {
     _backendUrl = o._backendUrl;
@@ -99,7 +100,8 @@ class GeomCache {
   uint8_t _curByte;
   ID _curId;
   QLEVER_ID_TYPE _maxQid;
-  size_t _curRow, _curUniqueGeom;
+  std::atomic<size_t> _curRow;
+  size_t _curUniqueGeom = 0;
 
   enum _LoadStatusStages {Parse = 1, ParseIds};
   _LoadStatusStages _loadStatusStage = Parse;
@@ -120,8 +122,9 @@ class GeomCache {
 
   std::string queryUrl(std::string query, size_t offset, size_t limit) const;
 
-  util::geo::DLine parseLineString(const std::string& a, size_t p) const;
-  util::geo::FPoint parsePoint(const std::string& a, size_t p) const;
+  util::geo::DLine parseRawLine(const std::string& a, size_t& p) const;
+  size_t parsePoint(const std::string& a, size_t p, size_t i);
+  size_t parseLineString(const std::string& a, size_t p, size_t i);
 
   static bool pointValid(const util::geo::FPoint& p);
   static bool pointValid(const util::geo::DPoint& p);

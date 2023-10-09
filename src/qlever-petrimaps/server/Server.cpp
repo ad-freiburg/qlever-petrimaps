@@ -841,6 +841,8 @@ std::string Server::parseUrl(std::string u, std::string pl,
                              std::map<std::string, std::string>* params) {
   auto parts = util::split(u, '?');
 
+  std::cout << parts.size() << std::endl;
+
   if (parts.size() > 1) {
     auto kvs = util::split(parts[1], '&');
     for (const auto& kv : kvs) {
@@ -1167,23 +1169,18 @@ std::string Server::getSessionId() const {
   return std::to_string(d(rng));
 }
 
+// _____________________________________________________________________________
 void Server::createCache(const std::string& backend) const {
-  std::shared_ptr<GeomCache> cache;
-
   {
     std::lock_guard<std::mutex> guard(_m);
-    if (_caches.count(backend)) {
-      cache = _caches[backend];
-    } else {
-      cache = std::shared_ptr<GeomCache>(new GeomCache(backend));
-      _caches[backend] = cache;
+    if (_caches.count(backend) == 0) {
+      _caches[backend] = std::shared_ptr<GeomCache>(new GeomCache(backend));
     }
   }
 }
 
 // _____________________________________________________________________________
 void Server::loadCache(const std::string& backend) const {
-  // std::shared_ptr<Requestor> reqor;
   std::shared_ptr<GeomCache> cache = _caches[backend];
 
   try {

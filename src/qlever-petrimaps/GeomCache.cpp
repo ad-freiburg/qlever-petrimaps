@@ -5,7 +5,6 @@
 #include <curl/curl.h>
 #include <stdlib.h>
 
-#include <atomic>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -26,17 +25,39 @@ using util::geo::FPoint;
 using util::geo::latLngToWebMerc;
 
 const static std::string QUERY =
-    "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
-    "SELECT DISTINCT ?geometry WHERE {"
-    " ?osm_id geo:hasGeometry ?geometry "
-    " } INTERNAL SORT BY ?geometry";
+"PREFIX geo: <http://www.opengis.net/ont/geosparql#>"
+"PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>"
+"PREFIX ogc: <http://www.opengis.net/rdf#>"
+"PREFIX osmrel: <https://www.openstreetmap.org/relation/>"
+"PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>"
+"PREFIX osm: <https://www.openstreetmap.org/>"
+"SELECT ?hasgeometry WHERE {"
+"  osmrel:6092717 geo:hasGeometry ?hasgeometry ."
+"}";
 
 const static std::string COUNT_QUERY =
-    "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
-    "SELECT (COUNT(?geometry) as ?count) WHERE { "
-    "SELECT DISTINCT ?geometry WHERE {"
-    " ?osm_id geo:hasGeometry ?geometry "
-    "} INTERNAL SORT BY ?geometry }";
+"PREFIX geo: <http://www.opengis.net/ont/geosparql#>"
+"PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>"
+"PREFIX ogc: <http://www.opengis.net/rdf#>"
+"PREFIX osmrel: <https://www.openstreetmap.org/relation/>"
+"PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>"
+"PREFIX osm: <https://www.openstreetmap.org/>"
+"SELECT (COUNT(?hasgeometry) as ?count) WHERE {"
+"  osmrel:6092717 geo:hasGeometry ?hasgeometry ."
+"}";
+
+// const static std::string QUERY =
+    // "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
+    // "SELECT DISTINCT ?geometry WHERE {"
+    // " ?osm_id geo:hasGeometry ?geometry "
+    // " } INTERNAL SORT BY ?geometry";
+
+// const static std::string COUNT_QUERY =
+    // "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
+    // "SELECT (COUNT(?geometry) as ?count) WHERE { "
+    // "SELECT DISTINCT ?geometry WHERE {"
+    // " ?osm_id geo:hasGeometry ?geometry "
+    // "} INTERNAL SORT BY ?geometry }";
 
 const static std::string QUERY_WD =
     "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
@@ -152,73 +173,20 @@ void GeomCache::parse(const char* c, size_t size) {
           } else if (isGeom && p != std::string::npos) {
             _curUniqueGeom++;
             p += 7;
-            auto point = parsePoint(_dangling, p);
-            if (pointValid(point)) {
-              _pointsF.write(reinterpret_cast<const char*>(&point),
-                             sizeof(util::geo::FPoint));
-              _pointsFSize++;
-              IdMapping idm{0, _pointsFSize - 1};
-              _lastQidToId = idm;
-              _qidToIdF.write(reinterpret_cast<const char*>(&idm),
-                              sizeof(IdMapping));
-              _qidToIdFSize++;
-            } else {
-              IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
-              _lastQidToId = idm;
-              _qidToIdF.write(reinterpret_cast<const char*>(&idm),
-                              sizeof(IdMapping));
-              _qidToIdFSize++;
-            }
+            parsePoint(_dangling, p, 0);
           } else if (isGeom && (p = _dangling.rfind("\"LINESTRING(", 0)) !=
                                    std::string::npos) {
             _curUniqueGeom++;
             p += 12;
-            const auto& line = parseLineString(_dangling, p);
-            if (line.size() == 0) {
-              IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
-              _lastQidToId = idm;
-              _qidToIdF.write(reinterpret_cast<const char*>(&idm),
-                              sizeof(IdMapping));
-              _qidToIdFSize++;
-            } else {
-              _linesF.write(reinterpret_cast<const char*>(&_linePointsFSize),
-                            sizeof(size_t));
-              _linesFSize++;
-              insertLine(line, false);
-
-              IdMapping idm{0, I_OFFSET + _linesFSize - 1};
-              _lastQidToId = idm;
-              _qidToIdF.write(reinterpret_cast<const char*>(&idm),
-                              sizeof(IdMapping));
-              _qidToIdFSize++;
-            }
+						parseLineString(_dangling, p, 0);
           } else if (isGeom && (p = _dangling.rfind("\"MULTILINESTRING(", 0)) !=
                                    std::string::npos) {
             _curUniqueGeom++;
             p += 17;
             size_t i = 0;
             while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
-              const auto& line = parseLineString(_dangling, p + 1);
-              if (line.size() == 0) {
-                if (i == 0) {
-                  IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
-                  _lastQidToId = idm;
-                  _qidToIdF.write(reinterpret_cast<const char*>(&idm),
-                                  sizeof(IdMapping));
-                  _qidToIdFSize++;
-                }
-              } else {
-                _linesF.write(reinterpret_cast<const char*>(&_linePointsFSize),
-                              sizeof(size_t));
-                _linesFSize++;
-                insertLine(line, false);
-
-                IdMapping idm{i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
-                _lastQidToId = idm;
-                _qidToIdF.write(reinterpret_cast<const char*>(&idm),
-                                sizeof(IdMapping));
-                _qidToIdFSize++;
-              }
+							size_t pp = p + 1;
+              parseLineString(_dangling, pp, i);
               i++;
             }
             if (i == 0) {
@@ -234,7 +202,8 @@ void GeomCache::parse(const char* c, size_t size) {
             p += 9;
             size_t i = 0;
             while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
-              const auto& line = parseLineString(_dangling, p + 1);
+				      size_t pp = p + 1;
+              const auto& line = parseRawLine(_dangling, pp);
               if (line.size() == 0) {
                 if (i == 0) {
                   IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
@@ -271,7 +240,8 @@ void GeomCache::parse(const char* c, size_t size) {
             size_t i = 0;
             while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
               if (_dangling[p + 1] == '(') p++;
-              const auto& line = parseLineString(_dangling, p + 1);
+						  size_t pp = p + 1;
+              const auto& line = parseRawLine(_dangling, pp);
               if (line.size() == 0) {
                 if (i == 0) {
                   IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
@@ -301,6 +271,32 @@ void GeomCache::parse(const char* c, size_t size) {
                               sizeof(IdMapping));
               _qidToIdFSize++;
             }
+          } else if (isGeom && (p = _dangling.rfind("\"GEOMETRYCOLLECTION", 0)) !=
+                                   std::string::npos) {
+            _curUniqueGeom++;
+            p += 19;
+						size_t i = 0;
+
+						do {
+							p+= 1;
+							if (_dangling.substr(p, 11) == "LINESTRING(") {
+								p = parseLineString(_dangling, p + 11 , i);
+								i++;
+							} else if (_dangling.substr(p, 6) == "POINT(") {
+								p = parsePoint(_dangling, p + 6 , i);
+								i++;
+							}
+
+						} while ((p = _dangling.find(",", p + 1)) != std::string::npos);
+
+            if (i == 0) {
+              IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
+              _lastQidToId = idm;
+              _qidToIdF.write(reinterpret_cast<const char*>(&idm),
+                              sizeof(IdMapping));
+              _qidToIdFSize++;
+            }
+
           } else {
             IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
             _lastQidToId = idm;
@@ -353,7 +349,7 @@ double GeomCache::getLoadStatusPercent(bool total) {
   }
 
   if (!total) {
-    return std::atomic<size_t>(_curRow) / static_cast<double>(_totalSize) *
+    return _curRow / static_cast<double>(_totalSize) *
            100.0;
   }
 
@@ -362,12 +358,12 @@ double GeomCache::getLoadStatusPercent(bool total) {
   double totalPercent = 0.0;
   switch (_loadStatusStage) {
     case _LoadStatusStages::Parse:
-      totalPercent = std::atomic<size_t>(_curRow) /
+      totalPercent = _curRow /
                      static_cast<double>(_totalSize) * parsePercent;
       break;
     case _LoadStatusStages::ParseIds:
       totalPercent = parsePercent;
-      totalPercent += std::atomic<size_t>(_curRow) /
+      totalPercent += _curRow /
                       static_cast<double>(_totalSize) * parseIdsPercent;
       break;
   }
@@ -387,7 +383,8 @@ void GeomCache::parseIds(const char* c, size_t size) {
   size_t lastQid = -1;
   for (size_t i = 0; i < size; i++) {
     if (_raw.size() < 10000) _raw.push_back(c[i]);
-    _curId.bytes[_curByte] = c[i];
+	  assert(_curByte < 8);
+		_curId.bytes[_curByte] = c[i];
     _curByte = (_curByte + 1) % 8;
 
     if (_curByte == 0) {
@@ -417,11 +414,6 @@ void GeomCache::parseIds(const char* c, size_t size) {
         }
         lastQid = _curId.val;
         if (_curId.val > _maxQid) _maxQid = _curId.val;
-      } else {
-        LOG(WARN) << "The results for the binary IDs are out of sync.";
-        LOG(WARN) << "_curRow: " << _curRow
-                  << " _qleverIdInt.size: " << _qidToId.size()
-                  << " cur val: " << _qidToId[_curRow].qid;
       }
 
       // if a qlever entity contained multiple geometries (MULTILINESTRING,
@@ -459,6 +451,7 @@ size_t GeomCache::requestSize() {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
+		curl_easy_reset(_curl);
     auto qUrl = queryUrl(getCountQuery(_backendUrl), 0, 1);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbCount);
@@ -525,6 +518,7 @@ void GeomCache::requestPart(size_t offset) {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
+		curl_easy_reset(_curl);
     auto qUrl = queryUrl(getQuery(_backendUrl), offset, 1000000);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
@@ -690,28 +684,29 @@ void GeomCache::requestIds() {
   LOG(INFO) << "[GEOMCACHE] Query is " << getQuery(_backendUrl);
 
   if (_curl) {
+		curl_easy_reset(_curl);
     auto qUrl = queryUrl(getQuery(_backendUrl), 0, MAXROWS);
     LOG(INFO) << "[GEOMCACHE] Binary ID query URL is " << qUrl;
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbIds);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
+		curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbIds);
+		curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
+		curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
+		curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
+		curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
-    // set headers
-    struct curl_slist* headers = 0;
-    headers = curl_slist_append(headers, "Accept: application/octet-stream");
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
+		// set headers
+		struct curl_slist* headers = 0;
+		headers = curl_slist_append(headers, "Accept: application/octet-stream");
+		curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
 
-    // accept any compression supported
-    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
-    curl_easy_perform(_curl);
+		// accept any compression supported
+		curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
+		curl_easy_perform(_curl);
 
-    int httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
+		int httpCode = 0;
+		curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
-    curl_slist_free_all(headers);
+		curl_slist_free_all(headers);
 
     if (httpCode != 200) {
       std::stringstream ss;
@@ -779,8 +774,8 @@ bool GeomCache::pointValid(const DPoint& p) {
 }
 
 // _____________________________________________________________________________
-util::geo::DLine GeomCache::parseLineString(const std::string& a,
-                                            size_t p) const {
+util::geo::DLine GeomCache::parseRawLine(const std::string& a,
+                                            size_t& p) const {
   util::geo::DLine line;
   line.reserve(2);
   auto end = memchr(a.c_str() + p, ')', a.size() - p);
@@ -801,13 +796,16 @@ util::geo::DLine GeomCache::parseLineString(const std::string& a,
     p = static_cast<const char*>(n) - a.c_str() + 1;
   }
 
+	p = static_cast<const char*>(end) - a.c_str();
+
   // the 200 is the THRESHOLD from Server.cpp
-  // return util::geo::densify(util::geo::simplify(line, 3), 200 * 3);
   return util::geo::densify(line, 200 * 3);
 }
 
 // _____________________________________________________________________________
-util::geo::FPoint GeomCache::parsePoint(const std::string& a, size_t p) const {
+size_t GeomCache::parsePoint(const std::string& a, size_t p, size_t i) {
+	// TODO: update p
+
   auto point = latLngToWebMerc(FPoint(
       util::atof(a.c_str() + p, 10),
       util::atof(
@@ -815,7 +813,54 @@ util::geo::FPoint GeomCache::parsePoint(const std::string& a, size_t p) const {
               1,
           10)));
 
-  return point;
+	if (!pointValid(point)) {
+		if (i == 0) {
+			IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
+			_lastQidToId = idm;
+			_qidToIdF.write(reinterpret_cast<const char*>(&idm),
+											sizeof(IdMapping));
+			_qidToIdFSize++;
+		}
+	} else {
+		_pointsF.write(reinterpret_cast<const char*>(&point),
+									 sizeof(util::geo::FPoint));
+		_pointsFSize++;
+
+		IdMapping idm{i == 0 ? 0 : 1, _pointsFSize - 1};
+		_lastQidToId = idm;
+		_qidToIdF.write(reinterpret_cast<const char*>(&idm),
+										sizeof(IdMapping));
+		_qidToIdFSize++;
+	}
+
+	return p;
+}
+
+// _____________________________________________________________________________
+size_t GeomCache::parseLineString(const std::string& a, size_t p, size_t i) {
+	const auto& line = parseRawLine(a, p);
+	if (line.size() == 0) {
+		if (i == 0) {
+			IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
+			_lastQidToId = idm;
+			_qidToIdF.write(reinterpret_cast<const char*>(&idm),
+											sizeof(IdMapping));
+			_qidToIdFSize++;
+		}
+	} else {
+		_linesF.write(reinterpret_cast<const char*>(&_linePointsFSize),
+									sizeof(size_t));
+		_linesFSize++;
+		insertLine(line, false);
+
+		IdMapping idm{i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
+		_lastQidToId = idm;
+		_qidToIdF.write(reinterpret_cast<const char*>(&idm),
+										sizeof(IdMapping));
+		_qidToIdFSize++;
+	}
+
+ return p;
 }
 
 // _____________________________________________________________________________
@@ -1076,6 +1121,7 @@ std::string GeomCache::requestIndexHash() {
   std::string response;
 
   if (_curl) {
+    curl_easy_reset(_curl);
     std::string url = _backendUrl + "/?cmd=get-index-id";
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbString);
@@ -1083,7 +1129,6 @@ std::string GeomCache::requestIndexHash() {
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
@@ -1103,11 +1148,11 @@ std::string GeomCache::requestIndexHash() {
     int httpCode = 0;
     curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
-    if (httpCode != 200) {
+		if (httpCode != 200) {
       LOG(WARN) << "QLever backend returned status code " << httpCode
                  << " for index hash.";
       return "";
-    }
+		}
 
     return response;
   } else {

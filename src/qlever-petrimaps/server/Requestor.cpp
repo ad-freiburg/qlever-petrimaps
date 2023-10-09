@@ -667,14 +667,14 @@ util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t oid,
   // catch multigeometries
   for (size_t i = oid;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
-    if (_objects[oid].first < I_OFFSET) continue;
+    if (_objects[i].first < I_OFFSET) continue;
     const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
     polys.push_back(util::geo::simplify(fline, eps));
   }
 
   for (size_t i = oid - 1;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
-    if (_objects[oid].first < I_OFFSET) continue;
+    if (_objects[i].first < I_OFFSET) continue;
     const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
     polys.push_back(util::geo::simplify(fline, eps));
   }
@@ -703,13 +703,13 @@ util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid,
   // catch multigeometries
   for (size_t i = oid;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
-    if (_objects[oid].first >= I_OFFSET) continue;
+    if (_objects[i].first >= I_OFFSET) continue;
     points.push_back(_cache->getPoints()[_objects[i].first]);
   }
 
   for (size_t i = oid - 1;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
-    if (_objects[oid].first >= I_OFFSET) continue;
+    if (_objects[i].first >= I_OFFSET) continue;
     points.push_back(_cache->getPoints()[_objects[i].first]);
   }
 
