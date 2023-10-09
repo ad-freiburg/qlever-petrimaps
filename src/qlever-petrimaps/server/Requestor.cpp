@@ -44,7 +44,7 @@ void Requestor::request(const std::string& qry) {
   _clusterObjects.clear();
 
   RequestReader reader(_cache->getBackendURL(), _maxMemory);
-  _query = qry;
+  //_query = qry;
 
   LOG(INFO) << "[REQUESTOR] Requesting IDs for query " << qry;
   reader.requestIds(prepQuery(qry));

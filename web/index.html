@@ -16,13 +16,48 @@
    <body>
       <main>
          <div id='m'></div>
-		   <div id='ex'>
-			   <button id='ex-csv'>Export as CSV</button>
-			   <button id='ex-tsv'>Export as TSV</button>
-			   <button id='ex-geojson'>Export as GeoJSON</button>
-		   </div>
+         <div id="options">
+            <!--Export-->
+            <div id='options-ex'>
+               <button id='options-ex-csv'>Export as CSV</button>
+               <button id='options-ex-tsv'>Export as TSV</button>
+               <button id='options-ex-geojson'>Export as GeoJSON</button>
+            </div>
+            <!---------->
+
+            <!--Toggle submit menu visibility-->
+            <button id="options-submit">Show Submit Menu</button>
+            <!--------------------------------->
+         </div>
 		   <div id='stats'></div>
       </main>
+
+      <div id='submit'>
+         <!--Tabs links-->
+         <div class="submit-tabs">
+            <button class="submit-tab_link" onclick="openTab(event, 'query')" id="submit-tabs-default_open">Query</button>
+            <button class="submit-tab_link" onclick="openTab(event, 'geoJsonFile')">GeoJSON-File</button>
+         </div>
+         <!-------------->
+
+         <!--Tabs content-->
+         <div id="submit-query" class="submit-tab_content">
+            <p>Query</p>
+            <input class="submit-text_input" id="submit-query-query" type="text">
+            <p>Backend</p>
+            <input class="submit-text_input" id="submit-query-backend" type="text">
+         </div>
+         <div id="submit-geoJsonFile" class="submit-tab_content">
+            <p>GeoJSON-File</p>
+            <input class="submit-file_input" id="submit-geoJsonFile-file" type="file" accept=".geojson,.json">
+         </div>
+         <!---------------->
+
+         <!--Submit Button-->
+         <button id="submit-button">Submit</button>
+         <!----------------->
+      </div>
+
 	   <div id='msg'>
 		   <div id='msg-inner'>Loading results from QLever</div>
 		   <div id='msg-inner-desc'></div>
