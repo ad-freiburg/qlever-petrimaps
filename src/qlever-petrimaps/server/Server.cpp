@@ -839,12 +839,12 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
 // _____________________________________________________________________________
 std::string Server::parseUrl(std::string u, std::string pl,
                              std::map<std::string, std::string>* params) {
-  auto parts = util::split(u, '?');
+  auto parts = util::split(u, '?', 2);
 
   if (parts.size() > 1) {
     auto kvs = util::split(parts[1], '&');
     for (const auto& kv : kvs) {
-      auto kvp = util::split(kv, '=');
+      auto kvp = util::split(kv, '=', 2);
       if (kvp.size() == 1) kvp.push_back("");
       (*params)[util::urlDecode(kvp[0])] = util::urlDecode(kvp[1]);
     }
@@ -853,7 +853,7 @@ std::string Server::parseUrl(std::string u, std::string pl,
   // also parse post data
   auto kvs = util::split(pl, '&');
   for (const auto& kv : kvs) {
-    auto kvp = util::split(kv, '=');
+    auto kvp = util::split(kv, '=', 2);
     if (kvp.size() == 1) kvp.push_back("");
     (*params)[util::urlDecode(kvp[0])] = util::urlDecode(kvp[1]);
   }
