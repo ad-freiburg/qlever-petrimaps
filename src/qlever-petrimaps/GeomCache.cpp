@@ -1071,6 +1071,7 @@ void GeomCache::serializeToDisk(const std::string& fname) const {
 
 // _____________________________________________________________________________
 std::string GeomCache::requestIndexHash() {
+  std::cout << "HASH REQUEST" << std::endl;
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
   std::string response;

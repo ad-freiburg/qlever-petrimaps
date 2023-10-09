@@ -845,6 +845,7 @@ std::string Server::parseUrl(std::string u, std::string pl,
     auto kvs = util::split(parts[1], '&');
     for (const auto& kv : kvs) {
       auto kvp = util::split(kv, '=', 2);
+      if (kvp.size() == 0) continue;
       if (kvp.size() == 1) kvp.push_back("");
       (*params)[util::urlDecode(kvp[0])] = util::urlDecode(kvp[1]);
     }
@@ -854,6 +855,7 @@ std::string Server::parseUrl(std::string u, std::string pl,
   auto kvs = util::split(pl, '&');
   for (const auto& kv : kvs) {
     auto kvp = util::split(kv, '=', 2);
+    if (kvp.size() == 0) continue;
     if (kvp.size() == 1) kvp.push_back("");
     (*params)[util::urlDecode(kvp[0])] = util::urlDecode(kvp[1]);
   }
