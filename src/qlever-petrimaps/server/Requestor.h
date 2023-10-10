@@ -23,12 +23,13 @@ namespace petrimaps {
 struct ResObj {
   bool has;
   size_t id;
-  std::vector<util::geo::FPoint> pos;
+  util::geo::FPoint pos;
+  std::vector<util::geo::FPoint> points;
   std::vector<std::pair<std::string, std::string>> cols;
 
   // the geometry
-  std::vector<util::geo::DLine> line;
-  std::vector<util::geo::DPolygon> poly;
+  std::vector<util::geo::DLine> lines;
+  std::vector<util::geo::DPolygon> polys;
 };
 
 struct ReaderCbPair {

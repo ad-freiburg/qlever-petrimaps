@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.8)
+cmake_minimum_required (VERSION 2.8.12)
 
 project (qlever-petrimaps)
 
@@ -8,11 +8,6 @@ if (CMAKE_BUILD_TYPE)
 	string(TOUPPER ${FIRST_CHAR} FIRST_CHAR)
 	string(REGEX REPLACE "^.(.*)" "${FIRST_CHAR}\\1" CMAKE_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
 endif()
-
-# old solution
-#if (CMAKE_BUILD_TYPE)
-#	string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
-#endif()
 
 enable_testing()
 

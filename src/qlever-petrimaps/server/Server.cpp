@@ -582,16 +582,17 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
 
   std::stringstream json;
 
-  if (res.poly.size()) {
-    GeoJsonOutput out(json);
-    out.printLatLng(res.poly, dict);
-  } else if (res.line.size()) {
-    GeoJsonOutput out(json);
-    out.printLatLng(res.line, dict);
-  } else {
-    GeoJsonOutput out(json);
-    out.printLatLng(res.pos, dict);
+  GeoJsonOutput out(json);
+  if (res.polys.size()) {
+    out.printLatLng(res.polys, dict);
   }
+  if (res.lines.size()) {
+    out.printLatLng(res.lines, dict);
+  }
+  if (res.points.size()) {
+    out.printLatLng(res.points, dict);
+  }
+  out.flush();
 
   auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";
@@ -692,26 +693,24 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
       first = false;
     }
 
-    auto ll =
-        webMercToLatLng<float>(res.pos.front().getX(), res.pos.front().getY());
+    auto ll = webMercToLatLng<float>(res.pos.getX(), res.pos.getY());
 
     json << "]";
     json << std::setprecision(10) << ",\"ll\":{\"lat\" : " << ll.getY()
          << ",\"lng\":" << ll.getX() << "}";
 
-    if (res.poly.size()) {
-      json << ",\"geom\":";
-      GeoJsonOutput out(json);
-      out.printLatLng(res.poly, {});
-    } else if (res.line.size()) {
-      json << ",\"geom\":";
-      GeoJsonOutput out(json);
-      out.printLatLng(res.line, {});
-    } else {
-      json << ",\"geom\":";
-      GeoJsonOutput out(json);
-      out.printLatLng(res.pos, {});
+    json << ",\"geom\":";
+    GeoJsonOutput out(json);
+    if (res.polys.size()) {
+      out.printLatLng(res.polys, {});
     }
+    if (res.lines.size()) {
+      out.printLatLng(res.lines, {});
+    }
+    if (res.points.size()) {
+      out.printLatLng(res.points, {});
+    }
+    out.flush();
 
     json << "}";
   }

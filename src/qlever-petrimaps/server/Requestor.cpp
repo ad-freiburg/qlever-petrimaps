@@ -2,9 +2,9 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
+#include <algorithm>
 #include <cstring>
 #include <iostream>
-#include <algorithm>
 #include <regex>
 #include <sstream>
 
@@ -367,7 +367,8 @@ std::string Requestor::prepQuery(std::string query) const {
 
   // only remove columns the first (=outer) SELECT statement
   query = std::regex_replace(query, expr, "SELECT $1 WHERE {$&",
-                             std::regex_constants::format_first_only) + "}";
+                             std::regex_constants::format_first_only) +
+          "}";
 
   if (util::toLower(query).find("limit") == std::string::npos) {
     query += " LIMIT 18446744073709551615";
@@ -383,7 +384,8 @@ std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
                   std::regex_constants::icase);
 
   query = std::regex_replace(query, expr, "SELECT * {$&",
-                             std::regex_constants::format_first_only) + "}";
+                             std::regex_constants::format_first_only) +
+          "}";
   query += "OFFSET " + std::to_string(row) + " LIMIT 1";
   return query;
 }
@@ -554,12 +556,15 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
     else
       row = _objects[nearest].second;
 
+    auto points = geomPointGeoms(nearest, res);
+
     return {true,
             nearest >= _objects.size() ? nearest - _objects.size() : nearest,
+            frp,
             geomPointGeoms(nearest, res),
             requestRow(row),
-            {},
-            {}};
+            geomLineGeoms(nearest, rad / 10),
+            geomPolyGeoms(nearest, rad / 10)};
   }
 
   if (dBestL < rad && dBestL <= dBest) {
@@ -570,30 +575,27 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
     const auto& dline = extractLineGeom(lineId);
 
     if (isArea && util::geo::contains(rp, util::geo::DPolygon(dline))) {
-      return {true,  nearestL,
-              {frp}, requestRow(_objects[nearestL].second),
-              {},    geomPolyGeoms(nearestL, rad / 10)};
+      return {true,
+              nearestL,
+              frp,
+              geomPointGeoms(nearestL, res),
+              requestRow(_objects[nearestL].second),
+              geomLineGeoms(nearestL, rad / 10),
+              geomPolyGeoms(nearestL, rad / 10)};
     } else {
-      if (isArea) {
-        auto p = util::geo::PolyLine<double>(dline).projectOn(rp).p;
-        auto fp = util::geo::FPoint(p.getX(), p.getY());
-        return {true, nearestL,
-                {fp}, requestRow(_objects[nearestL].second),
-                {},   geomPolyGeoms(nearestL, rad / 10)};
-      } else {
-        auto p = util::geo::PolyLine<double>(dline).projectOn(rp).p;
-        auto fp = util::geo::FPoint(p.getX(), p.getY());
-        return {true,
-                nearestL,
-                {fp},
-                requestRow(_objects[nearestL].second),
-                geomLineGeoms(nearestL, rad / 10),
-                {}};
-      }
+      auto p = util::geo::PolyLine<double>(dline).projectOn(rp).p;
+      auto fp = util::geo::FPoint(p.getX(), p.getY());
+      return {true,
+              nearestL,
+              fp,
+              geomPointGeoms(nearestL, res),
+              requestRow(_objects[nearestL].second),
+              geomLineGeoms(nearestL, rad / 10),
+              geomPolyGeoms(nearestL, rad / 10)};
     }
   }
 
-  return {false, 0, {{0, 0}}, {}, {}, {}};
+  return {false, 0, {0, 0}, {{0, 0}}, {}, {}, {}};
 }
 
 // _____________________________________________________________________________
@@ -601,21 +603,13 @@ const ResObj Requestor::getGeom(size_t id, double rad) const {
   if (!_cache->ready()) {
     throw std::runtime_error("Geom cache not ready");
   }
-  auto obj = _objects[id];
-
-  if (obj.first >= I_OFFSET) {
-    size_t lineId = obj.first - I_OFFSET;
-
-    bool isArea = Requestor::isArea(lineId);
-
-    if (isArea) {
-      return {true, id, {{0, 0}}, {}, {}, geomPolyGeoms(id, rad / 10)};
-    } else {
-      return {true, id, {{0, 0}}, {}, geomLineGeoms(id, rad / 10), {}};
-    }
-  } else {
-    return {true, id, geomPointGeoms(id), {}, {}, {}};
-  }
+  return {true,
+          id,
+          {0, 0},
+          geomPointGeoms(id),
+          {},
+          geomLineGeoms(id, rad / 10),
+          geomPolyGeoms(id, rad / 10)};
 }
 
 // _____________________________________________________________________________
@@ -655,7 +649,6 @@ util::geo::DLine Requestor::extractLineGeom(size_t lineId) const {
 // _____________________________________________________________________________
 bool Requestor::isArea(size_t lineId) const {
   size_t end = _cache->getLineEnd(lineId);
-
   return isMCoord(_cache->getLinePoints()[end - 1].getX());
 }
 
@@ -668,6 +661,7 @@ util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t oid,
   for (size_t i = oid;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
     if (_objects[i].first < I_OFFSET) continue;
+    if (isArea(_objects[i].first - I_OFFSET)) continue;
     const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
     polys.push_back(util::geo::simplify(fline, eps));
   }
@@ -675,6 +669,7 @@ util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t oid,
   for (size_t i = oid - 1;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
     if (_objects[i].first < I_OFFSET) continue;
+    if (isArea(_objects[i].first - I_OFFSET)) continue;
     const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
     polys.push_back(util::geo::simplify(fline, eps));
   }
@@ -724,14 +719,16 @@ util::geo::MultiPolygon<double> Requestor::geomPolyGeoms(size_t oid,
   // catch multigeometries
   for (size_t i = oid;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
-    if (_objects[oid].first < I_OFFSET) continue;
+    if (_objects[i].first < I_OFFSET) continue;
+    if (!isArea(_objects[i].first - I_OFFSET)) continue;
     const auto& dline = extractLineGeom(_objects[i].first - I_OFFSET);
     polys.push_back(util::geo::DPolygon(util::geo::simplify(dline, eps)));
   }
 
   for (size_t i = oid - 1;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
-    if (_objects[oid].first < I_OFFSET) continue;
+    if (_objects[i].first < I_OFFSET) continue;
+    if (!isArea(_objects[i].first - I_OFFSET)) continue;
     const auto& dline = extractLineGeom(_objects[i].first - I_OFFSET);
     polys.push_back(util::geo::DPolygon(util::geo::simplify(dline, eps)));
   }

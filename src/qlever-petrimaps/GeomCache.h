@@ -125,6 +125,9 @@ class GeomCache {
   util::geo::DLine parseRawLine(const std::string& a, size_t& p) const;
   size_t parsePoint(const std::string& a, size_t p, size_t i);
   size_t parseLineString(const std::string& a, size_t p, size_t i);
+  size_t parsePolygon(const std::string& a, size_t p, size_t i);
+  size_t parseMultiLineString(const std::string& a, size_t p, size_t& i);
+  size_t parseMultiPolygon(const std::string& a, size_t p, size_t& i);
 
   static bool pointValid(const util::geo::FPoint& p);
   static bool pointValid(const util::geo::DPoint& p);
