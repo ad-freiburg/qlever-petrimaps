@@ -24,7 +24,8 @@ class GeomCache {
   GeomCache() : _backendUrl(""), _curl(0) {}
   explicit GeomCache(const std::string& backendUrl)
       : _backendUrl(backendUrl),
-        _curl(curl_easy_init()) {}
+        _curl(curl_easy_init()) {
+        }
 
   GeomCache& operator=(GeomCache&& o) {
     _backendUrl = o._backendUrl;

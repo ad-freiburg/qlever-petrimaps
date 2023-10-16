@@ -5,6 +5,7 @@ let curGeojsonId = -1;
 let urlParams = new URLSearchParams(window.location.search);
 let qleverBackend = urlParams.get("backend");
 let query = urlParams.get("query");
+let mode = urlParams.get("mode");
 
 // id of SetInterval to stop loadStatus requests on error or load finish
 let loadStatusIntervalId = -1;
@@ -183,11 +184,20 @@ function loadMap(id, bounds, numObjects) {
 	objectsLayer.on('error', function() {showError(genError);});
 	heatmapLayer.on('load', function() {console.log("Finished loading map!");});
 	objectsLayer.on('load', function() {console.log("Finished loading map!");});
-	autoLayer.addTo(map).on('error', function() {showError(genError);});
+	autoLayer.on('error', function() {showError(genError);});
+	autoLayer.on('load', function() {console.log("Finished loading map!");});
 
 	layerControl.addBaseLayer(heatmapLayer, "Heatmap");
 	layerControl.addBaseLayer(objectsLayer, "Objects");
 	layerControl.addBaseLayer(autoLayer, "Auto");
+
+    if (mode == "heatmap") {
+        heatmapLayer.addTo(map).on('error', function() {showError(genError);});
+    } else if (mode == "objects") {
+        objectsLayer.addTo(map).on('error', function() {showError(genError);});
+    } else {
+        autoLayer.addTo(map).on('error', function() {showError(genError);});
+    }
 
     map.on('click', function(e) {
         const ll = e.latlng;
@@ -247,7 +257,7 @@ function updateLoad(stage, percent) {
 
 function fetchResults() {
     console.log("Fetching results...");
-    
+
     fetch('query' + window.location.search)
     .then(response => {
         if (!response.ok) return response.text().then(text => {throw new Error(text)});

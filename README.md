@@ -21,7 +21,7 @@ Examples: [All railway lines in OSM](https://qlever.cs.uni-freiburg.de/mapui-pet
 
 Compile yourself:
 
-    $ git clone https://github.com/ad-freiburg/qlever-petrimaps
+    $ git clone --recurse-submodules https://github.com/ad-freiburg/qlever-petrimaps
     $ cd qlever-petrimaps
     $ mkdir -p build && cd build
     $ cmake ..

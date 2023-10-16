@@ -17,7 +17,7 @@ endif()
 enable_testing()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
-set(EXECUTABLE_OUTPUT_PATH "${CMAKE_SOURCE_DIR}/build")
+set(EXECUTABLE_OUTPUT_PATH "${CMAKE_BINARY_DIR}")
 
 
 find_package(OpenMP)
@@ -76,6 +76,6 @@ add_subdirectory(src)
 
 # install target
 install(
-  FILES build/qlever-mapui DESTINATION bin
+  FILES ${CMAKE_BINARY_DIR}/petrimaps DESTINATION bin
   PERMISSIONS OWNER_EXECUTE GROUP_EXECUTE WORLD_EXECUTE
 )
