@@ -54,9 +54,10 @@ class Server : public util::http::Handler {
   static void writePNG(const unsigned char* data, size_t w, size_t h, int sock);
 
   void drawPoint(std::vector<uint32_t>& points, std::vector<double>& points2,
-                 int px, int py, int w, int h, MapStyle style) const;
-  void drawLine(unsigned char* image, int x0, int y0, int x1, int y1, int w, int h) const;
-
+                 int px, int py, int w, int h, MapStyle style,
+                 size_t num) const;
+  void drawLine(unsigned char* image, int x0, int y0, int x1, int y1, int w,
+                int h) const;
 
   size_t _maxMemory;
 

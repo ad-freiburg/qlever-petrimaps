@@ -222,7 +222,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           int ppx = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int ppy = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-          drawPoint(points[0], points2[0], px, py, w, h, style);
+          drawPoint(points[0], points2[0], px, py, w, h, style, 1);
           drawLine(image.data(), ppx, ppy, px, py, w, h);
         } else {
           if (i >= objs.size()) i = r->getClusters()[i - objs.size()].first;
@@ -232,7 +232,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-          drawPoint(points[0], points2[0], px, py, w, h, style);
+          drawPoint(points[0], points2[0], px, py, w, h, style, 1);
         }
       }
     } else {
@@ -265,7 +265,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                     h;
 
             drawPoint(points[omp_get_thread_num()],
-                      points2[omp_get_thread_num()], px, py, w, h, style);
+                      points2[omp_get_thread_num()], px, py, w, h, style,
+                      cell->size());
           } else {
             for (auto i : *cell) {
               if (i >= r->getObjects().size()) {
@@ -279,7 +280,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
               int py =
                   h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
               drawPoint(points[omp_get_thread_num()],
-                        points2[omp_get_thread_num()], px, py, w, h, style);
+                        points2[omp_get_thread_num()], px, py, w, h, style, 1);
             }
           }
         }
@@ -1140,21 +1141,21 @@ util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
 // _____________________________________________________________________________
 void Server::drawPoint(std::vector<uint32_t>& points,
                        std::vector<double>& points2, int px, int py, int w,
-                       int h, MapStyle style) const {
+                       int h, MapStyle style, size_t num) const {
   if (style == OBJECTS) {
     // for the raw style, increase the size of the points a bit
     for (int x = px - 2; x < px + 2; x++) {
       for (int y = py - 2; y < py + 2; y++) {
         if (x >= 0 && y >= 0 && x < w && y < h) {
           if (points2[w * y + x] == 0) points.push_back(w * y + x);
-          points2[w * y + x] += 1;
+          points2[w * y + x] += num;
         }
       }
     }
   } else {
     if (px >= 0 && py >= 0 && px < w && py < h) {
       if (points2[w * py + px] == 0) points.push_back(w * py + px);
-      points2[w * py + px] += 1;
+      points2[w * py + px] += num;
     }
   }
 }
