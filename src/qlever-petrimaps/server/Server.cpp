@@ -3,6 +3,7 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <png.h>
+#include <sys/socket.h>
 
 #include <algorithm>
 #include <chrono>
@@ -60,6 +61,10 @@ Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime)
 // _____________________________________________________________________________
 util::http::Answer Server::handle(const util::http::Req& req, int con) const {
   UNUSED(con);
+
+  // ignore SIGPIPE
+  signal(SIGPIPE, SIG_IGN);
+
   util::http::Answer a;
   try {
     Params params;
@@ -125,6 +130,9 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
 // _____________________________________________________________________________
 util::http::Answer Server::handleHeatMapReq(const Params& pars,
                                             int sock) const {
+  // ignore SIGPIPE
+  signal(SIGPIPE, SIG_IGN);
+
   if (pars.count("width") == 0 || pars.find("width")->second.empty())
     throw std::invalid_argument("No width (?width=) specified.");
   if (pars.count("height") == 0 || pars.find("height")->second.empty())
@@ -520,7 +528,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   size_t writes = 0;
 
   while (writes != buff.size()) {
-    int64_t out = write(sock, buff.c_str() + writes, buff.size() - writes);
+    int64_t out =
+        send(sock, buff.c_str() + writes, buff.size() - writes, MSG_NOSIGNAL);
     if (out < 0) {
       if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) continue;
       throw std::runtime_error("Failed to write to socket");
@@ -871,8 +880,8 @@ inline void pngWriteCb(png_structp png_ptr, png_bytep data, png_size_t length) {
   size_t writes = 0;
 
   while (writes != length) {
-    int64_t out =
-        write(sock, reinterpret_cast<char*>(data) + writes, length - writes);
+    int64_t out = send(sock, reinterpret_cast<char*>(data) + writes,
+                       length - writes, MSG_NOSIGNAL);
     if (out < 0) {
       if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) continue;
       break;
@@ -1028,7 +1037,8 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
   size_t writes = 0;
 
   while (writes != buff.size()) {
-    int64_t out = write(sock, buff.c_str() + writes, buff.size() - writes);
+    int64_t out =
+        send(sock, buff.c_str() + writes, buff.size() - writes, MSG_NOSIGNAL);
     if (out < 0) {
       if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) continue;
       throw std::runtime_error("Failed to write to socket");
@@ -1093,8 +1103,8 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
         size_t writes = 0;
 
         while (writes != buff.size()) {
-          int64_t out =
-              write(sock, buff.c_str() + writes, buff.size() - writes);
+          int64_t out = send(sock, buff.c_str() + writes, buff.size() - writes,
+                             MSG_NOSIGNAL);
           if (out < 0) {
             if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR)
               continue;
@@ -1108,7 +1118,8 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
   writes = 0;
 
   while (writes != buff.size()) {
-    int64_t out = write(sock, buff.c_str() + writes, buff.size() - writes);
+    int64_t out =
+        send(sock, buff.c_str() + writes, buff.size() - writes, MSG_NOSIGNAL);
     if (out < 0) {
       if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) continue;
       throw std::runtime_error("Failed to write to socket");
