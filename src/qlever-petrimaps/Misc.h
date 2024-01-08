@@ -95,6 +95,7 @@ struct RequestReader {
     if (_curl) curl_easy_cleanup(_curl);
   }
 
+  std::vector<std::string> requestColumns(const std::string& query);
   void requestIds(const std::string& qurl);
   void requestRows(const std::string& qurl);
   void requestRows(const std::string& query,
@@ -102,6 +103,8 @@ struct RequestReader {
   void parse(const char*, size_t size);
   void parseIds(const char*, size_t size);
 
+  static size_t writeStringCb(void* contents, size_t size, size_t nmemb,
+                              void* userp);
   static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
   static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
                            void* userp);
@@ -124,7 +127,7 @@ struct RequestReader {
   uint8_t _curByte = 0;
   ID _curId;
   size_t _received = 0;
-  std::vector<IdMapping> ids;
+  std::vector<IdMapping> _ids;
   size_t _maxMemory;
   std::exception_ptr exceptionPtr;
 };

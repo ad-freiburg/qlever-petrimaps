@@ -49,20 +49,20 @@ void Requestor::request(const std::string& qry) {
   LOG(INFO) << "[REQUESTOR] Requesting IDs for query " << qry;
   reader.requestIds(prepQuery(qry));
 
-  LOG(INFO) << "[REQUESTOR] Done, have " << reader.ids.size()
+  LOG(INFO) << "[REQUESTOR] Done, have " << reader._ids.size()
             << " ids in total.";
 
   // join with geoms from GeomCache
 
   // sort by qlever id
   LOG(INFO) << "[REQUESTOR] Sorting results by qlever ID...";
-  std::sort(reader.ids.begin(), reader.ids.end());
+  std::sort(reader._ids.begin(), reader._ids.end());
   LOG(INFO) << "[REQUESTOR] ... done";
 
   LOG(INFO) << "[REQUESTOR] Retrieving geoms from cache...";
 
   // (geom id, result row)
-  const auto& ret = _cache->getRelObjects(reader.ids);
+  const auto& ret = _cache->getRelObjects(reader._ids);
   _objects = ret.first;
   _numObjects = ret.second;
   LOG(INFO) << "[REQUESTOR] ... done, got " << _objects.size() << " objects.";
@@ -361,17 +361,28 @@ void Requestor::requestRows(
 
 // _____________________________________________________________________________
 std::string Requestor::prepQuery(std::string query) const {
-  // only use last column
-  std::regex expr("select[^{]*(\\?[A-Z0-9_\\-+]*)+[^{]*\\s*\\{",
+  std::regex expr("select[^{]*(\\*|[\\?$][A-Z0-9_\\-+]*)+[^{]*\\s*\\{",
                   std::regex_constants::icase);
 
-  // only remove columns the first (=outer) SELECT statement
-  query = std::regex_replace(query, expr, "SELECT $1 WHERE {$&",
+  std::string var;
+
+  std::smatch m;
+  std::regex_search(query, m, expr);
+
+  if (m.size() == 2) var = m[1].str();
+
+  if (var == "*") {
+    // if we have a wildcard variable (*), we request the list of variables
+    // from the backend by sending a LIMIT 0 requests.
+    RequestReader reader(_cache->getBackendURL(), _maxMemory);
+    auto cols = reader.requestColumns(query + " LIMIT 0");
+    if (cols.size() > 0) var = cols.back();
+  }
+
+  query = std::regex_replace(query, expr, "SELECT " + var + " WHERE {$&",
                              std::regex_constants::format_first_only) + "}";
 
-  if (util::toLower(query).find("limit") == std::string::npos) {
-    query += " LIMIT 18446744073709551615";
-  }
+  query += " LIMIT 18446744073709551615";
 
   return query;
 }
@@ -379,12 +390,12 @@ std::string Requestor::prepQuery(std::string query) const {
 // _____________________________________________________________________________
 std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
   // replace first select
-  std::regex expr("select[^{]*\\?[A-Z0-9_\\-+]*+[^{]*\\s*\\{",
+  std::regex expr("select[^{]*(\\*|[\\?$][A-Z0-9_\\-+]*)+[^{]*\\s*\\{",
                   std::regex_constants::icase);
 
   query = std::regex_replace(query, expr, "SELECT * {$&",
                              std::regex_constants::format_first_only) + "}";
-  query += "OFFSET " + std::to_string(row) + " LIMIT 1";
+  query += " OFFSET " + std::to_string(row) + " LIMIT 1";
   return query;
 }
 

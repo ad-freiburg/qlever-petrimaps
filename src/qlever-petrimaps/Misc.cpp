@@ -14,6 +14,64 @@
 using petrimaps::RequestReader;
 
 // _____________________________________________________________________________
+std::vector<std::string> RequestReader::requestColumns(const std::string& query) {
+  CURLcode res;
+  char errbuf[CURL_ERROR_SIZE];
+
+  std::string resString;
+
+  if (_curl) {
+    auto url = queryUrl(query) + "&action=tsv_export";
+    curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, RequestReader::writeStringCb);
+    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, &resString);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
+    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
+
+    // accept any compression supported
+    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
+    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
+    res = curl_easy_perform(_curl);
+
+    long httpCode = 0;
+    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    if (httpCode != 200) {
+      std::stringstream ss;
+      ss << "QLever backend returned status code " << httpCode;
+      ss << "\n";
+      ss << _raw;
+      throw std::runtime_error(ss.str());
+    }
+
+    if (exceptionPtr) std::rethrow_exception(exceptionPtr);
+
+  } else {
+    std::stringstream ss;
+    ss << "[REQUESTREADER] Failed to perform curl request.\n";
+    throw std::runtime_error(ss.str());
+  }
+
+  if (res != CURLE_OK) {
+    std::stringstream ss;
+    ss << "QLever backend request failed: ";
+    size_t len = strlen(errbuf);
+    if (len > 0) {
+      LOG(ERROR) << "[REQUESTREADER] " << errbuf;
+      ss << errbuf;
+    } else {
+      LOG(ERROR) << "[REQUESTREADER] " << curl_easy_strerror(res);
+      ss << curl_easy_strerror(res);
+    }
+
+    throw std::runtime_error(ss.str());
+  }
+
+  return util::split(util::trim(resString), '\t');
+}
+
+// _____________________________________________________________________________
 void RequestReader::requestIds(const std::string& query) {
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
@@ -155,6 +213,13 @@ std::string RequestReader::queryUrl(const std::string& query) const {
 }
 
 // _____________________________________________________________________________
+size_t RequestReader::writeStringCb(void* contents, size_t size, size_t nmemb,
+                              void* userp) {
+  ((std::string*)userp)->append((char*)contents, size * nmemb);
+  return size * nmemb;
+}
+
+// _____________________________________________________________________________
 size_t RequestReader::writeCb(void* contents, size_t size, size_t nmemb,
                               void* userp) {
   size_t realsize = size * nmemb;
@@ -195,7 +260,7 @@ void RequestReader::parseIds(const char* c, size_t size) {
     _curByte = (_curByte + 1) % 8;
 
     if (_curByte == 0) {
-      ids.push_back({_curId.val, ids.size()});
+      _ids.push_back({_curId.val, _ids.size()});
     }
   }
 }
