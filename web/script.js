@@ -204,7 +204,6 @@ function loadMap(id, bounds, numObjects) {
         let styles = "objects";
         if (map.hasLayer(heatmapLayer)) styles = "heatmap";
         if (map.hasLayer(objectsLayer)) styles = "objects";
-        if (map.hasLayer(objectsLayer)) styles = "objects";
 
         fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=' + bounds.join(',') + '&styles=' + styles)
           .then(response => {
@@ -267,23 +266,24 @@ function fetchQuery(query, backend) {
         a.click();
     }
 
-    const url = "?query=" + query_encoded + "&backend=" + backend_encoded;
+    const url = "query?query=" + query_encoded + "&backend=" + backend_encoded;
     fetchResults(url);
     fetchLoadStatusInterval(1000, backend_encoded);
 }
 
-function fetchGeoJsonFile(content) {
+function fetchGeoJsonFile(content_encoded) {
     console.log("Fetching GeoJson-File");
-    console.log(content)
 
-    const url = "geoJsonFile=" + content;
+    const url = "geoJsonFile?geoJsonFile=" + content_encoded;
+    fetchResults(url);
+    //fetchLoadStatusInterval(1000, content_encoded);
 }
 
 function fetchResults(url) {
     setSubmitMenuVisible(false);
     document.getElementById("submit-button").disabled = true;
 
-    fetch('query' + url)
+    fetch(url)
     .then(response => {
         if (!response.ok) return response.text().then(text => {throw new Error(text)});
         return response;
@@ -299,16 +299,16 @@ function fetchResults(url) {
     document.getElementById("msg").style.display = "block";
 }
 
-function fetchLoadStatusInterval(interval, backend) {
-    fetchLoadStatus();
-    loadStatusIntervalId = setInterval(fetchLoadStatus, interval, backend);
+function fetchLoadStatusInterval(interval, source) {
+    //fetchLoadStatus();
+    loadStatusIntervalId = setInterval(fetchLoadStatus, interval, source);
     document.getElementById("load").style.display = "block";
 }
 
-async function fetchLoadStatus(backend) {
+async function fetchLoadStatus(source) {
     console.log("Fetching load status...");
 
-    fetch('loadstatus?backend=' + backend)
+    fetch('loadstatus?source=' + source)
     .then(response => {
         if (!response.ok) return response.text().then(text => {throw new Error(text)});
         return response;

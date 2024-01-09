@@ -21,10 +21,10 @@ namespace petrimaps {
 
 class GeomCache {
  public:
+  enum SourceType {backend, geoJson};
+  
   GeomCache() : _backendUrl(""), _curl(0) {}
-  explicit GeomCache(const std::string& backendUrl)
-      : _backendUrl(backendUrl),
-        _curl(curl_easy_init()) {}
+  explicit GeomCache(const std::string& source, const SourceType srcType);
 
   GeomCache& operator=(GeomCache&& o) {
     _backendUrl = o._backendUrl;
@@ -48,6 +48,7 @@ class GeomCache {
     return ready;
   }
 
+  void loadGeoJson(const std::string& content);
   void load(const std::string& cacheFile);
 
   void request();
@@ -62,6 +63,7 @@ class GeomCache {
 
   std::pair<std::vector<std::pair<ID_TYPE, ID_TYPE>>, size_t> getRelObjects(
       const std::vector<IdMapping>& id) const;
+  std::vector<std::pair<ID_TYPE, ID_TYPE>> getRelObjects() const;
 
   const std::string& getBackendURL() const { return _backendUrl; }
 
@@ -112,7 +114,7 @@ class GeomCache {
   static size_t writeCbString(void* contents, size_t size, size_t nmemb,
                               void* userp);
 
-  // Get the right SPARQL query for the given backend.
+  // Get right SPARQL query for given backend.
   const std::string& getQuery(const std::string& backendUrl) const;
   const std::string& getCountQuery(const std::string& backendUrl) const;
 
@@ -127,12 +129,18 @@ class GeomCache {
   static bool pointValid(const util::geo::DPoint& p);
 
   void insertLine(const util::geo::DLine& l, bool isArea);
+  void insertLineGeoJSON(const util::geo::DLine& l, bool isArea);
 
   std::string indexHashFromDisk(const std::string& fname);
 
   std::vector<util::geo::FPoint> _points;
   std::vector<util::geo::Point<int16_t>> _linePoints;
   std::vector<size_t> _lines;
+
+  // Used for GeoJson parsing
+  // Map geomID to map<key, value>
+  std::map<size_t, std::map<std::string, std::string>> _geoJSONPointsAttr;
+  // ------------------------
 
   size_t _pointsFSize;
   size_t _linePointsFSize;

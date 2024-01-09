@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "3rdparty/heatmap.h"
+#include "3rdparty/md5/md5.h"
 #include "3rdparty/colorschemes/Spectral.h"
 #include "qlever-petrimaps/build.h"
 #include "qlever-petrimaps/index.h"
@@ -73,6 +74,8 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
       a.params["Content-Type"] = "text/html; charset=utf-8";
     } else if (cmd == "/query") {
       a = handleQueryReq(params);
+    } else if (cmd == "/geoJsonFile") {
+      a = handleGeoJsonFileReq(params);
     } else if (cmd == "/geojson") {
       a = handleGeoJSONReq(params);
     } else if (cmd == "/clearsession") {
@@ -655,7 +658,6 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   LOG(INFO) << "[SERVER] Click at " << x << ", " << y;
 
   std::shared_ptr<Requestor> reqor;
-
   {
     std::lock_guard<std::mutex> guard(_m);
     bool has = _rs.count(id);
@@ -675,7 +677,6 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   std::stringstream json;
 
   json << "[";
-
   if (res.has) {
     json << "{\"id\" :" << res.id;
     json << ",\"attrs\" : [";
@@ -692,8 +693,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
       first = false;
     }
 
-    auto ll =
-        webMercToLatLng<float>(res.pos.front().getX(), res.pos.front().getY());
+    auto ll = webMercToLatLng<float>(res.pos.front().getX(), res.pos.front().getY());
 
     json << "]";
     json << std::setprecision(10) << ",\"ll\":{\"lat\" : " << ll.getY()
@@ -752,7 +752,7 @@ util::http::Answer Server::handleLoadReq(const Params& pars) const {
 
   LOG(INFO) << "[SERVER] Queried backend is " << backend;
 
-  createCache(backend);
+  createCache(backend, GeomCache::SourceType::backend);
   loadCache(backend);
 
   auto answ = util::http::Answer("200 OK", "{}");
@@ -772,27 +772,25 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   LOG(INFO) << "[SERVER] Queried backend is " << backend;
   LOG(INFO) << "[SERVER] Query is:\n" << query;
 
-  createCache(backend);
+  createCache(backend, GeomCache::SourceType::backend);
   loadCache(backend);
 
-  std::string queryId = backend + "$" + query;
-
+  std::string requestId = backend + "$" + query;
   std::shared_ptr<Requestor> reqor;
   std::string sessionId;
 
   {
     std::lock_guard<std::mutex> guard(_m);
-    if (_queryCache.count(queryId)) {
-      sessionId = _queryCache[queryId];
+    if (_requestCache.count(requestId)) {
+      sessionId = _requestCache[requestId];
       reqor = _rs[sessionId];
     } else {
       reqor = std::shared_ptr<Requestor>(
           new Requestor(_caches[backend], _maxMemory));
-
       sessionId = getSessionId();
 
       _rs[sessionId] = reqor;
-      _queryCache[queryId] = sessionId;
+      _requestCache[requestId] = sessionId;
     }
   }
 
@@ -836,143 +834,68 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   return answ;
 }
 
-// _____________________________________________________________________________
-std::string Server::parseUrl(std::string u, std::string pl,
-                             std::map<std::string, std::string>* params) {
-  auto parts = util::split(u, '?');
+util::http::Answer Server::handleGeoJsonFileReq(const Params& pars) const {
+  auto content = pars.find("geoJsonFile")->second;
+  //LOG(INFO) << "[SERVER] Requested GeoJson-File content is " << content;
 
-  if (parts.size() > 1) {
-    auto kvs = util::split(parts[1], '&');
-    for (const auto& kv : kvs) {
-      auto kvp = util::split(kv, '=');
-      if (kvp.size() == 1) kvp.push_back("");
-      (*params)[util::urlDecode(kvp[0])] = util::urlDecode(kvp[1]);
-    }
-  }
+  createCache(content, GeomCache::SourceType::geoJson);
+  std::shared_ptr<GeomCache> cache = _caches[content];
+  cache->loadGeoJson(content);
 
-  // also parse post data
-  auto kvs = util::split(pl, '&');
-  for (const auto& kv : kvs) {
-    auto kvp = util::split(kv, '=');
-    if (kvp.size() == 1) kvp.push_back("");
-    (*params)[util::urlDecode(kvp[0])] = util::urlDecode(kvp[1]);
-  }
+  std::string requestId = content;
+  std::shared_ptr<Requestor> reqor;
+  std::string sessionId;
 
-  return util::urlDecode(parts.front());
-}
-
-// _____________________________________________________________________________
-inline void pngWriteCb(png_structp png_ptr, png_bytep data, png_size_t length) {
-  int sock = *((int*)png_get_io_ptr(png_ptr));
-
-  size_t writes = 0;
-
-  while (writes != length) {
-    int64_t out =
-        write(sock, reinterpret_cast<char*>(data) + writes, length - writes);
-    if (out < 0) {
-      if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) continue;
-      break;
-    }
-    writes += out;
-  }
-}
-
-// _____________________________________________________________________________
-inline void pngWarnCb(png_structp, png_const_charp error_msg) {
-  LOG(WARN) << "[SERVER] (libpng) " << error_msg;
-}
-
-// _____________________________________________________________________________
-inline void pngErrorCb(png_structp, png_const_charp error_msg) {
-  throw std::runtime_error(error_msg);
-}
-
-// _____________________________________________________________________________
-void Server::writePNG(const unsigned char* data, size_t w, size_t h, int sock) {
-  png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr,
-                                                pngErrorCb, pngWarnCb);
-  if (!png_ptr) return;
-
-  png_infop info_ptr = png_create_info_struct(png_ptr);
-  if (!info_ptr) {
-    png_destroy_write_struct(&png_ptr, (png_infopp) nullptr);
-    return;
-  }
-
-  if (setjmp(png_jmpbuf(png_ptr))) {
-    png_destroy_write_struct(&png_ptr, &info_ptr);
-    return;
-  }
-
-  png_set_write_fn(png_ptr, &sock, pngWriteCb, 0);
-
-  png_set_filter(png_ptr, 0, PNG_FILTER_NONE | PNG_FILTER_VALUE_NONE);
-  png_set_compression_level(png_ptr, 7);
-
-  static const int bit_depth = 8;
-  static const int color_type = PNG_COLOR_TYPE_RGB_ALPHA;
-  static const int interlace_type = PNG_INTERLACE_NONE;
-  png_set_IHDR(png_ptr, info_ptr, w, h, bit_depth, color_type, interlace_type,
-               PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-
-  png_bytep* row_pointers =
-      (png_byte**)png_malloc(png_ptr, h * sizeof(png_bytep));
-
-  for (size_t y = 0; y < h; ++y) {
-    row_pointers[y] = const_cast<png_bytep>(data + y * w * 4);
-  }
-
-  png_set_rows(png_ptr, info_ptr, row_pointers);
-  png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, nullptr);
-
-  png_free(png_ptr, row_pointers);
-  png_destroy_write_struct(&png_ptr, &info_ptr);
-}
-
-// _____________________________________________________________________________
-void Server::clearSession(const std::string& id) const {
-  if (_rs.count(id)) {
-    LOG(INFO) << "[SERVER] Clearing session " << id;
-    _rs.erase(id);
-
-    for (auto it = _queryCache.cbegin(); it != _queryCache.cend();) {
-      if (it->second == id) {
-        it = _queryCache.erase(it);
-      } else {
-        ++it;
-      }
-    }
-  }
-}
-
-// _____________________________________________________________________________
-void Server::clearSessions() const {
-  LOG(INFO) << "[SERVER] Clearing all sessions...";
-  _rs.clear();
-  _queryCache.clear();
-}
-
-// _____________________________________________________________________________
-void Server::clearOldSessions() const {
-  while (true) {
-    std::this_thread::sleep_for(std::chrono::minutes(_cacheLifetime));
-
-    std::vector<std::string> toDel;
-
-    for (const auto& i : _rs) {
-      if (std::chrono::duration_cast<std::chrono::minutes>(
-              std::chrono::system_clock::now() - i.second->createdAt())
-              .count() >= 1) {
-        toDel.push_back(i.first);
-      }
-    }
-
+  {
     std::lock_guard<std::mutex> guard(_m);
-    for (const auto& id : toDel) {
-      clearSession(id);
+    if (_requestCache.count(requestId)) {
+      sessionId = _requestCache[requestId];
+      reqor = _rs[sessionId];
+    } else {
+      reqor = std::shared_ptr<Requestor>(
+          new Requestor(cache, _maxMemory));
+      sessionId = getSessionId();
+
+      _rs[sessionId] = reqor;
+      _requestCache[requestId] = sessionId;
     }
   }
+
+  try {
+    reqor->request();
+  } catch (OutOfMemoryError& ex) {
+    LOG(ERROR) << ex.what();
+
+    // delete cache, is now in unready state
+    {
+      std::lock_guard<std::mutex> guard(_m);
+      clearSession(sessionId);
+    }
+
+    auto answ = util::http::Answer("406 Not Acceptable", ex.what());
+    answ.params["Content-Type"] = "application/json; charset=utf-8";
+    return answ;
+  }
+
+  util::geo::FBox bbox = reqor->getPointGrid().getBBox();
+  bbox = extendBox(reqor->getLineGrid().getBBox(), bbox);
+  util::geo::FPoint ll = bbox.getLowerLeft();
+  util::geo::FPoint ur = bbox.getUpperRight();
+  float llX = ll.getX();
+  float llY = ll.getY();
+  float urX = ur.getX();
+  float urY = ur.getY();
+  size_t numObjs = reqor->getNumObjects();
+
+  std::stringstream json;
+  json << std::fixed << "{\"qid\" : \"" << sessionId << "\",\"bounds\":[["
+       << llX << "," << llY << "],[" << urX << "," << urY << "]]"
+       << ",\"numobjects\":" << numObjs << "}";
+
+  auto answ = util::http::Answer("200 OK", json.str());
+  answ.params["Content-Type"] = "application/json; charset=utf-8";
+
+  return answ;
 }
 
 // _____________________________________________________________________________
@@ -1119,11 +1042,11 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
 
 // _____________________________________________________________________________
 util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
-  if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
-    throw std::invalid_argument("No backend (?backend=) specified.");
-  auto backend = pars.find("backend")->second;
-  createCache(backend);
-  std::shared_ptr<GeomCache> cache = _caches[backend];
+  if (pars.count("source") == 0 || pars.find("source")->second.empty())
+    throw std::invalid_argument("No source (?source=) specified.");
+  auto source = pars.find("source")->second;
+  //createCache(backend, GeomCache::SourceType::backend);
+  std::shared_ptr<GeomCache> cache = _caches[source];
   double loadStatusPercent = cache->getLoadStatusPercent(true);
   int loadStatusStage = cache->getLoadStatusStage();
 
@@ -1133,6 +1056,145 @@ util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
   util::http::Answer ans = util::http::Answer("200 OK", json.str());
 
   return ans;
+}
+
+// _____________________________________________________________________________
+std::string Server::parseUrl(std::string u, std::string pl,
+                             std::map<std::string, std::string>* params) {
+  auto parts = util::split(u, '?');
+
+  if (parts.size() > 1) {
+    auto kvs = util::split(parts[1], '&');
+    for (const auto& kv : kvs) {
+      auto kvp = util::split(kv, '=');
+      if (kvp.size() == 1) kvp.push_back("");
+      (*params)[util::urlDecode(kvp[0])] = util::urlDecode(kvp[1]);
+    }
+  }
+
+  // also parse post data
+  auto kvs = util::split(pl, '&');
+  for (const auto& kv : kvs) {
+    auto kvp = util::split(kv, '=');
+    if (kvp.size() == 1) kvp.push_back("");
+    (*params)[util::urlDecode(kvp[0])] = util::urlDecode(kvp[1]);
+  }
+
+  return util::urlDecode(parts.front());
+}
+
+// _____________________________________________________________________________
+inline void pngWriteCb(png_structp png_ptr, png_bytep data, png_size_t length) {
+  int sock = *((int*)png_get_io_ptr(png_ptr));
+
+  size_t writes = 0;
+
+  while (writes != length) {
+    int64_t out =
+        write(sock, reinterpret_cast<char*>(data) + writes, length - writes);
+    if (out < 0) {
+      if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) continue;
+      break;
+    }
+    writes += out;
+  }
+}
+
+// _____________________________________________________________________________
+inline void pngWarnCb(png_structp, png_const_charp error_msg) {
+  LOG(WARN) << "[SERVER] (libpng) " << error_msg;
+}
+
+// _____________________________________________________________________________
+inline void pngErrorCb(png_structp, png_const_charp error_msg) {
+  throw std::runtime_error(error_msg);
+}
+
+// _____________________________________________________________________________
+void Server::writePNG(const unsigned char* data, size_t w, size_t h, int sock) {
+  png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr,
+                                                pngErrorCb, pngWarnCb);
+  if (!png_ptr) return;
+
+  png_infop info_ptr = png_create_info_struct(png_ptr);
+  if (!info_ptr) {
+    png_destroy_write_struct(&png_ptr, (png_infopp) nullptr);
+    return;
+  }
+
+  if (setjmp(png_jmpbuf(png_ptr))) {
+    png_destroy_write_struct(&png_ptr, &info_ptr);
+    return;
+  }
+
+  png_set_write_fn(png_ptr, &sock, pngWriteCb, 0);
+
+  png_set_filter(png_ptr, 0, PNG_FILTER_NONE | PNG_FILTER_VALUE_NONE);
+  png_set_compression_level(png_ptr, 7);
+
+  static const int bit_depth = 8;
+  static const int color_type = PNG_COLOR_TYPE_RGB_ALPHA;
+  static const int interlace_type = PNG_INTERLACE_NONE;
+  png_set_IHDR(png_ptr, info_ptr, w, h, bit_depth, color_type, interlace_type,
+               PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+
+  png_bytep* row_pointers =
+      (png_byte**)png_malloc(png_ptr, h * sizeof(png_bytep));
+
+  for (size_t y = 0; y < h; ++y) {
+    row_pointers[y] = const_cast<png_bytep>(data + y * w * 4);
+  }
+
+  png_set_rows(png_ptr, info_ptr, row_pointers);
+  png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, nullptr);
+
+  png_free(png_ptr, row_pointers);
+  png_destroy_write_struct(&png_ptr, &info_ptr);
+}
+
+// _____________________________________________________________________________
+void Server::clearSession(const std::string& id) const {
+  if (_rs.count(id)) {
+    LOG(INFO) << "[SERVER] Clearing session " << id;
+    _rs.erase(id);
+
+    for (auto it = _requestCache.cbegin(); it != _requestCache.cend();) {
+      if (it->second == id) {
+        it = _requestCache.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+}
+
+// _____________________________________________________________________________
+void Server::clearSessions() const {
+  LOG(INFO) << "[SERVER] Clearing all sessions...";
+  _rs.clear();
+  _requestCache.clear();
+}
+
+// _____________________________________________________________________________
+void Server::clearOldSessions() const {
+  while (true) {
+    std::this_thread::sleep_for(std::chrono::minutes(_cacheLifetime));
+
+    std::vector<std::string> toDel;
+
+    for (const auto& i : _rs) {
+      if (std::chrono::duration_cast<std::chrono::minutes>(
+              std::chrono::system_clock::now() - i.second->createdAt())
+              .count() >= 1) {
+        toDel.push_back(i.first);
+      }
+    }
+
+    std::lock_guard<std::mutex> guard(_m);
+    for (const auto& id : toDel) {
+      clearSession(id);
+    }
+  }
 }
 
 // _____________________________________________________________________________
@@ -1167,23 +1229,21 @@ std::string Server::getSessionId() const {
   return std::to_string(d(rng));
 }
 
-void Server::createCache(const std::string& backend) const {
+void Server::createCache(const std::string& source, const GeomCache::SourceType srcType) const {
   std::shared_ptr<GeomCache> cache;
-
   {
     std::lock_guard<std::mutex> guard(_m);
-    if (_caches.count(backend)) {
-      cache = _caches[backend];
+    if (_caches.count(source)) {
+      cache = _caches[source];
     } else {
-      cache = std::shared_ptr<GeomCache>(new GeomCache(backend));
-      _caches[backend] = cache;
+      cache = std::shared_ptr<GeomCache>(new GeomCache(source, srcType));
+      _caches[source] = cache;
     }
   }
 }
 
 // _____________________________________________________________________________
 void Server::loadCache(const std::string& backend) const {
-  // std::shared_ptr<Requestor> reqor;
   std::shared_ptr<GeomCache> cache = _caches[backend];
 
   try {

@@ -11,6 +11,7 @@
 #include <iostream>
 #include <algorithm>
 #include <sstream>
+#include <3rdparty/nlohmann/json.hpp>
 
 #include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/Misc.h"
@@ -19,11 +20,20 @@
 #include "util/geo/Geo.h"
 #include "util/geo/PolyLine.h"
 #include "util/log/Log.h"
+#include "GeomCache.h"
 
 using petrimaps::GeomCache;
 using util::geo::DPoint;
 using util::geo::FPoint;
 using util::geo::latLngToWebMerc;
+using json = nlohmann::json;
+
+GeomCache::GeomCache(const std::string& source, const SourceType srcType) {
+  _curl = curl_easy_init();
+  if (srcType == SourceType::backend) {
+    _backendUrl = source;
+  }
+}
 
 const static std::string QUERY =
     "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
@@ -69,8 +79,9 @@ const std::string& GeomCache::getCountQuery(
 // _____________________________________________________________________________
 size_t GeomCache::writeCbString(void* contents, size_t size, size_t nmemb,
                                 void* userp) {
-  ((std::string*)userp)->append((char*)contents, size * nmemb);
-  return size * nmemb;
+  size_t realsize = size * nmemb;
+  ((std::string*)userp)->append((char*)contents, realsize);
+  return realsize;
 }
 
 // _____________________________________________________________________________
@@ -589,7 +600,7 @@ void GeomCache::request() {
   _linePoints.clear();
   _qidToId.clear();
 
-  _lastQidToId = {-1, -1};
+  _lastQidToId = {-1, -1}; // Can't be negative!
 
   _raw.clear();
   _raw.reserve(100000);
@@ -644,8 +655,6 @@ void GeomCache::request() {
     requestPart(offset);
     lastNum = _curRow - offset;
   }
-
-  if (i == -1) throw std::runtime_error("Could not create temporary file");
 
   LOG(INFO) << "[GEOMCACHE] Building vectors...";
 
@@ -829,7 +838,6 @@ GeomCache::getRelObjects(const std::vector<IdMapping>& ids) const {
 
   // only counts multi-geometries once
   size_t numObjects = 0;
-
   size_t i = 0;
   size_t j = 0;
 
@@ -872,8 +880,25 @@ GeomCache::getRelObjects(const std::vector<IdMapping>& ids) const {
 
   return {ret, numObjects};
 }
-
 // _____________________________________________________________________________
+
+std::vector<std::pair<ID_TYPE, ID_TYPE>> GeomCache::getRelObjects() const {
+  // Used for GeoJSON, returns all objects as vector<pair<geomID, Row>>
+  // geomID starts from 0 ascending, Row = geomID
+
+  std::vector<std::pair<ID_TYPE, ID_TYPE>> objects;
+  objects.reserve(_points.size() + _linePoints.size());
+
+  for (size_t i = 0; i < _points.size(); i++) {
+    objects.push_back({i, i});
+  }
+  for (size_t i = 0; i < _lines.size(); i++) {
+    objects.push_back({i + I_OFFSET, i + I_OFFSET});
+  }
+
+  return objects;
+}
+
 void GeomCache::insertLine(const util::geo::DLine& l, bool isArea) {
   // we also add the line's bounding box here to also
   // compress that
@@ -903,10 +928,8 @@ void GeomCache::insertLine(const util::geo::DLine& l, bool isArea) {
   // add bounding box upper left
   int16_t mainXLoc = (bbox.getUpperRight().getX() * 10.0) / M_COORD_GRANULARITY;
   int16_t mainYLoc = (bbox.getUpperRight().getY() * 10.0) / M_COORD_GRANULARITY;
-  minorXLoc =
-      (bbox.getUpperRight().getX() * 10.0) - mainXLoc * M_COORD_GRANULARITY;
-  minorYLoc =
-      (bbox.getUpperRight().getY() * 10.0) - mainYLoc * M_COORD_GRANULARITY;
+  minorXLoc = (bbox.getUpperRight().getX() * 10.0) - mainXLoc * M_COORD_GRANULARITY;
+  minorYLoc = (bbox.getUpperRight().getY() * 10.0) - mainYLoc * M_COORD_GRANULARITY;
   if (mainXLoc != mainX || mainYLoc != mainY) {
     mainX = mainXLoc;
     mainY = mainYLoc;
@@ -955,9 +978,66 @@ void GeomCache::insertLine(const util::geo::DLine& l, bool isArea) {
   }
 }
 
+void GeomCache::insertLineGeoJSON(const util::geo::DLine& l, bool isArea) {
+  const auto& bbox = util::geo::getBoundingBox(l);
+  int16_t mainX = (bbox.getLowerLeft().getX() * 10.0) / M_COORD_GRANULARITY;
+  int16_t mainY = (bbox.getLowerLeft().getY() * 10.0) / M_COORD_GRANULARITY;
+
+  if (mainX != 0 || mainY != 0) {
+    util::geo::Point<int16_t> p{mCoord(mainX), mCoord(mainY)};
+    _linePoints.push_back(p);
+  }
+
+  // add bounding box lower left
+  int16_t minorXLoc = (bbox.getLowerLeft().getX() * 10.0) - mainX * M_COORD_GRANULARITY;
+  int16_t minorYLoc = (bbox.getLowerLeft().getY() * 10.0) - mainY * M_COORD_GRANULARITY;
+  util::geo::Point<int16_t> p{minorXLoc, minorYLoc};
+  _linePoints.push_back(p);
+
+  // add bounding box upper left
+  int16_t mainXLoc = (bbox.getUpperRight().getX() * 10.0) / M_COORD_GRANULARITY;
+  int16_t mainYLoc = (bbox.getUpperRight().getY() * 10.0) / M_COORD_GRANULARITY;
+  minorXLoc = (bbox.getUpperRight().getX() * 10.0) - mainXLoc * M_COORD_GRANULARITY;
+  minorYLoc = (bbox.getUpperRight().getY() * 10.0) - mainYLoc * M_COORD_GRANULARITY;
+  if (mainXLoc != mainX || mainYLoc != mainY) {
+    mainX = mainXLoc;
+    mainY = mainYLoc;
+    util::geo::Point<int16_t> p{mCoord(mainX), mCoord(mainY)};
+    _linePoints.push_back(p);
+  }
+  p = util::geo::Point<int16_t>{minorXLoc, minorYLoc};
+  _linePoints.push_back(p);
+
+  // add line points
+  for (const auto& p : l) {
+    mainXLoc = (p.getX() * 10.0) / M_COORD_GRANULARITY;
+    mainYLoc = (p.getY() * 10.0) / M_COORD_GRANULARITY;
+
+    if (mainXLoc != mainX || mainYLoc != mainY) {
+      mainX = mainXLoc;
+      mainY = mainYLoc;
+      util::geo::Point<int16_t> p{mCoord(mainX), mCoord(mainY)};
+      _linePoints.push_back(p);
+    }
+
+    int16_t minorXLoc = (p.getX() * 10.0) - mainXLoc * M_COORD_GRANULARITY;
+    int16_t minorYLoc = (p.getY() * 10.0) - mainYLoc * M_COORD_GRANULARITY;
+    util::geo::Point<int16_t> pp{minorXLoc, minorYLoc};
+    _linePoints.push_back(pp);
+  }
+
+  // if we have an area, we end in a major coord (which is not possible for
+  // other types)
+  if (isArea) {
+    util::geo::Point<int16_t> p{mCoord(0), mCoord(0)};
+    _linePoints.push_back(p);
+  }
+}
+
 // _____________________________________________________________________________
 util::geo::DBox GeomCache::getLineBBox(size_t lid) const {
   util::geo::DBox ret;
+  LOG(INFO) << "[GEOMCACHE] lid: " << lid;
   size_t start = getLine(lid);
 
   bool s = false;
@@ -968,6 +1048,7 @@ util::geo::DBox GeomCache::getLineBBox(size_t lid) const {
     // extract real geom
     const auto& cur = _linePoints[i];
 
+    LOG(INFO) << "[GEOMCACHE] _linePoints.size(): " << _linePoints.size();
     if (isMCoord(cur.getX())) {
       mainX = rmCoord(cur.getX());
       mainY = rmCoord(cur.getY());
@@ -1115,8 +1196,169 @@ std::string GeomCache::requestIndexHash() {
     return "";
   }
 }
-
 // _____________________________________________________________________________
+
+void GeomCache::loadGeoJson(const std::string& content) {
+  _loadStatusStage = _LoadStatusStages::Parse;
+
+  json res = json::parse(content);
+
+  // Parse json
+  if (res["type"] != "FeatureCollection") {
+    LOG(INFO) << "GeoJson content is not a FeatureCollection.";
+    return;
+  }
+
+  // Parse features
+  auto features = res["features"];
+  _totalSize = features.size();
+  _curRow = 0;
+  _curUniqueGeom = 0;
+  if (_totalSize == 0) {
+    throw std::runtime_error("Number of rows was 0");
+  }
+
+  _points.clear();
+  _lines.clear();
+  _linePoints.clear();
+
+  for (json feature : features) {
+    // Parse type
+    if (feature["type"] != "Feature") {
+      LOG(INFO) << "[GeomCache] Non-Feature detected. Skipping...";
+      continue;
+    }
+    // Parse geometry
+    if (!feature.contains("geometry")) {
+      LOG(INFO) << "[GeomCache] Feature has no geometry. Skipping...";
+      continue;
+    }
+
+    json geom = feature["geometry"];
+    std::string type = geom["type"];
+    auto coords = geom["coordinates"];
+    auto properties = feature["properties"];
+
+    // PRIMITIVES
+    if (type == "Point") {
+      auto point = latLngToWebMerc(FPoint(coords[0], coords[1]));
+      if (!pointValid(point)) {
+        LOG(INFO) << "[GeomCache] Invalid point found. Skipping...";
+        continue;
+      }
+      _points.push_back(point);
+      _curUniqueGeom++;
+    
+    } else if (type == "LineString") {
+      util::geo::DLine line;
+      line.reserve(2);
+
+      for (std::vector<float> coord : coords) {
+        auto point = latLngToWebMerc(DPoint(coord[0], coord[1]));
+        if (!pointValid(point)) {
+          LOG(INFO) << "[GeomCache] Invalid point found. Skipping...";
+          continue;
+        }
+        line.push_back(point);
+      }
+      std::size_t idx = _linePoints.size();
+      _lines.push_back(idx);
+      line = util::geo::densify(line, 200 * 3);
+      insertLineGeoJSON(line, false);
+
+      _curUniqueGeom++;
+    
+    } else if (type == "Polygon") {
+      for (auto args : coords) {
+        util::geo::DLine line;
+        line.reserve(2);
+
+        for (std::vector<float> coord : args) {
+          auto point = latLngToWebMerc(DPoint(coord[0], coord[1]));
+          if (!pointValid(point)) {
+            LOG(INFO) << "[GeomCache] Invalid point found. Skipping...";
+            continue;
+          }
+          line.push_back(point);
+        }
+        std::size_t idx = _linePoints.size();
+        _lines.push_back(idx);
+        line = util::geo::densify(line, 200 * 3);
+        insertLineGeoJSON(line, false);
+      }
+
+      _curUniqueGeom++;
+    
+    // MULTIPART
+    } else if (type == "MultiPoint") {
+      for (std::vector<float> coord : coords) {
+        auto point = latLngToWebMerc(FPoint(coord[0], coord[1]));
+        if (!pointValid(point)) {
+          LOG(INFO) << "[GeomCache] Invalid point found. Skipping...";
+          continue;
+        }
+        _points.push_back(point);
+      }
+
+      _curUniqueGeom++;
+    
+    } else if (type == "MultiLineString") {
+      for (auto args : coords) {
+        util::geo::DLine line;
+        line.reserve(2);
+
+        for (std::vector<float> coord : args) {
+          auto point = latLngToWebMerc(DPoint(coord[0], coord[1]));
+          if (!pointValid(point)) {
+            LOG(INFO) << "[GeomCache] Invalid point found. Skipping...";
+            continue;
+          }
+          line.push_back(point);
+        }
+        std::size_t idx = _linePoints.size();
+        _lines.push_back(idx);
+        line = util::geo::densify(line, 200 * 3);
+        insertLineGeoJSON(line, false);
+      }
+
+      _curUniqueGeom++;
+    
+    } else if (type == "MultiPolygon") {
+      for (auto args1 : coords) {
+        for (auto args2 : args1) {
+          util::geo::DLine line;
+          line.reserve(2);
+
+          for (std::vector<float> coord : args2) {
+            auto point = latLngToWebMerc(DPoint(coord[0], coord[1]));
+            if (!pointValid(point)) {
+              LOG(INFO) << "[GeomCache] Invalid point found. Skipping...";
+              continue;
+            }
+            line.push_back(point);
+          }
+          std::size_t idx = _linePoints.size();
+          _lines.push_back(idx);
+          line = util::geo::densify(line, 200 * 3);
+          insertLineGeoJSON(line, false);
+        }
+      }
+
+      _curUniqueGeom++;
+    }
+
+    //_geoJSONPointsAttr[_curRow] = properties;
+    _curRow++;
+  }
+
+  _ready = true;
+
+  LOG(INFO) << "[GEOMCACHE] Done";
+  LOG(INFO) << "[GEOMCACHE] Received " << _curUniqueGeom << " unique geoms";
+  LOG(INFO) << "[GEOMCACHE] Received " << _points.size() << " points and "
+            << _lines.size() << " lines";
+}
+
 void GeomCache::load(const std::string& cacheDir) {
   std::lock_guard<std::mutex> guard(_m);
 

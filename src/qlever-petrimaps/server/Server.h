@@ -34,6 +34,7 @@ class Server : public util::http::Handler {
 
   util::http::Answer handleHeatMapReq(const Params& pars, int sock) const;
   util::http::Answer handleQueryReq(const Params& pars) const;
+  util::http::Answer handleGeoJsonFileReq(const Params& pars) const;
   util::http::Answer handleGeoJSONReq(const Params& pars) const;
   util::http::Answer handleClearSessReq(const Params& pars) const;
   util::http::Answer handlePosReq(const Params& pars) const;
@@ -42,7 +43,7 @@ class Server : public util::http::Handler {
   util::http::Answer handleExportReq(const Params& pars, int sock) const;
   util::http::Answer handleLoadStatusReq(const Params& pars) const;
 
-  void createCache(const std::string& backend) const;
+  void createCache(const std::string& backend, const GeomCache::SourceType srcType) const;
   void loadCache(const std::string& backend) const;
 
   void clearSession(const std::string& id) const;
@@ -68,7 +69,7 @@ class Server : public util::http::Handler {
 
   mutable std::map<std::string, std::shared_ptr<GeomCache>> _caches;
   mutable std::map<std::string, std::shared_ptr<Requestor>> _rs;
-  mutable std::map<std::string, std::string> _queryCache;
+  mutable std::map<std::string, std::string> _requestCache;
 };
 }  // namespace petrimaps
 

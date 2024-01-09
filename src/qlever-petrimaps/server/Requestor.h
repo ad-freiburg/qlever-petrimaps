@@ -45,8 +45,11 @@ class Requestor {
       : _cache(cache),
         _maxMemory(maxMemory),
         _createdAt(std::chrono::system_clock::now()) {}
-
+  
   void request(const std::string& query);
+  void request();
+  void createBboxes(util::geo::FBox& pointBbox, util::geo::DBox& lineBbox);
+  void createGrid(util::geo::FBox pointBbox, util::geo::DBox lineBbox);
 
   std::vector<std::pair<std::string, std::string>> requestRow(
       uint64_t row) const;
