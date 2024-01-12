@@ -112,8 +112,16 @@ void Requestor::request(const std::string& qry) {
 
   LOG(INFO) << "[REQUESTOR] ... done";
 
-  LOG(INFO) << "[REQUESTOR] Point BBox: " << util::geo::getWKT(pointBbox);
-  LOG(INFO) << "[REQUESTOR] Line BBox: " << util::geo::getWKT(lineBbox);
+  if (pointBbox.getLowerLeft().getX() > pointBbox.getUpperRight().getX()) {
+    LOG(INFO) << "[REQUESTOR] Point BBox: <none)";
+  } else {
+    LOG(INFO) << "[REQUESTOR] Point BBox: " << util::geo::getWKT(pointBbox);
+  }
+  if (lineBbox.getLowerLeft().getX() > lineBbox.getUpperRight().getX()) {
+    LOG(INFO) << "[REQUESTOR] Line BBox: <none>";
+  } else {
+    LOG(INFO) << "[REQUESTOR] Line BBox: " << util::geo::getWKT(lineBbox);
+  }
   LOG(INFO) << "[REQUESTOR] Building grid...";
 
   double GRID_SIZE = 65536;
