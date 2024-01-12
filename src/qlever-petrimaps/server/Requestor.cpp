@@ -113,7 +113,7 @@ void Requestor::request(const std::string& qry) {
   LOG(INFO) << "[REQUESTOR] ... done";
 
   if (pointBbox.getLowerLeft().getX() > pointBbox.getUpperRight().getX()) {
-    LOG(INFO) << "[REQUESTOR] Point BBox: <none)";
+    LOG(INFO) << "[REQUESTOR] Point BBox: <none>";
   } else {
     LOG(INFO) << "[REQUESTOR] Point BBox: " << util::geo::getWKT(pointBbox);
   }
