@@ -146,6 +146,7 @@ class GeomCache {
   std::fstream _qidToIdF;
 
   size_t _totalSize = 0;
+  size_t _geometryDuplicates = 0;
 
   IdMapping _lastQidToId;
 
