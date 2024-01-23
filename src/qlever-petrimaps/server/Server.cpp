@@ -21,6 +21,8 @@
 #include "qlever-petrimaps/build.h"
 #include "qlever-petrimaps/index.h"
 #include "qlever-petrimaps/server/Requestor.h"
+#include "qlever-petrimaps/server/GeoJSONRequestor.h"
+#include "qlever-petrimaps/server/SPARQLRequestor.h"
 #include "qlever-petrimaps/server/Server.h"
 #include "qlever-petrimaps/style.h"
 #include "util/Misc.h"
@@ -721,6 +723,8 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";
 
+  LOG(INFO) << "[SERVER] JSON RESULT: " << json.str();
+
   return answ;
 }
 
@@ -776,20 +780,19 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   loadCache(backend);
 
   std::string requestId = backend + "$" + query;
-  std::shared_ptr<Requestor> reqor;
+  std::shared_ptr<SPARQLRequestor> reqor;
   std::string sessionId;
-
   {
     std::lock_guard<std::mutex> guard(_m);
     if (_requestCache.count(requestId)) {
       sessionId = _requestCache[requestId];
-      reqor = _rs[sessionId];
+      reqor = std::dynamic_pointer_cast<SPARQLRequestor>(_rs[sessionId]);
     } else {
-      reqor = std::shared_ptr<Requestor>(
-          new Requestor(_caches[backend], _maxMemory));
+      reqor = std::shared_ptr<SPARQLRequestor>(
+          new SPARQLRequestor(std::dynamic_pointer_cast<SPARQLCache>(_caches[backend]), _maxMemory));
       sessionId = getSessionId();
 
-      _rs[sessionId] = reqor;
+      _rs[sessionId] = std::dynamic_pointer_cast<Requestor>(reqor);
       _requestCache[requestId] = sessionId;
     }
   }
@@ -810,6 +813,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     return answ;
   }
 
+  reqor->getPointGrid().getBBox();
   auto bbox = reqor->getPointGrid().getBBox();
   bbox = extendBox(reqor->getLineGrid().getBBox(), bbox);
 
@@ -836,27 +840,25 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
 
 util::http::Answer Server::handleGeoJsonFileReq(const Params& pars) const {
   auto content = pars.find("geoJsonFile")->second;
-  //LOG(INFO) << "[SERVER] Requested GeoJson-File content is " << content;
 
-  createCache(content, GeomCache::SourceType::geoJson);
-  std::shared_ptr<GeomCache> cache = _caches[content];
-  cache->loadGeoJson(content);
+  createCache(content, GeomCache::SourceType::geoJSON);
+  std::shared_ptr<GeoJSONCache> cache = std::dynamic_pointer_cast<GeoJSONCache>(_caches[content]);
+  cache->load(content);
 
   std::string requestId = content;
-  std::shared_ptr<Requestor> reqor;
+  std::shared_ptr<GeoJSONRequestor> reqor;
   std::string sessionId;
-
   {
     std::lock_guard<std::mutex> guard(_m);
     if (_requestCache.count(requestId)) {
       sessionId = _requestCache[requestId];
-      reqor = _rs[sessionId];
+      reqor = std::dynamic_pointer_cast<GeoJSONRequestor>(_rs[sessionId]);
     } else {
-      reqor = std::shared_ptr<Requestor>(
-          new Requestor(cache, _maxMemory));
+      reqor = std::shared_ptr<GeoJSONRequestor>(
+          new GeoJSONRequestor(cache, _maxMemory));
       sessionId = getSessionId();
 
-      _rs[sessionId] = reqor;
+      _rs[sessionId] = std::dynamic_pointer_cast<Requestor>(reqor);
       _requestCache[requestId] = sessionId;
     }
   }
@@ -1236,7 +1238,15 @@ void Server::createCache(const std::string& source, const GeomCache::SourceType 
     if (_caches.count(source)) {
       cache = _caches[source];
     } else {
-      cache = std::shared_ptr<GeomCache>(new GeomCache(source, srcType));
+      switch (srcType) {
+        case GeomCache::SourceType::backend:
+          cache = std::shared_ptr<SPARQLCache>(new SPARQLCache(source));
+          break;
+        case GeomCache::SourceType::geoJSON:
+          cache = std::shared_ptr<GeoJSONCache>(new GeoJSONCache());
+          break;
+      }
+      
       _caches[source] = cache;
     }
   }
@@ -1244,7 +1254,7 @@ void Server::createCache(const std::string& source, const GeomCache::SourceType 
 
 // _____________________________________________________________________________
 void Server::loadCache(const std::string& backend) const {
-  std::shared_ptr<GeomCache> cache = _caches[backend];
+  std::shared_ptr<SPARQLCache> cache = std::dynamic_pointer_cast<SPARQLCache>(_caches[backend]);
 
   try {
     cache->load(_cacheDir);

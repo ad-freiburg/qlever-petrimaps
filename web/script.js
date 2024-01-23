@@ -34,6 +34,9 @@ function openPopup(data) {
             row.push(data[0]["attrs"][i][1]);
         }
 
+        console.log(select_variables);
+        console.log(row);
+
         // code by hannah from old map UI
 
         // Build the HTML of the popup.
@@ -275,8 +278,9 @@ function fetchGeoJsonFile(content_encoded) {
     console.log("Fetching GeoJson-File");
 
     const url = "geoJsonFile?geoJsonFile=" + content_encoded;
+    console.log(url);
     fetchResults(url);
-    //fetchLoadStatusInterval(1000, content_encoded);
+    fetchLoadStatusInterval(1000, content_encoded);
 }
 
 function fetchResults(url) {

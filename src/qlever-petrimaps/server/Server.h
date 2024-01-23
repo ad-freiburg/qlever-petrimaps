@@ -66,7 +66,6 @@ class Server : public util::http::Handler {
   int _cacheLifetime;
 
   mutable std::mutex _m;
-
   mutable std::map<std::string, std::shared_ptr<GeomCache>> _caches;
   mutable std::map<std::string, std::shared_ptr<Requestor>> _rs;
   mutable std::map<std::string, std::string> _requestCache;
