@@ -839,8 +839,10 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
 }
 
 util::http::Answer Server::handleGeoJsonFileReq(const Params& pars) const {
+  LOG(INFO) << "Ich liebe C++";
   auto content = pars.find("geoJsonFile")->second;
 
+  LOG(INFO) << "Ich liebe C++";
   createCache(content, GeomCache::SourceType::geoJSON);
   std::shared_ptr<GeoJSONCache> cache = std::dynamic_pointer_cast<GeoJSONCache>(_caches[content]);
   cache->load(content);

@@ -274,13 +274,46 @@ function fetchQuery(query, backend) {
     fetchLoadStatusInterval(1000, backend_encoded);
 }
 
-function fetchGeoJsonFile(content_encoded) {
+function fetchGeoJsonFile(content) {
     console.log("Fetching GeoJson-File");
+    console.log(content)
 
-    const url = "geoJsonFile?geoJsonFile=" + content_encoded;
-    console.log(url);
-    fetchResults(url);
-    fetchLoadStatusInterval(1000, content_encoded);
+    const url = "geoJsonFile";
+    // fetch(url, {
+    //     method: "POST",
+    //     body: JSON.stringify({
+    //         geoJsonFile: content
+    //     }),
+    //     headers: {
+    //         "Content-type": "application/json"
+    //     }
+    // })
+
+    fetch(url, {
+        method: "POST",
+        body: JSON.stringify("geoJsonFile=" + content),
+        headers: {
+            "Content-type": "application/json; charset=UTF-8"
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        clearInterval(loadStatusIntervalId);
+        document.getElementById("submit-button").disabled = false;
+        loadMap(data["qid"], data["bounds"], data["numobjects"]);
+    })
+    .catch(error => showError(error));
+
+    setSubmitMenuVisible(false);
+    document.getElementById("submit-button").disabled = true;
+    document.getElementById("msg").style.display = "block";
+
+    //fetchLoadStatusInterval(1000, content_encoded);
+
+    //const url = "geoJsonFile?geoJsonFile=" + content;
+    //console.log(url);
+    //fetchResults(url);
+    //fetchLoadStatusInterval(1000, content_encoded);
 }
 
 function fetchResults(url) {
@@ -341,9 +374,9 @@ function fileToTextOnProgress(evt) {
 }
 
 function fileToTextOnLoad(evt) {
-    const content = evt.target.result;
-    const content_encoded = encodeURIComponent(content);
-    fetchGeoJsonFile(content_encoded);
+    let content = evt.target.result;
+    //content = encodeURIComponent(content);
+    fetchGeoJsonFile(content);
 }
 
 function fileToTextOnError(evt) {
