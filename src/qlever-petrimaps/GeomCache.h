@@ -13,6 +13,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <atomic>
 
 #include "qlever-petrimaps/Misc.h"
 #include "util/geo/Geo.h"
@@ -100,7 +101,8 @@ class GeomCache {
   uint8_t _curByte;
   ID _curId;
   QLEVER_ID_TYPE _maxQid;
-  size_t _curRow, _curUniqueGeom;
+  std::atomic<size_t> _curRow;
+  size_t _curUniqueGeom;
 
   enum _LoadStatusStages {Parse = 1, ParseIds};
   _LoadStatusStages _loadStatusStage = Parse;

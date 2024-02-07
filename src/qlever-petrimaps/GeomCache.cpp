@@ -12,6 +12,8 @@
 #include <iostream>
 #include <sstream>
 
+#include <cassert>
+
 #include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/Misc.h"
 #include "qlever-petrimaps/server/Requestor.h"
@@ -384,8 +386,9 @@ double GeomCache::getLoadStatusPercent(bool total) {
   }
 
   if (!total) {
-    return std::atomic<size_t>(_curRow) / static_cast<double>(_totalSize) *
-           100.0;
+    double percent = _curRow / static_cast<double>(_totalSize) * 100.0;
+    assert(percent <= 100.0);
+    return percent;
   }
 
   double parsePercent = 95.0;
@@ -393,13 +396,14 @@ double GeomCache::getLoadStatusPercent(bool total) {
   double totalPercent = 0.0;
   switch (_loadStatusStage) {
     case _LoadStatusStages::Parse:
-      totalPercent = std::atomic<size_t>(_curRow) /
-                     static_cast<double>(_totalSize) * parsePercent;
+      totalPercent = _curRow / static_cast<double>(_totalSize) * parsePercent;
+      assert(totalPercent <= 100.0);
       break;
+    
     case _LoadStatusStages::ParseIds:
       totalPercent = parsePercent;
-      totalPercent += std::atomic<size_t>(_curRow) /
-                      static_cast<double>(_totalSize) * parseIdsPercent;
+      totalPercent += _curRow / static_cast<double>(_totalSize) * parseIdsPercent;
+      assert(totalPercent <= 100.0);
       break;
   }
 
