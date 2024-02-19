@@ -291,7 +291,7 @@ function fetchGeoJsonFile(content) {
 
     fetch(url, {
         method: "POST",
-        body: JSON.stringify("geoJsonFile=" + content),
+        body: "geoJsonFile=" + content,
         headers: {
             "Content-type": "application/json; charset=UTF-8"
         }
