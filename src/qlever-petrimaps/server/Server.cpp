@@ -227,7 +227,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           int ppx = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int ppy = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-          drawPoint(points[0], points2[0], px, py, w, h, style);
+          drawPoint(points[0], points2[0], px, py, w, h, style, 1);
           drawLine(image.data(), ppx, ppy, px, py, w, h);
         } else {
           if (i >= objs.size()) i = r->getClusters()[i - objs.size()].first;
@@ -237,7 +237,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-          drawPoint(points[0], points2[0], px, py, w, h, style);
+          drawPoint(points[0], points2[0], px, py, w, h, style, 1);
         }
       }
     } else {
@@ -270,7 +270,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                     h;
 
             drawPoint(points[omp_get_thread_num()],
-                      points2[omp_get_thread_num()], px, py, w, h, style);
+                      points2[omp_get_thread_num()], px, py, w, h, style,
+                      cell->size());
           } else {
             for (auto i : *cell) {
               if (i >= r->getObjects().size()) {
@@ -284,7 +285,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
               int py =
                   h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
               drawPoint(points[omp_get_thread_num()],
-                        points2[omp_get_thread_num()], px, py, w, h, style);
+                        points2[omp_get_thread_num()], px, py, w, h, style, 1);
             }
           }
         }
@@ -903,6 +904,97 @@ util::http::Answer Server::handleGeoJsonFileReq(const Params& pars) const {
 }
 
 // _____________________________________________________________________________
+inline void pngWriteCb(png_structp png_ptr, png_bytep data, png_size_t length) {
+  int sock = *((int*)png_get_io_ptr(png_ptr));
+
+  size_t writes = 0;
+
+  while (writes != length) {
+    int64_t out =
+        write(sock, reinterpret_cast<char*>(data) + writes, length - writes);
+    if (out < 0) {
+      if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) continue;
+      break;
+    }
+    writes += out;
+  }
+}
+
+// _____________________________________________________________________________
+inline void pngWarnCb(png_structp, png_const_charp error_msg) {
+  LOG(WARN) << "[SERVER] (libpng) " << error_msg;
+}
+
+// _____________________________________________________________________________
+inline void pngErrorCb(png_structp, png_const_charp error_msg) {
+  throw std::runtime_error(error_msg);
+}
+
+// _____________________________________________________________________________
+void Server::writePNG(const unsigned char* data, size_t w, size_t h, int sock) {
+  png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr,
+                                                pngErrorCb, pngWarnCb);
+  if (!png_ptr) return;
+
+  png_infop info_ptr = png_create_info_struct(png_ptr);
+  if (!info_ptr) {
+    png_destroy_write_struct(&png_ptr, (png_infopp) nullptr);
+    return;
+  }
+
+  if (setjmp(png_jmpbuf(png_ptr))) {
+    png_destroy_write_struct(&png_ptr, &info_ptr);
+    return;
+  }
+
+  png_set_write_fn(png_ptr, &sock, pngWriteCb, 0);
+
+  png_set_filter(png_ptr, 0, PNG_FILTER_NONE | PNG_FILTER_VALUE_NONE);
+  png_set_compression_level(png_ptr, 7);
+
+  static const int bit_depth = 8;
+  static const int color_type = PNG_COLOR_TYPE_RGB_ALPHA;
+  static const int interlace_type = PNG_INTERLACE_NONE;
+  png_set_IHDR(png_ptr, info_ptr, w, h, bit_depth, color_type, interlace_type,
+               PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+
+  png_bytep* row_pointers =
+      (png_byte**)png_malloc(png_ptr, h * sizeof(png_bytep));
+
+  for (size_t y = 0; y < h; ++y) {
+    row_pointers[y] = const_cast<png_bytep>(data + y * w * 4);
+  }
+
+  png_set_rows(png_ptr, info_ptr, row_pointers);
+  png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, nullptr);
+
+  png_free(png_ptr, row_pointers);
+  png_destroy_write_struct(&png_ptr, &info_ptr);
+}
+
+// _____________________________________________________________________________
+void Server::clearOldSessions() const {
+  while (true) {
+    std::this_thread::sleep_for(std::chrono::minutes(_cacheLifetime));
+
+    std::vector<std::string> toDel;
+
+    for (const auto& i : _rs) {
+      if (std::chrono::duration_cast<std::chrono::minutes>(
+              std::chrono::system_clock::now() - i.second->createdAt())
+              .count() >= 1) {
+        toDel.push_back(i.first);
+      }
+    }
+
+    std::lock_guard<std::mutex> guard(_m);
+    for (const auto& id : toDel) {
+      clearSession(id);
+    }
+  }
+}
+
+// _____________________________________________________________________________
 util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
   // ignore SIGPIPE
   signal(SIGPIPE, SIG_IGN);
@@ -1088,75 +1180,6 @@ std::string Server::parseUrl(std::string u, std::string pl,
 }
 
 // _____________________________________________________________________________
-inline void pngWriteCb(png_structp png_ptr, png_bytep data, png_size_t length) {
-  int sock = *((int*)png_get_io_ptr(png_ptr));
-
-  size_t writes = 0;
-
-  while (writes != length) {
-    int64_t out =
-        write(sock, reinterpret_cast<char*>(data) + writes, length - writes);
-    if (out < 0) {
-      if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) continue;
-      break;
-    }
-    writes += out;
-  }
-}
-
-// _____________________________________________________________________________
-inline void pngWarnCb(png_structp, png_const_charp error_msg) {
-  LOG(WARN) << "[SERVER] (libpng) " << error_msg;
-}
-
-// _____________________________________________________________________________
-inline void pngErrorCb(png_structp, png_const_charp error_msg) {
-  throw std::runtime_error(error_msg);
-}
-
-// _____________________________________________________________________________
-void Server::writePNG(const unsigned char* data, size_t w, size_t h, int sock) {
-  png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr,
-                                                pngErrorCb, pngWarnCb);
-  if (!png_ptr) return;
-
-  png_infop info_ptr = png_create_info_struct(png_ptr);
-  if (!info_ptr) {
-    png_destroy_write_struct(&png_ptr, (png_infopp) nullptr);
-    return;
-  }
-
-  if (setjmp(png_jmpbuf(png_ptr))) {
-    png_destroy_write_struct(&png_ptr, &info_ptr);
-    return;
-  }
-
-  png_set_write_fn(png_ptr, &sock, pngWriteCb, 0);
-
-  png_set_filter(png_ptr, 0, PNG_FILTER_NONE | PNG_FILTER_VALUE_NONE);
-  png_set_compression_level(png_ptr, 7);
-
-  static const int bit_depth = 8;
-  static const int color_type = PNG_COLOR_TYPE_RGB_ALPHA;
-  static const int interlace_type = PNG_INTERLACE_NONE;
-  png_set_IHDR(png_ptr, info_ptr, w, h, bit_depth, color_type, interlace_type,
-               PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-
-  png_bytep* row_pointers =
-      (png_byte**)png_malloc(png_ptr, h * sizeof(png_bytep));
-
-  for (size_t y = 0; y < h; ++y) {
-    row_pointers[y] = const_cast<png_bytep>(data + y * w * 4);
-  }
-
-  png_set_rows(png_ptr, info_ptr, row_pointers);
-  png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, nullptr);
-
-  png_free(png_ptr, row_pointers);
-  png_destroy_write_struct(&png_ptr, &info_ptr);
-}
-
-// _____________________________________________________________________________
 void Server::clearSession(const std::string& id) const {
   if (_rs.count(id)) {
     LOG(INFO) << "[SERVER] Clearing session " << id;
@@ -1180,45 +1203,23 @@ void Server::clearSessions() const {
 }
 
 // _____________________________________________________________________________
-void Server::clearOldSessions() const {
-  while (true) {
-    std::this_thread::sleep_for(std::chrono::minutes(_cacheLifetime));
-
-    std::vector<std::string> toDel;
-
-    for (const auto& i : _rs) {
-      if (std::chrono::duration_cast<std::chrono::minutes>(
-              std::chrono::system_clock::now() - i.second->createdAt())
-              .count() >= 1) {
-        toDel.push_back(i.first);
-      }
-    }
-
-    std::lock_guard<std::mutex> guard(_m);
-    for (const auto& id : toDel) {
-      clearSession(id);
-    }
-  }
-}
-
-// _____________________________________________________________________________
 void Server::drawPoint(std::vector<uint32_t>& points,
                        std::vector<double>& points2, int px, int py, int w,
-                       int h, MapStyle style) const {
+                       int h, MapStyle style, size_t num) const {
   if (style == OBJECTS) {
     // for the raw style, increase the size of the points a bit
     for (int x = px - 2; x < px + 2; x++) {
       for (int y = py - 2; y < py + 2; y++) {
         if (x >= 0 && y >= 0 && x < w && y < h) {
           if (points2[w * y + x] == 0) points.push_back(w * y + x);
-          points2[w * y + x] += 1;
+          points2[w * y + x] += num;
         }
       }
     }
   } else {
     if (px >= 0 && py >= 0 && px < w && py < h) {
       if (points2[w * py + px] == 0) points.push_back(w * py + px);
-      points2[w * py + px] += 1;
+      points2[w * py + px] += num;
     }
   }
 }

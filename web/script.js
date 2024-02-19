@@ -1,6 +1,7 @@
 let sessionId;
 let curGeojson;
 let curGeojsonId = -1;
+let urlParams = new URLSearchParams(window.location.search);
 
 // id of SetInterval to stop loadStatus requests on error or load finish
 let loadStatusIntervalId = -1;
@@ -186,11 +187,21 @@ function loadMap(id, bounds, numObjects) {
 	objectsLayer.on('error', function() {showError(genError);});
 	heatmapLayer.on('load', function() {console.log("Finished loading map!");});
 	objectsLayer.on('load', function() {console.log("Finished loading map!");});
-	autoLayer.addTo(map).on('error', function() {showError(genError);});
+	autoLayer.on('error', function() {showError(genError);});
+	autoLayer.on('load', function() {console.log("Finished loading map!");});
 
 	layerControl.addBaseLayer(heatmapLayer, "Heatmap");
 	layerControl.addBaseLayer(objectsLayer, "Objects");
 	layerControl.addBaseLayer(autoLayer, "Auto");
+
+    let mode = urlParams.get("mode");
+    if (mode == "heatmap") {
+        heatmapLayer.addTo(map).on('error', function() {showError(genError);});
+    } else if (mode == "objects") {
+        objectsLayer.addTo(map).on('error', function() {showError(genError);});
+    } else {
+        autoLayer.addTo(map).on('error', function() {showError(genError);});
+    }
 
     map.on('click', function(e) {
         const ll = e.latlng;
@@ -419,8 +430,6 @@ const queryElem = document.getElementById("submit-query-query");
 const backendElem = document.getElementById("submit-query-backend");
 backendElem.value = "https://qlever.cs.uni-freiburg.de/api/wikidata";
 
-const url = window.location.search;
-const urlParams = new URLSearchParams(url);
 if (urlParams.has("query")) {
     const query = urlParams.get("query");
     queryElem.value = query;
