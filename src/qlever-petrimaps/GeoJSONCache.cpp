@@ -84,10 +84,10 @@ void GeoJSONCache::insertLine(const util::geo::DLine& l, bool isArea) {
 }
 
 // _____________________________________________________________________________
-void GeoJSONCache::load(const std::string& content) {
+void GeoJSONCache::load() {
   _loadStatusStage = _LoadStatusStages::Parse;
 
-  json res = json::parse(content);
+  json res = json::parse(_content);
 
   // Parse json
   if (res["type"] != "FeatureCollection") {
@@ -233,7 +233,7 @@ void GeoJSONCache::load(const std::string& content) {
       _curUniqueGeom++;
     }
 
-    // Proper structure of properties expected
+    // Proper structure of properties assumed
     _attr[_curRow] = properties;
     _curRow++;
   }
@@ -244,4 +244,8 @@ void GeoJSONCache::load(const std::string& content) {
   LOG(INFO) << "[GEOMCACHE] Received " << _curUniqueGeom << " unique geoms";
   LOG(INFO) << "[GEOMCACHE] Received " << _points.size() << " points and "
             << _lines.size() << " lines";
+}
+
+void GeoJSONCache::setContent(const std::string& content) {
+  _content = content;
 }

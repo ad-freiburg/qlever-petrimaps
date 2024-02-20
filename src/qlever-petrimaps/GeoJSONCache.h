@@ -22,13 +22,16 @@ class GeoJSONCache : public GeomCache {
     return *this;
   };
 
-  void load(const std::string& content);
+  void load();
+  void setContent(const std::string& content);
   std::vector<std::pair<ID_TYPE, ID_TYPE>> getRelObjects() const;
   std::map<std::string, std::string> getAttrRow(size_t row) const {
     return _attr.at(row);
   }
  
  private:
+  std::string _content;
+
   void insertLine(const util::geo::DLine& l, bool isArea);
   // Map geomID to map<key, value>
   std::map<size_t, std::map<std::string, std::string>> _attr;

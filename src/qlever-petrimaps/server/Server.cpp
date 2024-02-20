@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "3rdparty/heatmap.h"
+#include "3rdparty/md5/md5.cpp"
 #include "3rdparty/md5/md5.h"
 #include "3rdparty/colorschemes/Spectral.h"
 #include "qlever-petrimaps/build.h"
@@ -76,6 +77,8 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
       a.params["Content-Type"] = "text/html; charset=utf-8";
     } else if (cmd == "/query") {
       a = handleQueryReq(params);
+    } else if (cmd == "/geoJsonHash") {
+      a = handleGeoJsonHashReq(params);
     } else if (cmd == "/geoJsonFile") {
       a = handleGeoJsonFileReq(params);
     } else if (cmd == "/geojson") {
@@ -839,16 +842,28 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   return answ;
 }
 
+util::http::Answer Server::handleGeoJsonHashReq(const Params& pars) const {
+  std::string content = pars.find("geoJsonFile")->second;
+
+  // Create MD5-Hash of content
+  std::string md5_hash = md5(content);
+  createCache(md5_hash, GeomCache::SourceType::geoJSON);
+  std::shared_ptr<GeoJSONCache> cache = std::dynamic_pointer_cast<GeoJSONCache>(_caches[md5_hash]);
+  cache->setContent(content);
+
+  auto answ = util::http::Answer("200 OK", md5_hash);
+  answ.params["Content-Type"] = "application/json; charset=utf-8";
+
+  return answ;
+}
+
 util::http::Answer Server::handleGeoJsonFileReq(const Params& pars) const {
-  LOG(INFO) << "Ich liebe C++";
-  auto content = pars.find("geoJsonFile")->second;
+  std::string md5_hash = pars.find("geoJsonHash")->second;
 
-  LOG(INFO) << "Ich liebe C++";
-  createCache(content, GeomCache::SourceType::geoJSON);
-  std::shared_ptr<GeoJSONCache> cache = std::dynamic_pointer_cast<GeoJSONCache>(_caches[content]);
-  cache->load(content);
+  std::shared_ptr<GeoJSONCache> cache = std::dynamic_pointer_cast<GeoJSONCache>(_caches[md5_hash]);
+  cache->load();
 
-  std::string requestId = content;
+  std::string requestId = md5_hash;
   std::shared_ptr<GeoJSONRequestor> reqor;
   std::string sessionId;
   {
@@ -857,9 +872,9 @@ util::http::Answer Server::handleGeoJsonFileReq(const Params& pars) const {
       sessionId = _requestCache[requestId];
       reqor = std::dynamic_pointer_cast<GeoJSONRequestor>(_rs[sessionId]);
     } else {
+      sessionId = getSessionId();
       reqor = std::shared_ptr<GeoJSONRequestor>(
           new GeoJSONRequestor(cache, _maxMemory));
-      sessionId = getSessionId();
 
       _rs[sessionId] = std::dynamic_pointer_cast<Requestor>(reqor);
       _requestCache[requestId] = sessionId;
@@ -1249,7 +1264,6 @@ void Server::createCache(const std::string& source, const GeomCache::SourceType 
           cache = std::shared_ptr<GeoJSONCache>(new GeoJSONCache());
           break;
       }
-      
       _caches[source] = cache;
     }
   }

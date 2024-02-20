@@ -34,6 +34,7 @@ class Server : public util::http::Handler {
 
   util::http::Answer handleHeatMapReq(const Params& pars, int sock) const;
   util::http::Answer handleQueryReq(const Params& pars) const;
+  util::http::Answer handleGeoJsonHashReq(const Params& pars) const;
   util::http::Answer handleGeoJsonFileReq(const Params& pars) const;
   util::http::Answer handleGeoJSONReq(const Params& pars) const;
   util::http::Answer handleClearSessReq(const Params& pars) const;

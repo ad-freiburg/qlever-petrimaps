@@ -285,24 +285,32 @@ function fetchQuery(query, backend) {
     fetchLoadStatusInterval(1000, backend_encoded);
 }
 
-function fetchGeoJsonFile(content) {
-    console.log("Fetching GeoJson-File");
-    console.log(content)
+function fetchGeoJsonHash(content) {
+    console.log("Fetching GeoJson-Hash");
 
-    const url = "geoJsonFile";
-    // fetch(url, {
-    //     method: "POST",
-    //     body: JSON.stringify({
-    //         geoJsonFile: content
-    //     }),
-    //     headers: {
-    //         "Content-type": "application/json"
-    //     }
-    // })
-
-    fetch(url, {
+    // Fetch MD5-Hash of GeoJson-File content
+    fetch("geoJsonHash", {
         method: "POST",
         body: "geoJsonFile=" + content,
+        headers: {
+            "Content-type": "application/json; charset=UTF-8"
+        }
+    })
+    .then((response) => response.text())
+    .then(md5_hash => {
+        console.log("Received GeoJson-Hash: " + md5_hash);
+        fetchGeoJsonFile(md5_hash);
+    })
+    .catch(error => showError(error));
+}
+
+function fetchGeoJsonFile(md5_hash) {
+    console.log("Fetching GeoJson-File");
+
+    // Fetch data using MD5-Hash
+    fetch("geoJsonFile", {
+        method: "POST",
+        body: "geoJsonHash=" + md5_hash,
         headers: {
             "Content-type": "application/json; charset=UTF-8"
         }
@@ -319,12 +327,7 @@ function fetchGeoJsonFile(content) {
     document.getElementById("submit-button").disabled = true;
     document.getElementById("msg").style.display = "block";
 
-    //fetchLoadStatusInterval(1000, content_encoded);
-
-    //const url = "geoJsonFile?geoJsonFile=" + content;
-    //console.log(url);
-    //fetchResults(url);
-    //fetchLoadStatusInterval(1000, content_encoded);
+    fetchLoadStatusInterval(1000, md5_hash);
 }
 
 function fetchResults(url) {
@@ -386,8 +389,8 @@ function fileToTextOnProgress(evt) {
 
 function fileToTextOnLoad(evt) {
     let content = evt.target.result;
-    //content = encodeURIComponent(content);
-    fetchGeoJsonFile(content);
+    content = encodeURIComponent(content);
+    fetchGeoJsonHash(content);
 }
 
 function fileToTextOnError(evt) {
