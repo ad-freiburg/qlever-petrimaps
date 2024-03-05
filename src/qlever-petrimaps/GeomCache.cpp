@@ -28,37 +28,37 @@ using util::geo::latLngToWebMerc;
 const static std::string QUERY =
     "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
     "SELECT ?geometry WHERE {"
-    " ?osm_id geo:hasGeometry ?geometry "
+    " ?subject geo:hasGeometry ?geometry "
     "} INTERNAL SORT BY ?geometry";
 
 const static std::string COUNT_QUERY =
     "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
-    "SELECT (COUNT(?geometry) as ?count) WHERE { "
-    " ?osm_id geo:hasGeometry ?geometry "
+    "SELECT (COUNT(?geometry) as ?count) WHERE {"
+    " ?subject geo:hasGeometry ?geometry "
     "}";
 
 const static std::string QUERY_ASWKT =
     "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
     "SELECT ?geometry WHERE {"
-    " ?osm_id geo:hasGeometry ?m . ?m geo:asWKT ?geometry "
+    " ?subject geo:hasGeometry ?m . ?m geo:asWKT ?geometry "
     "} INTERNAL SORT BY ?geometry";
 
 const static std::string COUNT_QUERY_ASWKT =
     "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
     "SELECT (COUNT(?geometry) AS ?count) WHERE {"
-    " ?osm_id geo:hasGeometry ?m . ?m geo:asWKT ?geometry "
+    " ?subject geo:hasGeometry ?m . ?m geo:asWKT ?geometry "
     "}";
 
 const static std::string QUERY_WD =
     "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
-    "SELECT ?coord WHERE {"
-    "  ?ob wdt:P625 ?coord"
-    "} INTERNAL SORT BY ?coord";
+    "SELECT ?geometry WHERE {"
+    "  ?subject wdt:P625 ?geometry"
+    "} INTERNAL SORT BY ?geometry";
 
 const static std::string COUNT_QUERY_WD =
     "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
-    "SELECT (COUNT(?coord) as ?count) WHERE { "
-    "  ?ob wdt:P625 ?coord"
+    "SELECT (COUNT(?geometry) as ?count) WHERE { "
+    "  ?subject wdt:P625 ?geometry"
     "}";
 
 // Helper function that returns one of the given three query strings based on
@@ -75,7 +75,9 @@ static const std::string &selectQueryBasedOnUrl(const std::string &backendUrl,
   auto backendStartsWith = [&pos, &backendUrl](const std::string &prefix) {
     return backendUrl.find(prefix, pos) == pos;
   };
-  if (backendStartsWith("osm")) {
+  if (backendStartsWith("osm-germany")) {
+    return query3;
+  } else if (backendStartsWith("osm") || backendStartsWith("ohm")) {
     return query1;
   } else if (backendStartsWith("wikidata") || backendStartsWith("dblp")) {
     return query2;
@@ -90,10 +92,27 @@ const std::string &GeomCache::getQuery(const std::string &backendUrl) const {
 }
 
 // _____________________________________________________________________________
-const std::string &GeomCache::getCountQuery(
+std::string GeomCache::getCountQuery(
     const std::string &backendUrl) const {
-  return selectQueryBasedOnUrl(backendUrl, COUNT_QUERY_ASWKT, COUNT_QUERY_WD,
-                               COUNT_QUERY);
+  // Modify the query from `getQuery` to count the number of geometries.
+  std::string query = getQuery(backendUrl);
+  auto pos = query.find("SELECT");
+  if (pos == std::string::npos) {
+    LOG(ERROR) << "Could not find SELECT in query: " << query;
+    return "SELECT ?count WHERE { VALUES ?count { 0 } }";
+  }
+  query.insert(pos, "SELECT (COUNT(?geometry) AS ?count) WHERE { ");
+  // INTERNAL SORT BY ?subject instead of INTERNAL SORT BY ?geometry
+  // for the COUNT query (because the former query is cached).
+  // auto sortPos = query.find("INTERNAL SORT BY ?geometry");
+  // if (sortPos == std::string::npos) {
+  //   LOG(ERROR) << "Could not find INTERNAL SORT BY ?geometry in query: "
+  //              << query;
+  //   return "SELECT ?count WHERE { VALUES ?count { 0 } }";
+  // }
+  // query.replace(sortPos, std::string::npos, "INTERNAL SORT BY ?subject }");
+  query.append(" }");
+  return query;
 }
 
 // _____________________________________________________________________________
