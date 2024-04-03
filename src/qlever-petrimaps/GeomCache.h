@@ -49,7 +49,7 @@ class GeomCache {
     return ready;
   }
 
-  void load(const std::string& cacheFile);
+  std::string load(const std::string& cacheFile);
 
   void request();
   size_t requestSize();
