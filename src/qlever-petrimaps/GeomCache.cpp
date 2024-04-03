@@ -1172,12 +1172,12 @@ std::string GeomCache::requestIndexHash() {
 }
 
 // _____________________________________________________________________________
-void GeomCache::load(const std::string &cacheDir) {
+std::string GeomCache::load(const std::string &cacheDir) {
   std::lock_guard<std::mutex> guard(_m);
 
   if (_ready) {
     auto indexHash = requestIndexHash();
-    if (_indexHash == indexHash) return;
+    if (_indexHash == indexHash) return _indexHash;
     LOG(INFO) << "Loaded index hash (" << _indexHash
               << ") and remote index hash (" << indexHash << ") dont match.";
     _ready = false;
@@ -1215,4 +1215,5 @@ void GeomCache::load(const std::string &cacheDir) {
   }
 
   _ready = true;
+  return _indexHash;
 }

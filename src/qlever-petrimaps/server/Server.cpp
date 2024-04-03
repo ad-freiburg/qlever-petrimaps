@@ -783,9 +783,9 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   LOG(INFO) << "[SERVER] Query is:\n" << query;
 
   createCache(backend);
-  loadCache(backend);
+  std::string indexHash = loadCache(backend);
 
-  std::string queryId = backend + "$" + query;
+  std::string queryId = backend + "$" + indexHash + "$" + query;
 
   std::shared_ptr<Requestor> reqor;
   std::string sessionId;
@@ -1196,12 +1196,12 @@ void Server::createCache(const std::string& backend) const {
 }
 
 // _____________________________________________________________________________
-void Server::loadCache(const std::string& backend) const {
+std::string Server::loadCache(const std::string& backend) const {
   // std::shared_ptr<Requestor> reqor;
   std::shared_ptr<GeomCache> cache = _caches[backend];
 
   try {
-    cache->load(_cacheDir);
+    return cache->load(_cacheDir);
   } catch (...) {
     std::lock_guard<std::mutex> guard(_m);
 
