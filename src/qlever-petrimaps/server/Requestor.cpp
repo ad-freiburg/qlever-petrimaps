@@ -455,7 +455,6 @@ const ResObj Requestor::getGeom(size_t id, double rad) const {
     throw std::runtime_error("Geom cache not ready");
   }
   auto obj = _objects[id];
-
   if (obj.first >= I_OFFSET) {
     size_t lineId = obj.first - I_OFFSET;
 

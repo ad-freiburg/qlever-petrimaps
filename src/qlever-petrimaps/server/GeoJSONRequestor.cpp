@@ -61,3 +61,20 @@ std::vector<std::pair<std::string, std::string>> GeoJSONRequestor::requestRow(ui
 
   return res;
 }
+
+void GeoJSONRequestor::requestRows(std::function<void(std::vector<std::vector<std::pair<std::string, std::string>>>)> cb) const {
+  if (!_cache->ready()) {
+    throw std::runtime_error("Geom cache not ready");
+  }
+
+  std::vector<std::vector<std::pair<std::string, std::string>>> res;
+  auto relObjects = _cache->getRelObjects();
+  for(auto const& object : relObjects) {
+    // vector<pair<geomID, Row>>
+    // geomID starts from 0 ascending, Row = geomID
+    ID_TYPE row = object.second;
+    auto rowAttr = requestRow(row);
+    res.push_back(rowAttr);
+  }
+  cb(res);
+}

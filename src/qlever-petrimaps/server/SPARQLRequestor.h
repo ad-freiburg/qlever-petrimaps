@@ -12,9 +12,7 @@ namespace petrimaps {
 
 struct ReaderCbPair {
   RequestReader* reader;
-  std::function<void(
-      std::vector<std::vector<std::pair<std::string, std::string>>>)>
-      cb;
+  std::function<void(std::vector<std::vector<std::pair<std::string, std::string>>>)> cb;
 };
 
 class SPARQLRequestor : public Requestor {
@@ -31,11 +29,7 @@ class SPARQLRequestor : public Requestor {
 
     void request(const std::string& query);
     std::vector<std::pair<std::string, std::string>> requestRow(uint64_t row) const;
-
-    void requestRows(
-      std::function<
-          void(std::vector<std::vector<std::pair<std::string, std::string>>>)>
-          cb) const;
+    void requestRows(std::function<void(std::vector<std::vector<std::pair<std::string, std::string>>>)> cb) const;
  
  private:
     std::string _backendUrl;

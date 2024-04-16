@@ -82,9 +82,7 @@ void RequestReader::requestRows(const std::string& query) {
 }
 
 // _____________________________________________________________________________
-void RequestReader::requestRows(const std::string& query,
-                                size_t (*writeCb)(void*, size_t, size_t,
-                                                  void*), void* ptr) {
+void RequestReader::requestRows(const std::string& query, size_t (*writeCb)(void*, size_t, size_t, void*), void* ptr) {
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
 

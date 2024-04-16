@@ -85,10 +85,7 @@ std::vector<std::pair<std::string, std::string>> SPARQLRequestor::requestRow(uin
 }
 
 // _____________________________________________________________________________
-void SPARQLRequestor::requestRows(
-    std::function<
-        void(std::vector<std::vector<std::pair<std::string, std::string>>>)>
-        cb) const {
+void SPARQLRequestor::requestRows(std::function<void(std::vector<std::vector<std::pair<std::string, std::string>>>)> cb) const {
   if (!_cache->ready()) {
     throw std::runtime_error("Geom cache not ready");
   }

@@ -564,7 +564,6 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
   LOG(INFO) << "[SERVER] GeoJSON request for " << gid;
 
   std::shared_ptr<Requestor> reqor;
-
   {
     std::lock_guard<std::mutex> guard(_m);
     bool has = _rs.count(id);
@@ -582,7 +581,6 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
   auto res = reqor->getGeom(gid, rad);
 
   util::json::Val dict;
-
   if (!noExport) {
     for (auto col : reqor->requestRow(reqor->getObjects()[gid].second)) {
       dict.dict[col.first] = col.second;
@@ -1021,7 +1019,6 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
   auto id = pars.find("id")->second;
 
   std::shared_ptr<Requestor> reqor;
-
   {
     std::lock_guard<std::mutex> guard(_m);
     bool has = _rs.count(id);
@@ -1070,51 +1067,32 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
   bool first = false;
 
   reqor->requestRows(
-      [sock, &first](
+      [sock, &first, reqor](
           std::vector<std::vector<std::pair<std::string, std::string>>> rows) {
         std::stringstream ss;
         ss << std::setprecision(10);
-
         util::json::Val dict;
+        for (size_t i = 0; i < rows.size(); i++) {
+          auto& row = rows[i];
+          auto res = reqor->getGeom(i, 0);
 
-        for (const auto& row : rows) {
-          // skip last entry, which is the WKT
-          for (size_t i = 0; i < row.size() - 1; i++) {
-            dict.dict[row[i].first] = row[i].second;
+          for (size_t j = 0; j < row.size(); j++) {
+            dict.dict[row[j].first] = row[j].second;
           }
 
           GeoJsonOutput geoJsonOut(ss, true);
-
-          std::string wkt = row[row.size() - 1].second;
-          if (wkt.size()) wkt[0] = ' ';  // drop " at beginning
-
-          try {
-            auto geom = util::geo::polygonFromWKT<double>(wkt);
+          if (res.poly.size()) {
             if (first) ss << ",";
-            geoJsonOut.print(geom, dict);
+            geoJsonOut.printLatLng(res.poly, dict);
             first = true;
-          } catch (std::runtime_error& e) {
-          }
-          try {
-            auto geom = util::geo::multiPolygonFromWKT<double>(wkt);
+          } else if (res.line.size()) {
             if (first) ss << ",";
-            geoJsonOut.print(geom, dict);
+            geoJsonOut.printLatLng(res.line, dict);
             first = true;
-          } catch (std::runtime_error& e) {
-          }
-          try {
-            auto geom = util::geo::pointFromWKT<double>(wkt);
+          } else {
             if (first) ss << ",";
-            geoJsonOut.print(geom, dict);
+            geoJsonOut.printLatLng(res.pos, dict);
             first = true;
-          } catch (std::runtime_error& e) {
-          }
-          try {
-            auto geom = util::geo::lineFromWKT<double>(wkt);
-            if (first) ss << ",";
-            geoJsonOut.print(geom, dict);
-            first = true;
-          } catch (std::runtime_error& e) {
           }
           ss << "\n";
         }

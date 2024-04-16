@@ -9,23 +9,21 @@ let loadStatusIntervalId = -1;
 // tabName of current submit tab
 let tabName = "";
 
-let map = L.map('m', {
-    renderer: L.canvas(),
-    preferCanvas: true
-}).setView([47.9965, 7.8469], 13);
-map.attributionControl.setPrefix('University of Freiburg');
-
-let layerControl = L.control.layers([], [], {collapsed:true, position: 'topleft'}).addTo(map);
-
-let osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a rel="noreferrer" target="_blank" href="#">OpenStreetMap</a>',
-    maxZoom: 19,
-    opacity:0.9
-}).addTo(map);
+// Map
+let map;
+let layerControl;
+let osmLayer;
+let heatmapLayer;
+let objectsLayer;
+let autoLayerHeatmap;
+let autoLayerObjects;
+let autoLayer;
+let firstMapUpdate = true;
 
 let genError = "<p>Session has been removed from cache.</p> <p> <a href='javascript:location.reload();'>Resend request</a></p>";
 
 function openPopup(data) {
+    console.log(data);
     if (data.length > 0) {
         let select_variables = [];
         let row = [];
@@ -112,17 +110,18 @@ function openPopup(data) {
 function getGeoJsonLayer(geom) {
 	const color = "#e6930e";
     return L.geoJSON(geom, {
-			style: {color : color, fillColor: color, weight: 7, fillOpacity: 0.2},
-            pointToLayer: function (feature, latlng) {
-                return L.circleMarker(latlng, {
-                    radius: 8,
-                    fillColor: color,
-                    color: color,
-                    weight: 4,
-                    opacity: 1,
-                    fillOpacity: 0.2
-                });}
+		style: {color : color, fillColor: color, weight: 7, fillOpacity: 0.2},
+        pointToLayer: function (feature, latlng) {
+            return L.circleMarker(latlng, {
+                radius: 8,
+                fillColor: color,
+                color: color,
+                weight: 4,
+                opacity: 1,
+                fillOpacity: 0.2
             });
+        }
+    });
 }
 
 function showError(error) {
@@ -136,18 +135,34 @@ function showError(error) {
     else document.getElementById("msg-inner-desc").innerHTML = "";
 }
 
-function loadMap(id, bounds, numObjects) {
-    document.getElementById("msg").style.display = "none";
+function initMap() {
+    map = L.map('m', {
+        renderer: L.canvas(),
+        preferCanvas: true
+    }).setView([47.9965, 7.8469], 13);
+    map.attributionControl.setPrefix('University of Freiburg');
+    layerControl = L.control.layers([], [], {collapsed:true, position: 'topleft'}).addTo(map);
+
+    osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a rel="noreferrer" target="_blank" href="#">OpenStreetMap</a>',
+        maxZoom: 19,
+        opacity:0.9
+    });
+    osmLayer.addTo(map);
+
+}
+
+function updateMap(id) {
+    if (!firstMapUpdate) {
+        heatmapLayer.remove();
+        objectsLayer.remove();
+        autoLayer.remove();
+        layerControl.removeLayer(heatmapLayer);
+        layerControl.removeLayer(objectsLayer);
+        layerControl.removeLayer(autoLayer);
+    }
     
-    const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
-    const ur =  L.Projection.SphericalMercator.unproject({"x": bounds[1][0], "y":bounds[1][1]});
-    const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
-    map.fitBounds(boundsLatLng);
-    sessionId = id;
-
-    document.getElementById("stats").innerHTML = "<span>Showing " + numObjects + " objects</span>";
-
-	const heatmapLayer = L.nonTiledLayer.wms('heatmap', {
+    heatmapLayer = L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
         maxZoom: 19,
         opacity: 0.8,
@@ -156,52 +171,58 @@ function loadMap(id, bounds, numObjects) {
         format: 'image/png',
         transparent: true,
     });
-
-	const objectsLayer = L.nonTiledLayer.wms('heatmap', {
+    objectsLayer = L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
         maxZoom: 19,
         layers: id,
         styles: ["objects"],
         format: 'image/png'
     });
+    autoLayerHeatmap = L.nonTiledLayer.wms('heatmap', {
+        minZoom: 0,
+        maxZoom: 15,
+        opacity: 0.8,
+        layers: id,
+        styles: ["heatmap"],
+        format: 'image/png',
+        transparent: true,
+    });
+    autoLayerObjects = L.nonTiledLayer.wms('heatmap', {
+        minZoom: 16,
+        maxZoom: 19,
+        layers: id,
+        styles: ["objects"],
+        format: 'image/png'
+    });
+    autoLayer = L.layerGroup([autoLayerHeatmap, autoLayerObjects]);
 
-	const autoLayer = L.layerGroup([
-        L.nonTiledLayer.wms('heatmap', {
-            minZoom: 0,
-            maxZoom: 15,
-            opacity: 0.8,
-            layers: id,
-            styles: ["heatmap"],
-            format: 'image/png',
-            transparent: true,
-        }), L.nonTiledLayer.wms('heatmap', {
-            minZoom: 16,
-            maxZoom: 19,
-            layers: id,
-            styles: ["objects"],
-            format: 'image/png'
-        })
-    ]);
-
-	heatmapLayer.on('error', function() {showError(genError);});
+    heatmapLayer.on('error', function() {showError(genError);});
 	objectsLayer.on('error', function() {showError(genError);});
 	heatmapLayer.on('load', function() {console.log("Finished loading map!");});
 	objectsLayer.on('load', function() {console.log("Finished loading map!");});
 	autoLayer.on('error', function() {showError(genError);});
 	autoLayer.on('load', function() {console.log("Finished loading map!");});
-
-	layerControl.addBaseLayer(heatmapLayer, "Heatmap");
+    
+    layerControl.addBaseLayer(heatmapLayer, "Heatmap");
 	layerControl.addBaseLayer(objectsLayer, "Objects");
 	layerControl.addBaseLayer(autoLayer, "Auto");
 
-    let mode = urlParams.get("mode");
-    if (mode == "heatmap") {
-        heatmapLayer.addTo(map).on('error', function() {showError(genError);});
-    } else if (mode == "objects") {
-        objectsLayer.addTo(map).on('error', function() {showError(genError);});
-    } else {
-        autoLayer.addTo(map).on('error', function() {showError(genError);});
-    }
+    autoLayer.addTo(map);
+
+    firstMapUpdate = false;
+}
+
+function loadMap(id, bounds, numObjects) {
+    document.getElementById("msg").style.display = "none";
+    document.getElementById("stats").innerHTML = "<span>Showing " + numObjects + " objects</span>";
+
+    updateMap(id);
+
+    sessionId = id;
+    const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
+    const ur =  L.Projection.SphericalMercator.unproject({"x": bounds[1][0], "y":bounds[1][1]});
+    const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
+    map.fitBounds(boundsLatLng);
 
     map.on('click', function(e) {
         const ll = e.latlng;
@@ -427,6 +448,8 @@ function setSubmitMenuVisible(visible) {
     }
 }
 
+initMap();
+
 // Focus default submit tab
 document.getElementById("submit-tabs-default_open").click();
 const queryElem = document.getElementById("submit-query-query");
@@ -460,6 +483,7 @@ document.getElementById("options-ex-geojson").onclick = function() {
     a.href = "export?id="+ sessionId;
     a.setAttribute("download", "export.json");
     a.click();
+    console.log(sessionId);
 }
 
 document.getElementById("options-submit").onclick = function() {
