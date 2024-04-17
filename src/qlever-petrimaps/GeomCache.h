@@ -104,7 +104,7 @@ class GeomCache {
   std::atomic<size_t> _curRow;
   size_t _curUniqueGeom;
 
-  enum _LoadStatusStages {Parse = 1, ParseIds};
+  enum _LoadStatusStages {Parse = 1, ParseIds, FromFile};
   _LoadStatusStages _loadStatusStage = Parse;
 
   static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);

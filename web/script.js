@@ -126,12 +126,13 @@ function getGeoJsonLayer(geom) {
 function showError(error) {
     error = error.toString();
     document.getElementById("msg").style.display = "block";
+    document.getElementById("msg-info").style.display = "none";
     document.getElementById("load").style.display = "none";
-    document.getElementById("msg-inner").style.color = "red";
-    document.getElementById("msg-inner").style.fontSize = "20px";
-    document.getElementById("msg-inner").innerHTML = error.split("\n")[0];
-    if (error.search("\n") > 0) document.getElementById("msg-inner-desc").innerHTML = "<pre>" + error.substring(error.search("\n")) + "</pre>";
-    else document.getElementById("msg-inner-desc").innerHTML = "";
+    document.getElementById("msg-heading").style.color = "red";
+    document.getElementById("msg-heading").style.fontSize = "20px";
+    document.getElementById("msg-heading").innerHTML = error.split("\n")[0];
+    if (error.search("\n") > 0) document.getElementById("msg-error").innerHTML = "<pre>" + error.substring(error.search("\n")) + "</pre>";
+    else document.getElementById("msg-error").innerHTML = "";
 }
 
 function loadMap(id, bounds, numObjects) {
@@ -240,19 +241,32 @@ function loadMap(id, bounds, numObjects) {
 }
 
 function updateLoad(stage, percent) {
+    const infoElem = document.getElementById("msg-info");
+    const infoHeadingElem = document.getElementById("msg-info-heading");
+    const infoDescElem = document.getElementById("msg-info-desc");
     const stageElem = document.getElementById("load-stage");
     const barElem = document.getElementById("load-bar");
     const percentElem = document.getElementById("load-percent");
     switch (stage) {
         case 1:
+            infoHeadingElem.innerHTML = "Filling the geometry cache";
+            infoDescElem.innerHTML = "This needs to be done only once for each new version of the dataset and does not have to be repeated for subsequent queries.";
             stageElem.innerHTML = "Parsing geometry... (1/2)";
             break;
         case 2:
+            infoHeadingElem.innerHTML = "Filling the geometry cache";
+            infoDescElem.innerHTML = "This needs to be done only once for each new version of the dataset and does not have to be repeated for subsequent queries.";
             stageElem.innerHTML = "Parsing geometry Ids... (2/2)";
+            break;
+        case 3:
+            infoHeadingElem.innerHTML = "Reading cached geometries from disk";
+            infoDescElem.innerHTML = "This needs to be done only once after the server has been started and does not have to be repeated for subsequent queries.";
+            stageElem.innerHTML = "Loading from disk... (1/1)";
             break;
     }
     barElem.style.width = percent + "%";
     percentElem.innerHTML = percent.toString() + "%";
+    infoElem.style.display = "block";
 }
 
 function fetchResults() {
@@ -277,7 +291,7 @@ function fetchLoadStatusInterval(interval) {
 }
 
 async function fetchLoadStatus() {
-    console.log("Fetching load status...");
+    //console.log("Fetching load status...");
 
     fetch('loadstatus?backend=' + qleverBackend)
     .then(response => {
@@ -288,6 +302,7 @@ async function fetchLoadStatus() {
     .then(data => {
         var stage = data["stage"];
         var percent = parseFloat(data["percent"]).toFixed(2);
+        console.log("Fetched load status: stage: ", stage, ", ", percent, "%");
         updateLoad(stage, percent);
     })
     .catch(error => {
