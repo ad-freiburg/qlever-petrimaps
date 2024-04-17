@@ -390,6 +390,16 @@ int GeomCache::getLoadStatusStage() {
 }
 
 // _____________________________________________________________________________
+size_t GeomCache::getTotalProgress() {
+  return _totalSize;
+}
+
+// _____________________________________________________________________________
+size_t GeomCache::getCurrentProgress() {
+  return _curRow;
+}
+
+// _____________________________________________________________________________
 void GeomCache::parseIds(const char* c, size_t size) {
   _loadStatusStage = _LoadStatusStages::ParseIds;
 

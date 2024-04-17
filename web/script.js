@@ -240,7 +240,7 @@ function loadMap(id, bounds, numObjects) {
     });
 }
 
-function updateLoad(stage, percent) {
+function updateLoad(stage, percent, totalProgress, currentProgress) {
     const infoElem = document.getElementById("msg-info");
     const infoHeadingElem = document.getElementById("msg-info-heading");
     const infoDescElem = document.getElementById("msg-info-desc");
@@ -251,17 +251,17 @@ function updateLoad(stage, percent) {
         case 1:
             infoHeadingElem.innerHTML = "Filling the geometry cache";
             infoDescElem.innerHTML = "This needs to be done only once for each new version of the dataset and does not have to be repeated for subsequent queries.";
-            stageElem.innerHTML = "Parsing geometry... (1/2)";
+            stageElem.innerHTML = `Parsing ${currentProgress}/${totalProgress} geometries... (1/2)`;
             break;
         case 2:
             infoHeadingElem.innerHTML = "Filling the geometry cache";
             infoDescElem.innerHTML = "This needs to be done only once for each new version of the dataset and does not have to be repeated for subsequent queries.";
-            stageElem.innerHTML = "Parsing geometry Ids... (2/2)";
+            stageElem.innerHTML = `Fetching ${currentProgress}/${totalProgress} geometries... (2/2)`;
             break;
         case 3:
             infoHeadingElem.innerHTML = "Reading cached geometries from disk";
             infoDescElem.innerHTML = "This needs to be done only once after the server has been started and does not have to be repeated for subsequent queries.";
-            stageElem.innerHTML = "Loading from disk... (1/1)";
+            stageElem.innerHTML = `Reading ${currentProgress}/${totalProgress} geometries from disk... (1/1)`;
             break;
     }
     barElem.style.width = percent + "%";
@@ -291,19 +291,20 @@ function fetchLoadStatusInterval(interval) {
 }
 
 async function fetchLoadStatus() {
-    //console.log("Fetching load status...");
+    console.log("Fetching load status...");
 
     fetch('loadstatus?backend=' + qleverBackend)
     .then(response => {
         if (!response.ok) return response.text().then(text => {throw new Error(text)});
         return response;
-        })
+    })
     .then(response => response.json())
     .then(data => {
         var stage = data["stage"];
         var percent = parseFloat(data["percent"]).toFixed(2);
-        console.log("Fetched load status: stage: ", stage, ", ", percent, "%");
-        updateLoad(stage, percent);
+        var totalProgress = data["totalProgress"].toLocaleString('en');
+        var currentProgress = data["currentProgress"].toLocaleString('en');
+        updateLoad(stage, percent, totalProgress, currentProgress);
     })
     .catch(error => {
         showError(error);
