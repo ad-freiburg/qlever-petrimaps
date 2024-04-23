@@ -11,6 +11,7 @@
 #include <string>
 #include <thread>
 
+#include <png.h>
 #include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "util/http/Server.h"
@@ -51,7 +52,10 @@ class Server : public util::http::Handler {
 
   std::string getSessionId() const;
 
-  static void writePNG(const unsigned char* data, size_t w, size_t h, int sock);
+  double getLoadStatusPercent() const;
+
+  static void pngWriteRowCb(png_structp png_ptr, png_uint_32 row, int pass);
+  void writePNG(const unsigned char* data, size_t w, size_t h, int sock) const;
 
   void drawPoint(std::vector<uint32_t>& points, std::vector<double>& points2,
                  int px, int py, int w, int h, MapStyle style) const;
@@ -63,6 +67,9 @@ class Server : public util::http::Handler {
   std::string _cacheDir;
 
   int _cacheLifetime;
+
+  // Load Status
+  mutable size_t _totalSize = 0;
 
   mutable std::mutex _m;
 

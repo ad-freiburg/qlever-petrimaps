@@ -136,7 +136,6 @@ function showError(error) {
 }
 
 function loadMap(id, bounds, numObjects) {
-    document.getElementById("msg").style.display = "none";
     const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
     const ur =  L.Projection.SphericalMercator.unproject({"x": bounds[1][0], "y":bounds[1][1]});
     const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
@@ -163,41 +162,40 @@ function loadMap(id, bounds, numObjects) {
         format: 'image/png'
     });
 
-	const autoLayer = L.layerGroup([
-        L.nonTiledLayer.wms('heatmap', {
-            minZoom: 0,
-            maxZoom: 15,
-            opacity: 0.8,
-            layers: id,
-            styles: ["heatmap"],
-            format: 'image/png',
-            transparent: true,
-        }), L.nonTiledLayer.wms('heatmap', {
-            minZoom: 16,
-            maxZoom: 19,
-            layers: id,
-            styles: ["objects"],
-            format: 'image/png'
-        })
-    ]);
+    const autoHeatmapLayer = L.nonTiledLayer.wms('heatmap', {
+        minZoom: 0,
+        maxZoom: 15,
+        opacity: 0.8,
+        layers: id,
+        styles: ["heatmap"],
+        format: 'image/png',
+        transparent: true,
+    });
 
-	heatmapLayer.on('error', function() {showError(genError);});
-	objectsLayer.on('error', function() {showError(genError);});
-	heatmapLayer.on('load', function() {console.log("Finished loading map!");});
-	objectsLayer.on('load', function() {console.log("Finished loading map!");});
-	autoLayer.on('error', function() {showError(genError);});
-	autoLayer.on('load', function() {console.log("Finished loading map!");});
+    const autoObjectLayer = L.nonTiledLayer.wms('heatmap', {
+        minZoom: 16,
+        maxZoom: 19,
+        layers: id,
+        styles: ["objects"],
+        format: 'image/png'
+    });
+	const autoLayerGroup = L.layerGroup([autoHeatmapLayer, autoObjectLayer]);
+
+    heatmapLayer.on('load', _onLayerLoad);
+    objectsLayer.on('load', _onLayerLoad);
+    autoHeatmapLayer.on('load', _onLayerLoad);
+    autoObjectLayer.on('load', _onLayerLoad);
 
 	layerControl.addBaseLayer(heatmapLayer, "Heatmap");
 	layerControl.addBaseLayer(objectsLayer, "Objects");
-	layerControl.addBaseLayer(autoLayer, "Auto");
+	layerControl.addBaseLayer(autoLayerGroup, "Auto");
 
     if (mode == "heatmap") {
         heatmapLayer.addTo(map).on('error', function() {showError(genError);});
     } else if (mode == "objects") {
         objectsLayer.addTo(map).on('error', function() {showError(genError);});
     } else {
-        autoLayer.addTo(map).on('error', function() {showError(genError);});
+        autoLayerGroup.addTo(map).on('error', function() {showError(genError);});
     }
 
     map.on('click', function(e) {
@@ -214,7 +212,6 @@ function loadMap(id, bounds, numObjects) {
 
         let styles = "objects";
         if (map.hasLayer(heatmapLayer)) styles = "heatmap";
-        if (map.hasLayer(objectsLayer)) styles = "objects";
         if (map.hasLayer(objectsLayer)) styles = "objects";
 
         fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=' + bounds.join(',') + '&styles=' + styles)
@@ -279,7 +276,6 @@ function fetchResults() {
         })
     .then(response => response.json())
     .then(data => {
-        clearInterval(loadStatusIntervalId);
         loadMap(data["qid"], data["bounds"], data["numobjects"]);
     })
     .catch(error => showError(error));
@@ -314,6 +310,13 @@ async function fetchLoadStatus() {
 
 fetchResults();
 fetchLoadStatusInterval(333);
+
+function _onLayerLoad(e) {
+    console.log("Map finished loading.");
+    clearInterval(loadStatusIntervalId);
+    
+    document.getElementById("msg").style.display = "none";
+}
 
 document.getElementById("ex-geojson").onclick = function() {
     if (!sessionId) return;
