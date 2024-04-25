@@ -108,6 +108,8 @@ void GeoJSONCache::load() {
   _lines.clear();
   _linePoints.clear();
 
+  size_t numPoints = 0;
+  size_t numLines = 0;
   for (json feature : features) {
     // Parse type
     if (feature["type"] != "Feature") {
@@ -133,7 +135,10 @@ void GeoJSONCache::load() {
         continue;
       }
       _points.push_back(point);
+      
       _curUniqueGeom++;
+      _attr[numPoints] = properties;
+      numPoints++;
     
     } else if (type == "LineString") {
       util::geo::DLine line;
@@ -153,6 +158,8 @@ void GeoJSONCache::load() {
       insertLine(line, false);
 
       _curUniqueGeom++;
+      _attr[numLines + I_OFFSET] = properties;
+      numLines++;
     
     } else if (type == "Polygon") {
       for (auto args : coords) {
@@ -174,6 +181,8 @@ void GeoJSONCache::load() {
       }
 
       _curUniqueGeom++;
+      _attr[numLines + I_OFFSET] = properties;
+      numLines++;
     
     // MULTIPART
     } else if (type == "MultiPoint") {
@@ -187,6 +196,8 @@ void GeoJSONCache::load() {
       }
 
       _curUniqueGeom++;
+      _attr[numPoints] = properties;
+      numPoints++;
     
     } else if (type == "MultiLineString") {
       for (auto args : coords) {
@@ -208,6 +219,8 @@ void GeoJSONCache::load() {
       }
 
       _curUniqueGeom++;
+      _attr[numLines + I_OFFSET] = properties;
+      numLines++;
     
     } else if (type == "MultiPolygon") {
       for (auto args1 : coords) {
@@ -231,10 +244,10 @@ void GeoJSONCache::load() {
       }
 
       _curUniqueGeom++;
+      _attr[numLines + I_OFFSET] = properties;
+      numLines++;
     }
 
-    // Proper structure of properties assumed
-    _attr[_curRow] = properties;
     _curRow++;
   }
 

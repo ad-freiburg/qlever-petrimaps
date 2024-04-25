@@ -83,7 +83,6 @@ bool GeomCache::pointValid(const DPoint& p) {
 // _____________________________________________________________________________
 util::geo::DBox GeomCache::getLineBBox(size_t lid) const {
   util::geo::DBox ret;
-  LOG(INFO) << "[GEOMCACHE] lid: " << lid;
   size_t start = getLine(lid);
 
   bool s = false;
@@ -94,7 +93,6 @@ util::geo::DBox GeomCache::getLineBBox(size_t lid) const {
     // extract real geom
     const auto& cur = _linePoints[i];
 
-    LOG(INFO) << "[GEOMCACHE] _linePoints.size(): " << _linePoints.size();
     if (isMCoord(cur.getX())) {
       mainX = rmCoord(cur.getX());
       mainY = rmCoord(cur.getY());

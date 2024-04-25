@@ -14,6 +14,9 @@
 #include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "util/http/Server.h"
+#include "util/geo/output/GeoJsonOutput.h"
+
+using namespace util::geo::output;
 
 namespace petrimaps {
 
@@ -43,6 +46,8 @@ class Server : public util::http::Handler {
 
   util::http::Answer handleExportReq(const Params& pars, int sock) const;
   util::http::Answer handleLoadStatusReq(const Params& pars) const;
+
+  void processGeoJsonOutput(GeoJsonOutput out, const ResObj res, util::json::Val attrs) const;
 
   void createCache(const std::string& backend, const GeomCache::SourceType srcType) const;
   void loadCache(const std::string& backend) const;

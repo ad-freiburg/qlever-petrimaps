@@ -1,4 +1,4 @@
-let sessionId;
+let sessionId = "";
 let curGeojson;
 let curGeojsonId = -1;
 let urlParams = new URLSearchParams(window.location.search);
@@ -6,7 +6,7 @@ let urlParams = new URLSearchParams(window.location.search);
 // id of SetInterval to stop loadStatus requests on error or load finish
 let loadStatusIntervalId = -1;
 
-// tabName of current submit tab
+// tabName of current submit-menu tab
 let tabName = "";
 
 // Map
@@ -19,56 +19,53 @@ let autoLayerHeatmap;
 let autoLayerObjects;
 let autoLayer;
 let firstMapUpdate = true;
+let baseLayers = {} // Match Layer name to layer
+let selectedBaseLayerName = "" // Selected base layer name before map update
 
 let genError = "<p>Session has been removed from cache.</p> <p> <a href='javascript:location.reload();'>Resend request</a></p>";
 
 function openPopup(data) {
-    console.log(data);
     if (data.length > 0) {
         let select_variables = [];
         let row = [];
-
         for (let i in data[0]["attrs"]) {
             select_variables.push(data[0]["attrs"][i][0]);
             row.push(data[0]["attrs"][i][1]);
         }
 
-        console.log(select_variables);
-        console.log(row);
+        console.log("Select Variables: ", select_variables);
+        console.log("Row: ", row);
 
         // code by hannah from old map UI
-
         // Build the HTML of the popup.
         //
-        // NOTE: We assume that the last column contains the geometry information
-        // (WKT), which we will not put in the table.
-        let geometry_column = select_variables.length - 1;
         // If the second to last variable exists and is called "?image" or ends in
         // "_image", then show an image with that URL in the first column of the
         // table. Note that we compute the cell contents here and add it during the
         // loop (it has to be the first cell of a table row).
         let image_cell = "";
-        if (select_variables.length >= 2) {
-          let image_column = select_variables.length - 2;
-          if (select_variables[image_column] == "?image" ||
-                select_variables[image_column] == "?flag" ||
-                select_variables[image_column].endsWith("_image")) {
-            let num_table_rows = select_variables.length - 2;
+        let image_column = -1;
+        for (let i = 1; i < select_variables.length; i++) {
+            if (select_variables[i] == "?image" ||
+                select_variables[i] == "?flag" ||
+                select_variables[i].endsWith("_image")) {
+                    image_column = i;
+                    break;
+            }
+        }
+        if (image_column != -1) {
             let image_url = row[image_column];
             if (image_url != null)
-              image_cell = "<td rowspan=\"" + num_table_rows + "\"><a target=\"_blank\" href=\"" + image_url.replace(/^[<"]/, "").replace(/[>"]$/, "") + "\"><img src=\""
+                image_cell = "<td rowspan=0\"" + "\"><a target=\"_blank\" href=\"" + image_url.replace(/^[<"]/, "").replace(/[>"]$/, "") + "\"><img src=\""
                            + image_url.replace(/^[<"]/, "").replace(/[>"]$/, "")
                            + "\"></a></td>";
-          }
         }
 
         // Now compute the table rows in an array.
         let popup_content_strings = [];
         select_variables.forEach(function(variable, i) {
-          // Skip the last column (WKT literal) and the ?image column (if it
-          // exists).
-          if (i == geometry_column ||
-            variable == "?image" || variable == "?flag" || variable.endsWith("_image")) return;
+          // Filter out WKT literals
+          if (row[i].includes("wkt") || variable == "?image" || variable == "?flag" || variable.endsWith("_image")) return;
 
           // Take the variable name as one table column and the result value as
           // another. Reformat a bit, so that it looks nice in an HTML table. and
@@ -90,7 +87,9 @@ function openPopup(data) {
         let popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
         popup_html += '<a class="export-link" href="geojson?gid=' + data[0].id + "&id=" + sessionId + '&rad=0&export=1">Export as GeoJSON</a>';
 
-        if (curGeojson) curGeojson.remove();
+        if (curGeojson) {
+            curGeojson.remove();
+        }
 
         L.popup({"maxWidth" : 600})
             .setLatLng(data[0]["ll"])
@@ -141,7 +140,10 @@ function initMap() {
         preferCanvas: true
     }).setView([47.9965, 7.8469], 13);
     map.attributionControl.setPrefix('University of Freiburg');
-    layerControl = L.control.layers([], [], {collapsed:true, position: 'topleft'}).addTo(map);
+    map.on('baselayerchange', onMapBaseLayerChange);
+    map.on('click', onMapClick);
+    map.on('zoomend', onMapZoomEnd);
+    layerControl = L.control.layers([], [], {collapsed:true, position: 'topleft'});
 
     osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a rel="noreferrer" target="_blank" href="#">OpenStreetMap</a>',
@@ -149,10 +151,9 @@ function initMap() {
         opacity:0.9
     });
     osmLayer.addTo(map);
-
 }
 
-function updateMap(id) {
+function updateMap() {
     if (!firstMapUpdate) {
         heatmapLayer.remove();
         objectsLayer.remove();
@@ -160,13 +161,14 @@ function updateMap(id) {
         layerControl.removeLayer(heatmapLayer);
         layerControl.removeLayer(objectsLayer);
         layerControl.removeLayer(autoLayer);
+        layerControl.remove();
     }
     
     heatmapLayer = L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
         maxZoom: 19,
         opacity: 0.8,
-        layers: id,
+        layers: sessionId,
 		styles: ["heatmap"],
         format: 'image/png',
         transparent: true,
@@ -174,7 +176,7 @@ function updateMap(id) {
     objectsLayer = L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
         maxZoom: 19,
-        layers: id,
+        layers: sessionId,
         styles: ["objects"],
         format: 'image/png'
     });
@@ -182,7 +184,7 @@ function updateMap(id) {
         minZoom: 0,
         maxZoom: 15,
         opacity: 0.8,
-        layers: id,
+        layers: sessionId,
         styles: ["heatmap"],
         format: 'image/png',
         transparent: true,
@@ -190,7 +192,7 @@ function updateMap(id) {
     autoLayerObjects = L.nonTiledLayer.wms('heatmap', {
         minZoom: 16,
         maxZoom: 19,
-        layers: id,
+        layers: sessionId,
         styles: ["objects"],
         format: 'image/png'
     });
@@ -198,17 +200,29 @@ function updateMap(id) {
 
     heatmapLayer.on('error', function() {showError(genError);});
 	objectsLayer.on('error', function() {showError(genError);});
+    autoLayerHeatmap.on('error', function() {showError(genError);});
+    autoLayerObjects.on('error', function() {showError(genError);});
 	heatmapLayer.on('load', function() {console.log("Finished loading map!");});
 	objectsLayer.on('load', function() {console.log("Finished loading map!");});
-	autoLayer.on('error', function() {showError(genError);});
-	autoLayer.on('load', function() {console.log("Finished loading map!");});
+    autoLayerHeatmap.on('load', function() {console.log("Finished loading map!");});
+	autoLayerObjects.on('load', function() {console.log("Finished loading map!");});
     
     layerControl.addBaseLayer(heatmapLayer, "Heatmap");
 	layerControl.addBaseLayer(objectsLayer, "Objects");
 	layerControl.addBaseLayer(autoLayer, "Auto");
+    layerControl.addTo(map);
+    baseLayers["Heatmap"] = heatmapLayer;
+    baseLayers["Objects"] = objectsLayer;
+    baseLayers["Auto"] = autoLayer;
 
-    autoLayer.addTo(map);
-
+    if (firstMapUpdate) {
+        // Select default layer: Auto
+        autoLayer.addTo(map);
+    } else {
+        // Restore previously selected layer
+        baseLayers[selectedBaseLayerName].addTo(map);
+    }
+    
     firstMapUpdate = false;
 }
 
@@ -216,51 +230,13 @@ function loadMap(id, bounds, numObjects) {
     document.getElementById("msg").style.display = "none";
     document.getElementById("stats").innerHTML = "<span>Showing " + numObjects + " objects</span>";
 
-    updateMap(id);
-
     sessionId = id;
+    updateMap();
+
     const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
     const ur =  L.Projection.SphericalMercator.unproject({"x": bounds[1][0], "y":bounds[1][1]});
     const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
     map.fitBounds(boundsLatLng);
-
-    map.on('click', function(e) {
-        const ll = e.latlng;
-        const pos = L.Projection.SphericalMercator.project(ll);
-
-        const w = map.getPixelBounds().max.x - map.getPixelBounds().min.x;
-        const h = map.getPixelBounds().max.y - map.getPixelBounds().min.y;
-
-        const sw = L.Projection.SphericalMercator.project((map.getBounds().getSouthWest()));
-        const ne = L.Projection.SphericalMercator.project((map.getBounds().getNorthEast()));
-
-        const bounds = [sw.x, sw.y, ne.x, ne.y];
-
-        let styles = "objects";
-        if (map.hasLayer(heatmapLayer)) styles = "heatmap";
-        if (map.hasLayer(objectsLayer)) styles = "objects";
-
-        fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=' + bounds.join(',') + '&styles=' + styles)
-          .then(response => {
-              if (!response.ok) return response.text().then(text => {throw new Error(text)});
-              return response.json();
-            })
-          .then(data => openPopup(data))
-          .catch(error => showError(error));
-        });
-
-    map.on('zoomend', function(e) {
-        if (curGeojsonId > -1) {
-            fetch('geojson?gid=' + curGeojsonId + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
-              .then(response => response.json())
-              .then(function(data) {
-                curGeojson.remove();
-                curGeojson = getGeoJsonLayer(data);
-                curGeojson.addTo(map);
-              })
-              .catch(error => showError(genError));
-        }
-    });
 
     document.getElementById("options-ex").style.display = "inline-block";
 }
@@ -469,9 +445,6 @@ if (urlParams.has("query") && urlParams.has("backend")) {
     const query = urlParams.get("query");
     const backend = urlParams.get("backend");
     fetchQuery(query, backend);
-} else if (urlParams.has("geoJsonFile")) {
-    // User wants to send content of a .geojson file
-    console.log("GeoJson file.");
 } else {
     // No useful information in url => Show submit menu
     setSubmitMenuVisible(true);
@@ -507,4 +480,48 @@ document.getElementById("submit-button").onclick = function() {
             }
             break;
     }
+}
+
+function onMapClick(event) {
+    const ll = event.latlng;
+    const pos = L.Projection.SphericalMercator.project(ll);
+
+    const w = map.getPixelBounds().max.x - map.getPixelBounds().min.x;
+    const h = map.getPixelBounds().max.y - map.getPixelBounds().min.y;
+
+    const sw = L.Projection.SphericalMercator.project((map.getBounds().getSouthWest()));
+    const ne = L.Projection.SphericalMercator.project((map.getBounds().getNorthEast()));
+
+    const bounds = [sw.x, sw.y, ne.x, ne.y];
+
+    // ToDo: Choose this by selectedBaseLayerName
+    let styles = "objects";
+    if (map.hasLayer(heatmapLayer)) styles = "heatmap";
+    if (map.hasLayer(objectsLayer)) styles = "objects";
+
+    console.log("POS REQUEST: ", sessionId);
+    fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + sessionId + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=' + bounds.join(',') + '&styles=' + styles)
+    .then(response => {
+        if (!response.ok) return response.text().then(text => {throw new Error(text)});
+            return response.json();
+        })
+    .then(data => openPopup(data))
+    .catch(error => showError(error));
+}
+
+function onMapZoomEnd(event) {
+    if (curGeojsonId > -1) {
+        fetch('geojson?gid=' + curGeojsonId + "&id=" + sessionId + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
+        .then(response => response.json())
+        .then(function(data) {
+            curGeojson.remove();
+            curGeojson = getGeoJsonLayer(data);
+            curGeojson.addTo(map);
+        })
+        .catch(error => showError(genError));
+    }
+}
+
+function onMapBaseLayerChange(event) {
+    selectedBaseLayerName = event.name;
 }

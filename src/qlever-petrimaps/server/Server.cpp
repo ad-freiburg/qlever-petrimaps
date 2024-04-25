@@ -68,6 +68,7 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
   try {
     Params params;
     auto cmd = parseUrl(req.url, req.payload, &params);
+    LOG(INFO) << "[SERVER] HANDLE COMMAND: " << cmd;
 
     if (cmd == "/") {
       a = util::http::Answer(
@@ -154,7 +155,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
 
   std::shared_ptr<Requestor> r;
-
   {
     std::lock_guard<std::mutex> guard(_m);
     bool has = _rs.count(id);
@@ -580,29 +580,19 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
 
   auto res = reqor->getGeom(gid, rad);
 
-  util::json::Val dict;
+  util::json::Val attrs;
   if (!noExport) {
     for (auto col : reqor->requestRow(reqor->getObjects()[gid].second)) {
-      dict.dict[col.first] = col.second;
+      attrs.dict[col.first] = col.second;
     }
   }
 
   std::stringstream json;
-
-  if (res.poly.size()) {
-    GeoJsonOutput out(json);
-    out.printLatLng(res.poly, dict);
-  } else if (res.line.size()) {
-    GeoJsonOutput out(json);
-    out.printLatLng(res.line, dict);
-  } else {
-    GeoJsonOutput out(json);
-    out.printLatLng(res.pos, dict);
-  }
+  GeoJsonOutput out(json);
+  processGeoJsonOutput(out, res, attrs);
 
   auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";
-
   if (!noExport) {
     answ.params["Content-Disposition"] = "attachment;filename:\"export.json\"";
   }
@@ -679,7 +669,6 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   auto res = reqor->getNearest({x, y}, rad, reso, fbbox);
 
   std::stringstream json;
-
   json << "[";
   if (res.has) {
     json << "{\"id\" :" << res.id;
@@ -698,34 +687,54 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
     }
 
     auto ll = webMercToLatLng<float>(res.pos.front().getX(), res.pos.front().getY());
-
     json << "]";
     json << std::setprecision(10) << ",\"ll\":{\"lat\" : " << ll.getY()
          << ",\"lng\":" << ll.getX() << "}";
 
+    // Why does this block of code not work?:
+    /*json << ",\"geom\":";
+    GeoJsonOutput out(json);
     if (res.poly.size()) {
-      json << ",\"geom\":";
-      GeoJsonOutput out(json);
       out.printLatLng(res.poly, {});
     } else if (res.line.size()) {
-      json << ",\"geom\":";
-      GeoJsonOutput out(json);
       out.printLatLng(res.line, {});
     } else {
-      json << ",\"geom\":";
-      GeoJsonOutput out(json);
       out.printLatLng(res.pos, {});
-    }
+    }*/
+
+    // Or:
+    //processGeoJsonOutput(out, res, {});
+
+    json << ",\"geom\":";
+    if (res.poly.size()) {
+      GeoJsonOutput out(json);
+      if (res.poly.size() == 1) {
+        out.printLatLng(res.poly[0], {});
+      } else {
+        out.printLatLng(res.poly, {});
+      }
+    } else if (res.line.size()) {
+      GeoJsonOutput out(json);
+      if (res.line.size() == 1) {
+        out.printLatLng(res.line[0], {});
+      } else {
+        out.printLatLng(res.line, {});
+      }
+    } else {
+      GeoJsonOutput out(json);
+      if (res.pos.size() == 1) {
+        out.printLatLng(res.pos[0], {});
+      } else {
+        out.printLatLng(res.pos, {});
+      }
+    }    
 
     json << "}";
   }
-
   json << "]";
 
   auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";
-
-  LOG(INFO) << "[SERVER] JSON RESULT: " << json.str();
 
   return answ;
 }
@@ -1067,33 +1076,23 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
   bool first = false;
 
   reqor->requestRows(
-      [sock, &first, reqor](
+      [sock, &first, reqor, this](
           std::vector<std::vector<std::pair<std::string, std::string>>> rows) {
         std::stringstream ss;
         ss << std::setprecision(10);
-        util::json::Val dict;
+        util::json::Val attrs;
         for (size_t i = 0; i < rows.size(); i++) {
           auto& row = rows[i];
           auto res = reqor->getGeom(i, 0);
 
           for (size_t j = 0; j < row.size(); j++) {
-            dict.dict[row[j].first] = row[j].second;
+            attrs.dict[row[j].first] = row[j].second;
           }
 
           GeoJsonOutput geoJsonOut(ss, true);
-          if (res.poly.size()) {
-            if (first) ss << ",";
-            geoJsonOut.printLatLng(res.poly, dict);
-            first = true;
-          } else if (res.line.size()) {
-            if (first) ss << ",";
-            geoJsonOut.printLatLng(res.line, dict);
-            first = true;
-          } else {
-            if (first) ss << ",";
-            geoJsonOut.printLatLng(res.pos, dict);
-            first = true;
-          }
+          if (first) ss << ",";
+          processGeoJsonOutput(geoJsonOut, res, attrs);
+          first = true;
           ss << "\n";
         }
 
@@ -1225,6 +1224,28 @@ std::string Server::getSessionId() const {
       1, std::numeric_limits<int>::max());
 
   return std::to_string(d(rng));
+}
+
+void Server::processGeoJsonOutput(GeoJsonOutput out, const ResObj res, json::Val attrs) const {
+  if (res.poly.size()) {
+    if (res.poly.size() == 1) {
+      out.printLatLng(res.poly[0], attrs);
+    } else {
+      out.printLatLng(res.poly, attrs);
+    }
+  } else if (res.line.size()) {
+    if (res.line.size() == 1) {
+      out.printLatLng(res.line[0], attrs);
+    } else {
+      out.printLatLng(res.line, attrs);
+    }
+  } else {
+    if (res.pos.size() == 1) {
+      out.printLatLng(res.pos[0], attrs);
+    } else {
+      out.printLatLng(res.pos, attrs);
+    }
+  }
 }
 
 void Server::createCache(const std::string& source, const GeomCache::SourceType srcType) const {

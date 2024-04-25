@@ -271,7 +271,6 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
     {
       // points
       std::vector<ID_TYPE> ret;
-
       if (res > 0)
         _pgrid.get(fullbox, &ret);
       else
@@ -512,20 +511,17 @@ bool Requestor::isArea(size_t lineId) const {
 }
 
 // _____________________________________________________________________________
-util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t oid,
-                                                      double eps) const {
+util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t oid, double eps) const {
   std::vector<util::geo::DLine> polys;
 
   // catch multigeometries
-  for (size_t i = oid;
-       i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
+  for (size_t i = oid; i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
     if (_objects[oid].first < I_OFFSET) continue;
     const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
     polys.push_back(util::geo::simplify(fline, eps));
   }
 
-  for (size_t i = oid - 1;
-       i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
+  for (size_t i = oid - 1; i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
     if (_objects[oid].first < I_OFFSET) continue;
     const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
     polys.push_back(util::geo::simplify(fline, eps));
@@ -553,14 +549,12 @@ util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid,
   }
 
   // catch multigeometries
-  for (size_t i = oid;
-       i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
+  for (size_t i = oid; i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
     if (_objects[oid].first >= I_OFFSET) continue;
     points.push_back(_cache->getPoints()[_objects[i].first]);
   }
 
-  for (size_t i = oid - 1;
-       i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
+  for (size_t i = oid - 1; i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
     if (_objects[oid].first >= I_OFFSET) continue;
     points.push_back(_cache->getPoints()[_objects[i].first]);
   }
