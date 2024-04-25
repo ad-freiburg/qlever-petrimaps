@@ -1073,23 +1073,31 @@ void GeomCache::fromDisk(const std::string& fname) {
   // read data from file
   // points
   f.seekg(posPoints);
-  f.read(reinterpret_cast<char*>(&_points[0]), sizeof(util::geo::FPoint) * numPoints);
-  _curRow += numPoints;
+  for (size_t i = 0; i < numPoints; i++) {
+    f.read(reinterpret_cast<char*>(&_points[i]), sizeof(util::geo::FPoint));
+    _curRow += 1;
+  }
 
   // linePoints
   f.seekg(posLinePoints);
-  f.read(reinterpret_cast<char*>(&_linePoints[0]), sizeof(util::geo::Point<int16_t>) * numLinePoints);
-  _curRow += numLinePoints;
+  for (size_t i = 0; i < numLinePoints; i++) {
+    f.read(reinterpret_cast<char*>(&_linePoints[i]), sizeof(util::geo::Point<int16_t>));
+    _curRow += 1;
+  }
 
   // lines
   f.seekg(posLines);
-  f.read(reinterpret_cast<char*>(&_lines[0]), sizeof(size_t) * numLines);
-  _curRow += numLines;
+  for (size_t i = 0; i < numLines; i++) {
+    f.read(reinterpret_cast<char*>(&_lines[i]), sizeof(size_t));
+    _curRow += 1;
+  }
 
   // qidToId
   f.seekg(posQidToId);
-  f.read(reinterpret_cast<char*>(&_qidToId[0]), sizeof(IdMapping) * numQidToId);
-  _curRow += numQidToId;
+  for (size_t i = 0; i < numQidToId; i++) {
+    f.read(reinterpret_cast<char*>(&_qidToId[i]), sizeof(IdMapping));
+    _curRow += 1;
+  }
 
   f.close();
 }
