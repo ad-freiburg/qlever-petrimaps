@@ -1,5 +1,5 @@
 let sessionId = "";
-let curGeojson;
+let curGeojson = null;
 let curGeojsonId = -1;
 let urlParams = new URLSearchParams(window.location.search);
 
@@ -21,6 +21,7 @@ let autoLayer;
 let firstMapUpdate = true;
 let baseLayers = {} // Match Layer name to layer
 let selectedBaseLayerName = "" // Selected base layer name before map update
+let selectedBackendElem = null;
 
 let genError = "<p>Session has been removed from cache.</p> <p> <a href='javascript:location.reload();'>Resend request</a></p>";
 
@@ -33,19 +34,16 @@ function openPopup(data) {
             row.push(data[0]["attrs"][i][1]);
         }
 
-        console.log("Select Variables: ", select_variables);
-        console.log("Row: ", row);
-
         // code by hannah from old map UI
         // Build the HTML of the popup.
         //
-        // If the second to last variable exists and is called "?image" or ends in
+        // If one of the first to last variables is called "?image" or ends in
         // "_image", then show an image with that URL in the first column of the
         // table. Note that we compute the cell contents here and add it during the
         // loop (it has to be the first cell of a table row).
         let image_cell = "";
         let image_column = -1;
-        for (let i = 1; i < select_variables.length; i++) {
+        for (let i = 0; i < select_variables.length; i++) {
             if (select_variables[i] == "?image" ||
                 select_variables[i] == "?flag" ||
                 select_variables[i].endsWith("_image")) {
@@ -56,35 +54,37 @@ function openPopup(data) {
         if (image_column != -1) {
             let image_url = row[image_column];
             if (image_url != null)
-                image_cell = "<td rowspan=0\"" + "\"><a target=\"_blank\" href=\"" + image_url.replace(/^[<"]/, "").replace(/[>"]$/, "") + "\"><img src=\""
-                           + image_url.replace(/^[<"]/, "").replace(/[>"]$/, "")
-                           + "\"></a></td>";
+                image_cell = "<td rowspan=\"0\" style=\"width:212px\"><a target=\"_blank\" href=\""
+                            + image_url.replace(/^[<"]/, "").replace(/[>"]$/, "") + "\"><img src=\""
+                            + image_url.replace(/^[<"]/, "").replace(/[>"]$/, "")
+                            + "\"></a></td>";
         }
 
         // Now compute the table rows in an array.
         let popup_content_strings = [];
         select_variables.forEach(function(variable, i) {
-          // Filter out WKT literals
-          if (row[i].includes("wkt") || variable == "?image" || variable == "?flag" || variable.endsWith("_image")) return;
+            // Filter out WKT literals and images
+            if (row[i].includes("wkt") || variable == "?image" || variable == "?flag" || variable.endsWith("_image")) return;
 
-          // Take the variable name as one table column and the result value as
-          // another. Reformat a bit, so that it looks nice in an HTML table. and
-          // the result value as another. Reformat a bit, so that it looks nice in
-          // an HTML table.
-          let key = variable.substring(1);
-          if (row[i] == null) { row[i] = "---" }
-          let value = row[i].replace(/\\([()])/g, "$1")
+            // Take the variable name as one table column and the result value as
+            // another. Reformat a bit, so that it looks nice in an HTML table. and
+            // the result value as another. Reformat a bit, so that it looks nice in
+            // an HTML table.
+            let key = variable.substring(1);
+            if (row[i] == null) { row[i] = "---" }
+            let value = row[i].replace(/\\([()])/g, "$1")
                         .replace(/<((.*)\/(.*))>/,
-                         "<a class=\"link\" href=\"$1\" target=\"_blank\">$3</a>")
+                        "<a class=\"link\" href=\"$1\" target=\"_blank\">$3</a>")
                         .replace(/\^\^.*$/, "")
                         .replace(/\"(.*)\"(@[a-z]+)?$/, "$1");
-
-          popup_content_strings.push(
-            "<tr>" + (i == 0 ? image_cell : "") +
-            "<td>" + key.replace(/_/g, " ") + "</td>" +
-            "<td>" + value + "</td></tr>");
+            
+            popup_content_strings.push(
+                "<tr>" + (i == 0 ? image_cell : "") +
+                "<td>" + key.replace(/_/g, " ") + "</td>" +
+                "<td>" + value + "</td></tr>"
+            );
         })
-        let popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
+        let popup_html = "<table class=\"popup\" style=\"width:100%\">" + popup_content_strings.join("\n") + "</table>";
         popup_html += '<a class="export-link" href="geojson?gid=' + data[0].id + "&id=" + sessionId + '&rad=0&export=1">Export as GeoJSON</a>';
 
         if (curGeojson) {
@@ -162,6 +162,9 @@ function updateMap() {
         layerControl.removeLayer(objectsLayer);
         layerControl.removeLayer(autoLayer);
         layerControl.remove();
+        
+        map.closePopup();
+        curGeojsonId = -1;
     }
     
     heatmapLayer = L.nonTiledLayer.wms('heatmap', {
@@ -202,10 +205,10 @@ function updateMap() {
 	objectsLayer.on('error', function() {showError(genError);});
     autoLayerHeatmap.on('error', function() {showError(genError);});
     autoLayerObjects.on('error', function() {showError(genError);});
-	heatmapLayer.on('load', function() {console.log("Finished loading map!");});
-	objectsLayer.on('load', function() {console.log("Finished loading map!");});
-    autoLayerHeatmap.on('load', function() {console.log("Finished loading map!");});
-	autoLayerObjects.on('load', function() {console.log("Finished loading map!");});
+	//heatmapLayer.on('load', function() {console.log("Finished loading map!");});
+	//objectsLayer.on('load', function() {console.log("Finished loading map!");});
+    //autoLayerHeatmap.on('load', function() {console.log("Finished loading map!");});
+	//autoLayerObjects.on('load', function() {console.log("Finished loading map!");});
     
     layerControl.addBaseLayer(heatmapLayer, "Heatmap");
 	layerControl.addBaseLayer(objectsLayer, "Objects");
@@ -318,7 +321,11 @@ function fetchGeoJsonFile(md5_hash) {
         document.getElementById("submit-button").disabled = false;
         loadMap(data["qid"], data["bounds"], data["numobjects"]);
     })
-    .catch(error => showError(error));
+    .catch(error => {
+        clearInterval(loadStatusIntervalId);
+        document.getElementById("submit-button").disabled = false;
+        showError(error);
+    });
 
     setSubmitMenuVisible(false);
     document.getElementById("submit-button").disabled = true;
@@ -342,13 +349,17 @@ function fetchResults(url) {
         document.getElementById("submit-button").disabled = false;
         loadMap(data["qid"], data["bounds"], data["numobjects"]);
     })
-    .catch(error => showError(error));
+    .catch(error => {
+        clearInterval(loadStatusIntervalId);
+        document.getElementById("submit-button").disabled = false;
+        showError(error);
+    });
 
     document.getElementById("msg").style.display = "block";
 }
 
 function fetchLoadStatusInterval(interval, source) {
-    //fetchLoadStatus();
+    fetchLoadStatus();
     loadStatusIntervalId = setInterval(fetchLoadStatus, interval, source);
     document.getElementById("load").style.display = "block";
 }
@@ -358,7 +369,9 @@ async function fetchLoadStatus(source) {
 
     fetch('loadstatus?source=' + source)
     .then(response => {
-        if (!response.ok) return response.text().then(text => {throw new Error(text)});
+        if (!response.ok) {
+            return response.text().then(text => {throw new Error(text)});
+        }
         return response;
         })
     .then(response => response.json())
@@ -368,8 +381,9 @@ async function fetchLoadStatus(source) {
         updateLoad(stage, percent);
     })
     .catch(error => {
-        showError(error);
         clearInterval(loadStatusIntervalId);
+        document.getElementById("submit-button").disabled = false;
+        showError(error);
     });
 }
 
@@ -424,31 +438,46 @@ function setSubmitMenuVisible(visible) {
     }
 }
 
-initMap();
+const queryElem = document.getElementById("query");
+$(document).ready(function () {
+    initMap();
 
-// Focus default submit tab
-document.getElementById("submit-tabs-default_open").click();
-const queryElem = document.getElementById("submit-query-query");
-const backendElem = document.getElementById("submit-query-backend");
-backendElem.value = "https://qlever.cs.uni-freiburg.de/api/wikidata";
+    // Focus default submit tab
+    document.getElementById("submit-tabs-default_open").click();
+    selectedBackendElem = document.getElementById("backend-wikidata");
 
-if (urlParams.has("query")) {
-    const query = urlParams.get("query");
-    queryElem.value = query;
-}
-if (urlParams.has("backend")) {
-    const backend = urlParams.get("backend");
-    backendElem.value = backend;
-}
-if (urlParams.has("query") && urlParams.has("backend")) {
-    // User wants to send a SPARQL query
-    const query = urlParams.get("query");
-    const backend = urlParams.get("backend");
-    fetchQuery(query, backend);
-} else {
-    // No useful information in url => Show submit menu
-    setSubmitMenuVisible(true);
-}
+    // Process params in URL
+    if (urlParams.has("query")) {
+        const query = urlParams.get("query");
+        editor.getDoc().setValue(query);
+    }
+    if (urlParams.has("backend")) {
+        const backend = urlParams.get("backend");
+        const dropdownOptionsElem = document.getElementById("dropdown-options");
+        let listItems = dropdownOptionsElem.getElementsByTagName("li");
+        for (const listItem of listItems) {
+            const dataUrl = listItem.getAttribute("data-url");
+            if (backend === dataUrl) {
+                const id = listItem.getAttribute("id");
+                onBackendSelected(id);
+                break;
+            }
+        }
+    }
+    if (urlParams.has("query") && urlParams.has("backend")) {
+        // User wants to send a SPARQL query
+        const query = urlParams.get("query");
+        const backend = urlParams.get("backend");
+        fetchQuery(query, backend);
+    } else {
+        // No useful information in url => Show submit menu
+        setSubmitMenuVisible(true);
+    }
+
+    // Fix query editor code lines overlapping with code
+    // According to https://github.com/mdn/bob/issues/976 this is fixed in CodeMirror v6
+    editor.refresh();
+});
 
 document.getElementById("options-ex-geojson").onclick = function() {
     if (!sessionId) return;
@@ -456,7 +485,6 @@ document.getElementById("options-ex-geojson").onclick = function() {
     a.href = "export?id="+ sessionId;
     a.setAttribute("download", "export.json");
     a.click();
-    console.log(sessionId);
 }
 
 document.getElementById("options-submit").onclick = function() {
@@ -464,11 +492,11 @@ document.getElementById("options-submit").onclick = function() {
     setSubmitMenuVisible(!isVisible);
 }
 
-document.getElementById("submit-button").onclick = function() {
+function onClickSubmitButton() {
     switch (tabName) {
         case "query":
-            const query = queryElem.value;
-            const backend = backendElem.value;
+            const query = editor.getDoc().getValue();
+            const backend = selectedBackendElem.getAttribute("data-url")
             fetchQuery(query, backend);
             break;
 
@@ -499,7 +527,6 @@ function onMapClick(event) {
     if (map.hasLayer(heatmapLayer)) styles = "heatmap";
     if (map.hasLayer(objectsLayer)) styles = "objects";
 
-    console.log("POS REQUEST: ", sessionId);
     fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + sessionId + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=' + bounds.join(',') + '&styles=' + styles)
     .then(response => {
         if (!response.ok) return response.text().then(text => {throw new Error(text)});
@@ -524,4 +551,22 @@ function onMapZoomEnd(event) {
 
 function onMapBaseLayerChange(event) {
     selectedBaseLayerName = event.name;
+}
+
+function onBackendSelected(id) {
+    const elemId = "backend-" + id;
+    const ids = [selectedBackendElem.id, elemId];
+    for (let i = 0; i < 2; i++) {
+        const isSelected = i == 1;
+        const curId = ids[i];
+        const curElem = document.getElementById(curId);
+        let text = "";
+        if (isSelected) text += '<i class="glyphicon glyphicon-ok"></i> ';
+        text += curElem.getAttribute("data-text");
+        curElem.innerHTML = text;
+    }
+    
+    selectedBackendElem = document.getElementById(elemId);
+    const dropdownButtonTextElem = document.getElementById("dropdown-button-text");
+    dropdownButtonTextElem.innerHTML = selectedBackendElem.getAttribute("data-text");
 }

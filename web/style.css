@@ -26,7 +26,8 @@
 .leaflet-safari .leaflet-tile-container {
     width: 1600px;
     height: 1600px;
-    -webkit-transform-origin: 0 0
+    -webkit-transform-origin: 0 0;
+    transform-origin: 0 0;
 }
 
 .leaflet-container .leaflet-overlay-pane svg, .leaflet-container .leaflet-shadow-pane img, .leaflet-container .leaflet-tile, .leaflet-container .leaflet-tile-pane img, .leaflet-container img.leaflet-image-layer {
@@ -76,7 +77,8 @@
 }
 
 .leaflet-overlay-pane svg {
-    -moz-user-select: none
+    -moz-user-select: none;
+    user-select: none;
 }
 
 .leaflet-pane {
@@ -382,7 +384,8 @@
 }
 
 .leaflet-popup-content {
-    margin: 13px 19px;
+    width: auto;
+    margin: 12px 12px;
     line-height: 1.4
 }
 
@@ -742,9 +745,9 @@ button {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 40%;
-    height: 40%;
-    max-width: 40%;
+    width: 60%;
+    height: 61%;
+    max-width: 80%;
     border-radius: 4px;
     background-color: white;
     border: solid 1px black;
@@ -777,16 +780,8 @@ button {
 .submit-tab_content {
     display: none;
     box-sizing: border-box;
-    padding-left: 12px;
-    padding-right: 12px;
+    padding: 12px;
     text-align: left;
-}
-
-.submit-text_input {
-    display: block;
-    box-sizing: border-box;
-    width: 100%;
-    height: 30px;
 }
 
 #submit-button {
@@ -796,6 +791,10 @@ button {
     right: 0;
     width: 72px;
     margin: auto;
+}
+
+#queryBlock {
+    margin-top: 12px;
 }
 
 #load {

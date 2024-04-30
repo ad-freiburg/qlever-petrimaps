@@ -68,7 +68,6 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
   try {
     Params params;
     auto cmd = parseUrl(req.url, req.payload, &params);
-    //LOG(INFO) << "[SERVER] HANDLE COMMAND: " << cmd;
 
     if (cmd == "/") {
       a = util::http::Answer(
@@ -1133,8 +1132,9 @@ util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
   if (pars.count("source") == 0 || pars.find("source")->second.empty())
     throw std::invalid_argument("No source (?source=) specified.");
   auto source = pars.find("source")->second;
-  //createCache(backend, GeomCache::SourceType::backend);
+  createCache(source, GeomCache::SourceType::backend);
   std::shared_ptr<GeomCache> cache = _caches[source];
+
   double loadStatusPercent = cache->getLoadStatusPercent(true);
   int loadStatusStage = cache->getLoadStatusStage();
 
