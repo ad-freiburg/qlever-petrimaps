@@ -1198,8 +1198,6 @@ double Server::getLoadStatusPercent() const {
   }
 
   double percent = _curRow / static_cast<double>(_totalSize) * 100.0;
-  LOG(INFO) << "[SERVER] _curRow:\n" << _curRow;
-  LOG(INFO) << "[SERVER] _totalSize:\n" << _totalSize;
   assert(percent <= 100.0);
 
   return percent;
