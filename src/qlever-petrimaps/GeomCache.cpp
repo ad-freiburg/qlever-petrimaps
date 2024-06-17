@@ -43,6 +43,16 @@ const static std::string QUERY_WDTP625 =
     "  ?subject wdt:P625 ?geometry"
     "} INTERNAL SORT BY ?geometry";
 
+const static std::string QUERY_WDTP625_SERVICE =
+    "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
+    "SELECT ?geometry WHERE {"
+    "  SERVICE <https://qlever.cs.uni-freiburg.de/api/wikidata> {"
+    "    SELECT ?geometry WHERE {"
+    "      ?subject wdt:P625 ?geometry"
+    "    } INTERNAL SORT BY ?geometry"
+    "  }"
+    "}";
+
 // _____________________________________________________________________________
 const std::string &GeomCache::getQuery(const std::string &backendUrl) const {
   // Helper lambda that returns true if the backend name (the part after the
@@ -57,8 +67,10 @@ const std::string &GeomCache::getQuery(const std::string &backendUrl) const {
   // Return query depending on the backend name.
   if (backendStartsWith("osm") || backendStartsWith("ohm")) {
     return QUERY_ASWKT;
-  } else if (backendStartsWith("wikidata") || backendStartsWith("dblp")) {
+  } else if (backendStartsWith("wikidata")) {
     return QUERY_WDTP625;
+  } else if (backendStartsWith("dblp")) {
+    return QUERY_WDTP625_SERVICE;
   } else {
     return QUERY_ASGEOMETRY;
   }
