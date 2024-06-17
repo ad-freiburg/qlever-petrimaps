@@ -316,7 +316,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         const auto& lbox = r->getLineBBox(lid - I_OFFSET);
         if (!intersects(lbox, bbox)) continue;
 
-        uint8_t gi = 0;
+        size_t gi = 0;
 
         size_t start = r->getLine(lid - I_OFFSET);
         size_t end = r->getLineEnd(lid - I_OFFSET);
@@ -367,36 +367,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
         if (!isects) continue;
 
-        mainX = 0;
-        mainY = 0;
-
-        DLine extrLine;
-        extrLine.reserve(end - start);
-
-        gi = 0;
-
-        for (size_t i = start; i < end; i++) {
-          // extract real geom
-          const auto& cur = r->getLinePoints()[i];
-
-          if (isMCoord(cur.getX())) {
-            mainX = rmCoord(cur.getX());
-            mainY = rmCoord(cur.getY());
-            continue;
-          }
-
-          // skip bounding box at beginning
-          gi++;
-          if (gi < 3) continue;
-
-          DPoint p((mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
-                   (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
-          extrLine.push_back(p);
-        }
-
         // the factor depends on the render thickness of the line, make
         // this configurable!
-        const auto& denseLine = densify(extrLine, res);
+        const auto& denseLine = densify(r->extractLineGeom(lid - I_OFFSET), res);
 
         for (const auto& p : denseLine) {
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
@@ -1089,7 +1062,21 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
           } catch (std::runtime_error& e) {
           }
           try {
+            auto geom = util::geo::multiPointFromWKT<double>(wkt);
+            if (first) ss << ",";
+            geoJsonOut.print(geom, dict);
+            first = true;
+          } catch (std::runtime_error& e) {
+          }
+          try {
             auto geom = util::geo::lineFromWKT<double>(wkt);
+            if (first) ss << ",";
+            geoJsonOut.print(geom, dict);
+            first = true;
+          } catch (std::runtime_error& e) {
+          }
+          try {
+            auto geom = util::geo::multiLineFromWKT<double>(wkt);
             if (first) ss << ",";
             geoJsonOut.print(geom, dict);
             first = true;
