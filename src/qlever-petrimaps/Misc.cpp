@@ -140,9 +140,7 @@ void RequestReader::requestRows(const std::string& query) {
 }
 
 // _____________________________________________________________________________
-void RequestReader::requestRows(const std::string& query,
-                                size_t (*writeCb)(void*, size_t, size_t,
-                                                  void*), void* ptr) {
+void RequestReader::requestRows(const std::string& query, size_t (*writeCb)(void*, size_t, size_t, void*), void* ptr) {
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
 
@@ -260,7 +258,7 @@ void RequestReader::parseIds(const char* c, size_t size) {
     _curByte = (_curByte + 1) % 8;
 
     if (_curByte == 0) {
-      _ids.push_back({_curId.val, _ids.size()});
+      ids.push_back({_curId.val, ids.size()});
     }
   }
 }

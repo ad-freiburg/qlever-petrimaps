@@ -15,6 +15,9 @@
 #include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "util/http/Server.h"
+#include "util/geo/output/GeoJsonOutput.h"
+
+using namespace util::geo::output;
 
 namespace petrimaps {
 
@@ -35,6 +38,8 @@ class Server : public util::http::Handler {
 
   util::http::Answer handleHeatMapReq(const Params& pars, int sock) const;
   util::http::Answer handleQueryReq(const Params& pars) const;
+  util::http::Answer handleGeoJsonHashReq(const Params& pars) const;
+  util::http::Answer handleGeoJsonFileReq(const Params& pars) const;
   util::http::Answer handleGeoJSONReq(const Params& pars) const;
   util::http::Answer handleClearSessReq(const Params& pars) const;
   util::http::Answer handlePosReq(const Params& pars) const;
@@ -43,7 +48,9 @@ class Server : public util::http::Handler {
   util::http::Answer handleExportReq(const Params& pars, int sock) const;
   util::http::Answer handleLoadStatusReq(const Params& pars) const;
 
-  void createCache(const std::string& backend) const;
+  void processGeoJsonOutput(GeoJsonOutput out, const ResObj res, util::json::Val attrs) const;
+
+  void createCache(const std::string& backend, const GeomCache::SourceType srcType) const;
   std::string loadCache(const std::string& backend) const;
 
   void clearSession(const std::string& id) const;
@@ -73,10 +80,9 @@ class Server : public util::http::Handler {
   mutable size_t _totalSize = 0;
 
   mutable std::mutex _m;
-
   mutable std::map<std::string, std::shared_ptr<GeomCache>> _caches;
   mutable std::map<std::string, std::shared_ptr<Requestor>> _rs;
-  mutable std::map<std::string, std::string> _queryCache;
+  mutable std::map<std::string, std::string> _requestCache;
 };
 }  // namespace petrimaps
 

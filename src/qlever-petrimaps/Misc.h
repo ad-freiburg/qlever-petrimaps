@@ -98,16 +98,14 @@ struct RequestReader {
   std::vector<std::string> requestColumns(const std::string& query);
   void requestIds(const std::string& qurl);
   void requestRows(const std::string& qurl);
-  void requestRows(const std::string& query,
-                   size_t (*writeCb)(void*, size_t, size_t, void*), void* ptr);
+  void requestRows(const std::string& query, size_t (*writeCb)(void*, size_t, size_t, void*), void* ptr);
   void parse(const char*, size_t size);
   void parseIds(const char*, size_t size);
 
   static size_t writeStringCb(void* contents, size_t size, size_t nmemb,
                               void* userp);
   static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
-  static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
-                           void* userp);
+  static size_t writeCbIds(void* contents, size_t size, size_t nmemb, void* userp);
 
   std::string queryUrl(const std::string& query) const;
 
@@ -127,7 +125,7 @@ struct RequestReader {
   uint8_t _curByte = 0;
   ID _curId;
   size_t _received = 0;
-  std::vector<IdMapping> _ids;
+  std::vector<IdMapping> ids;
   size_t _maxMemory;
   std::exception_ptr exceptionPtr;
 };

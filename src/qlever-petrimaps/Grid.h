@@ -103,6 +103,6 @@ class Grid {
 
 #include "qlever-petrimaps/Grid.tpp"
 
-}  // namespace petrimaps
+} // namespace petrimaps
 
 #endif  // PETRIMAPS_GRID_H_

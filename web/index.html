@@ -11,18 +11,223 @@
       <meta name="theme-color" content="#EEE">
       <meta property="og:title" content="mapui testing">
       <meta property="og:description" content="mapui testing">
-	  <link rel="stylesheet" href="build.css">
+      
+      <!-- CSS -->
+      <link rel="stylesheet" type="text/css" href="https://code.jquery.com/ui/1.9.2/themes/base/jquery-ui.css">
+      <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+      <link rel="stylesheet" href="build.css">
+      <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/gh/ad-freiburg/qlever-ui/backend/static/css/codemirror.css">
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/ad-freiburg/qlever-ui/backend/static/css/style.css">
+
+      <script>
+         var predicateResultTypes = {};
+         var ENTITY = 0;
+         var LITERAL = 1;
+         var LANGUAGELITERAL = 2;
+         
+         var BASEURL = "https://qlever.cs.uni-freiburg.de/api/wikidata";
+         
+         var NO_SLUG_MODE = false;
+         
+         var SLUG = "wikidata";
+         var ENTITYNAMERELATIONS = {"SUBJECTNAME": "?qleverui_entity @en@<http://www.w3.org/2000/01/rdf-schema#label> ?qleverui_name .", "PREDICATENAME": "{ { { ?qleverui_claim <http://wikiba.se/ontology#directClaim> ?qleverui_entity .\n?qleverui_claim @en@<http://www.w3.org/2000/01/rdf-schema#label> ?qleverui_name } UNION\n{ ?qleverui_claim <http://wikiba.se/ontology#claim> ?qleverui_entity .\n?qleverui_claim @en@<http://www.w3.org/2000/01/rdf-schema#label> ?qleverui_name } } UNION\n{ ?qleverui_claim <http://wikiba.se/ontology#statementProperty> ?qleverui_entity .\n?qleverui_claim @en@<http://www.w3.org/2000/01/rdf-schema#label> ?qleverui_name } } UNION\n{ ?qleverui_claim <http://wikiba.se/ontology#qualifier> ?qleverui_entity .\n?qleverui_claim @en@<http://www.w3.org/2000/01/rdf-schema#label> ?qleverui_name } .", "OBJECTNAME": "?qleverui_entity @en@<http://www.w3.org/2000/01/rdf-schema#label> ?qleverui_name .", "SUGGESTSUBJECTS": "%PREFIXES%\n# IF !CURRENT_WORD_EMPTY #\n\nSELECT ?qui_entity (SAMPLE(?name) AS ?qui_name) (SAMPLE(?alias) AS ?qui_alias) (SAMPLE(?sitelinks) AS ?qui_count) WHERE {\n  { SELECT ?qui_entity ?name ?alias WHERE {\n      ?qui_entity @en@rdfs:label ?name .\n      ?qui_entity @en@skos:altLabel ?alias .\n      FILTER (REGEX(STR(?name), \"^%CURRENT_WORD%\") || REGEX(STR(?alias), \"^%CURRENT_WORD%\")) } }\n  ?qui_entity ^schema:about ?m . ?m wikibase:sitelinks ?sitelinks\n} GROUP BY ?qui_entity ORDER BY DESC(?qui_count)\n\n# ENDIF #", "SUGGESTPREDICATES": "%PREFIXES%\n# IF !CURRENT_SUBJECT_VARIABLE #\n\nSELECT ?qui_entity (SAMPLE(?name) as ?qui_name) (SAMPLE(?alias) as ?qui_alias) (SAMPLE(?count) as ?qui_count) ?qui_reversed WHERE {\n  { { SELECT ?qui_entity (COUNT(?qui_object) AS ?count)\n    WHERE { %CURRENT_SUBJECT% ?qui_entity ?qui_object  }\n    GROUP BY ?qui_entity } BIND (0 AS ?qui_reversed) }\n  UNION\n  { { SELECT ?qui_entity (COUNT(?qui_subject) AS ?count)\n    WHERE { ?qui_subject ?qui_entity %CURRENT_SUBJECT%  }\n    GROUP BY ?qui_entity } BIND (1 AS ?qui_reversed) }\n  # IF CURRENT_WORD_EMPTY #\n  ?qui_tmp_1 ?qui_tmp_2 ?qui_entity .\n  ?qui_tmp_1 @en@rdfs:label ?name .\n  BIND (?name AS ?alias)\n  # ELSE #\n  ?qui_tmp_1 ?qui_tmp_2 ?qui_entity .\n  ?qui_tmp_1 @en@rdfs:label ?name .\n  OPTIONAL { ?qui_tmp_1 @en@skos:altLabel ?alias }\n  FILTER (REGEX(STR(?name), \"%CURRENT_WORD%\", \"i\") || REGEX(STR(?alias), \"%CURRENT_WORD%\", \"i\"))\n  # ENDIF #\n} GROUP BY ?qui_entity ?qui_reversed ORDER BY DESC(?qui_count)\n\n# ENDIF #\n# IF CURRENT_SUBJECT_VARIABLE #\n\nSELECT ?qui_entity (SAMPLE(?name) as ?qui_name) (SAMPLE(?alias) as ?qui_alias) (SAMPLE(?count) as ?qui_count) WHERE {\n  # IF CONNECTED_TRIPLES_EMPTY #\n  { SELECT ?qui_entity (COUNT(?qui_entity) AS ?count)\n    WHERE { ?qui_subject ?qui_entity ?qui_object }\n    GROUP BY ?qui_entity }\n  # ELSE #\n  { SELECT ?qui_entity (COUNT(DISTINCT %CURRENT_SUBJECT%) AS ?count)\n    WHERE { %CONNECTED_TRIPLES% %CURRENT_SUBJECT% ?qui_entity ?qui_object }\n    GROUP BY ?qui_entity }\n  # ENDIF #\n  # IF CURRENT_WORD_EMPTY #\n  ?qui_tmp_1 ?qui_tmp_2 ?qui_entity .\n  ?qui_tmp_1 @en@rdfs:label ?name .\n  BIND (?name AS ?alias)\n  # ELSE #\n  ?qui_tmp_1 ?qui_tmp_2 ?qui_entity .\n  ?qui_tmp_1 @en@rdfs:label ?name .\n  OPTIONAL { ?qui_tmp_1 @en@skos:altLabel ?alias }\n  FILTER (REGEX(STR(?name), \"%CURRENT_WORD%\", \"i\") || REGEX(STR(?alias), \"%CURRENT_WORD%\", \"i\"))\n  # ENDIF #\n} GROUP BY ?qui_entity ORDER BY DESC(?qui_count)\n\n# ENDIF #", "SUGGESTOBJECTS": "%PREFIXES%\nSELECT ?qui_entity (SAMPLE(?name) as ?qui_name) (SAMPLE(?alias) as ?qui_alias) (SAMPLE(?count) as ?qui_count) WHERE {\n  { SELECT ?qui_entity (COUNT(?qui_entity) AS ?count) WHERE {\n    %CONNECTED_TRIPLES% %CURRENT_SUBJECT% %CURRENT_PREDICATE% ?qui_entity .\n  } GROUP BY ?qui_entity }\n  # IF CURRENT_WORD_EMPTY #\n  OPTIONAL { ?qui_entity @en@rdfs:label ?name }\n  BIND (?qui_entity AS ?alias)\n  # ELSE #\n  OPTIONAL { ?qui_entity @en@rdfs:label ?name }\n  OPTIONAL { ?qui_entity @en@skos:altLabel ?optional_alias }\n  BIND (COALESCE(?optional_alias, ?qui_entity) AS ?alias)\n  FILTER (REGEX(STR(?name), \"^%CURRENT_WORD%\") || REGEX(STR(?alias), \"^%CURRENT_WORD%\"))\n  # ENDIF #\n} GROUP BY ?qui_entity ORDER BY DESC(?qui_count)", "ALTERNATIVESUBJECTNAME": "?qleverui_entity @en@<http://www.w3.org/2004/02/skos/core#altLabel> ?qleverui_altname .", "ALTERNATIVEPREDICATENAME": "{ { { ?qleverui_claim <http://wikiba.se/ontology#directClaim> ?qleverui_entity .\n?qleverui_claim @en@<http://www.w3.org/2004/02/skos/core#altLabel> ?qleverui_altname } UNION\n{ ?qleverui_claim <http://wikiba.se/ontology#claim> ?qleverui_entity .\n?qleverui_claim @en@<http://www.w3.org/2004/02/skos/core#altLabel> ?qleverui_altname } } UNION\n{ ?qleverui_claim <http://wikiba.se/ontology#statementProperty> ?qleverui_entity .\n?qleverui_claim @en@<http://www.w3.org/2004/02/skos/core#altLabel> ?qleverui_altname } } UNION\n{ ?qleverui_claim <http://wikiba.se/ontology#qualifier> ?qleverui_entity .\n?qleverui_claim @en@<http://www.w3.org/2004/02/skos/core#altLabel> ?qleverui_altname } .", "ALTERNATIVEOBJECTNAME": "?qleverui_entity @en@<http://www.w3.org/2004/02/skos/core#altLabel> ?qleverui_altname .", "SUGGESTSUBJECTSCONTEXTINSENSITIVE": "%PREFIXES%\n# IF !CURRENT_WORD_EMPTY #\n\nSELECT ?qui_entity (SAMPLE(?name) AS ?qui_name) (SAMPLE(?alias) AS ?qui_alias) (SAMPLE(?sitelinks) AS ?qui_count) WHERE {\n  { SELECT ?qui_entity ?name ?alias WHERE {\n      ?qui_entity @en@rdfs:label ?name .\n      ?qui_entity @en@skos:altLabel ?alias .\n      FILTER (REGEX(STR(?name), \"^%CURRENT_WORD%\") || REGEX(STR(?alias), \"^%CURRENT_WORD%\")) } }\n  ?qui_entity ^schema:about ?m . ?m wikibase:sitelinks ?sitelinks\n} GROUP BY ?qui_entity ORDER BY DESC(?qui_count)\n\n# ENDIF #", "SUGGESTPREDICATESCONTEXTINSENSITIVE": "%PREFIXES%\nSELECT ?qui_entity (SAMPLE(?name) as ?qui_name) (SAMPLE(?alias) as ?qui_alias) (SAMPLE(?count) as ?qui_count) WHERE {\n  { SELECT ?qui_entity (COUNT(?qui_entity) AS ?count)\n    WHERE { ?qui_subject ?qui_entity ?qui_object }\n    GROUP BY ?qui_entity }\n  # IF CURRENT_WORD_EMPTY #\n  ?qui_tmp_1 ?qui_tmp_2 ?qui_entity .\n  ?qui_tmp_1 @en@rdfs:label ?name .\n  BIND (?name AS ?alias)\n  # ELSE #\n  ?qui_tmp_1 ?qui_tmp_2 ?qui_entity .\n  ?qui_tmp_1 @en@rdfs:label ?name .\n  ?qui_tmp_1 @en@skos:altLabel ?alias .\n  FILTER (REGEX(STR(?name), \"%CURRENT_WORD%\", \"i\") || REGEX(STR(?alias), \"%CURRENT_WORD%\", \"i\"))\n  # ENDIF #\n} GROUP BY ?qui_entity ORDER BY DESC(?qui_count)", "SUGGESTOBJECTSCONTEXTINSENSITIVE": "%PREFIXES%\nSELECT ?qui_entity (SAMPLE(?name) as ?qui_name) (SAMPLE(?alias) as ?qui_alias) (SAMPLE(?count) as ?qui_count) WHERE {\n  { SELECT ?qui_entity (COUNT(?qui_entity) AS ?count) WHERE {\n    %CURRENT_SUBJECT% %CURRENT_PREDICATE% ?qui_entity .\n  } GROUP BY ?qui_entity }\n  # IF CURRENT_WORD_EMPTY #\n  OPTIONAL { ?qui_entity @en@rdfs:label ?name }\n  BIND (?qui_entity AS ?alias)\n  # ELSE #\n  OPTIONAL { ?qui_entity @en@rdfs:label ?name }\n  OPTIONAL { ?qui_entity @en@skos:altLabel ?optional_alias }\n  BIND (COALESCE(?optional_alias, ?qui_entity) AS ?alias)\n  FILTER (REGEX(STR(?name), \"^%CURRENT_WORD%\") || REGEX(STR(?alias), \"^%CURRENT_WORD%\"))\n  # ENDIF #\n} GROUP BY ?qui_entity ORDER BY DESC(?qui_count)"}
+         var SUBJECTNAME = ENTITYNAMERELATIONS["SUBJECTNAME"];
+         var PREDICATENAME = ENTITYNAMERELATIONS["PREDICATENAME"];
+         var OBJECTNAME = ENTITYNAMERELATIONS["OBJECTNAME"];
+         var ALTERNATIVESUBJECTNAME = ENTITYNAMERELATIONS["ALTERNATIVESUBJECTNAME"];
+         var ALTERNATIVEPREDICATENAME = ENTITYNAMERELATIONS["ALTERNATIVEPREDICATENAME"];
+         var ALTERNATIVEOBJECTNAME = ENTITYNAMERELATIONS["ALTERNATIVEOBJECTNAME"];
+         var SUGGESTSUBJECTS = ENTITYNAMERELATIONS["SUGGESTSUBJECTS"];
+         var SUGGESTPREDICATES = ENTITYNAMERELATIONS["SUGGESTPREDICATES"];
+         var SUGGESTOBJECTS = ENTITYNAMERELATIONS["SUGGESTOBJECTS"];
+         var SUGGESTSUBJECTS_CONTEXT_INSENSITIVE = ENTITYNAMERELATIONS["SUGGESTSUBJECTSCONTEXTINSENSITIVE"];
+         var SUGGESTPREDICATES_CONTEXT_INSENSITIVE = ENTITYNAMERELATIONS["SUGGESTPREDICATESCONTEXTINSENSITIVE"];
+         var SUGGESTOBJECTS_CONTEXT_INSENSITIVE = ENTITYNAMERELATIONS["SUGGESTOBJECTSCONTEXTINSENSITIVE"];
+         var SUGGESTOBJECTS_CONTEXT_HALFSENSITIVE = SUGGESTOBJECTS.replace(/%CONNECTED_TRIPLES%\s*/g, "")
+         var COLLECTEDPREFIXES = {"rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#", "xsd": "http://www.w3.org/2001/XMLSchema#", "ontolex": "http://www.w3.org/ns/lemon/ontolex#", "dct": "http://purl.org/dc/terms/", "rdfs": "http://www.w3.org/2000/01/rdf-schema#", "owl": "http://www.w3.org/2002/07/owl#", "wikibase": "http://wikiba.se/ontology#", "skos": "http://www.w3.org/2004/02/skos/core#", "schema": "http://schema.org/", "cc": "http://creativecommons.org/ns#", "geo": "http://www.opengis.net/ont/geosparql#", "geof": "http://www.opengis.net/def/function/geosparql/", "prov": "http://www.w3.org/ns/prov#", "wd": "http://www.wikidata.org/entity/", "data": "https://www.wikidata.org/wiki/Special:EntityData/", "s": "http://www.wikidata.org/entity/statement/", "ref": "http://www.wikidata.org/reference/", "v": "http://www.wikidata.org/value/", "wdt": "http://www.wikidata.org/prop/direct/", "wdtn": "http://www.wikidata.org/prop/direct-normalized/", "p": "http://www.wikidata.org/prop/", "ps": "http://www.wikidata.org/prop/statement/", "psv": "http://www.wikidata.org/prop/statement/value/", "psn": "http://www.wikidata.org/prop/statement/value-normalized/", "pq": "http://www.wikidata.org/prop/qualifier/", "pqv": "http://www.wikidata.org/prop/qualifier/value/", "pqn": "http://www.wikidata.org/prop/qualifier/value-normalized/", "pr": "http://www.wikidata.org/prop/reference/", "prv": "http://www.wikidata.org/prop/reference/value/", "prn": "http://www.wikidata.org/prop/reference/value-normalized/", "wdno": "http://www.wikidata.org/prop/novalue/", "imdb": "https://www.imdb.com/", "qfn": "http://qlever.cs.uni-freiburg.de/function#", "ql": "http://qlever.cs.uni-freiburg.de/builtin-functions/"};
+         var LANGUAGES = ['"en"',];
+         var KEYWORDS = ["prefix","select","construct","distinct","where","order","limit","offset","optional","by","as","having","not","textlimit","contains-entity","contains-word","filter","group","union","optional","has-predicate","bind","minus","service","internal","sort","keywords",];
+         var FUNCTIONS = ["asc","desc","avg","values","score","text","count","sample","min","max","average","concat","group_concat","langMatches","lang","regex","sum","dist","contains","str","strlen","substr","strstarts","strends","strbefore","strafter","contains","year","month","day","rand","abs","ceil","floor","round","log","exp","sqrt","sin","cos","tan","if","coalesce","bound","concat","replace","encode_for_uri","isiri","isblank","isliteral","isNumeric","bound",];
+         var PREDICATESUGGESTIONS = [];
+         var SUGGEST_PREFIXNAMES_FOR_PREDICATES = false;
+         var FILLPREFIXES = true;
+         var FILTER_TYPES = LITERAL;
+         var REPLACE_PREDICATES = {"<http://www.w3.org/2000/01/rdf-schema#label>": "@en@<http://www.w3.org/2000/01/rdf-schema#label>", "<http://schema.org/name>": "@en@<http://schema.org/name>", "<http://wikiba.se/ontology#label>": "@en@<http://wikiba.se/ontology#label>"};
+         var SUGGESTIONENTITYVARIABLE = "?qui_entity";
+         var SUGGESTIONNAMEVARIABLE = "?qui_name";
+         var SUGGESTIONALTNAMEVARIABLE = "?qui_alias";
+         var SUGGESTIONREVERSEDVARIABLE = "?qui_reversed";
+         var WARMUP_AC_PLACEHOLDERS = {'ENTITY_NAME_AND_ALIAS_PATTERN': '?qleverui_entity @en@rdfs:label ?name . ?qleverui_entity @en@rdfs:label|@en@skos:altLabel ?alias .', 'ENTITY_SCORE_PATTERN': '{ SELECT ?qleverui_entity (COUNT(?qleverui_tmp) AS ?count) WHERE { ?qleverui_tmp schema:about ?qleverui_entity } GROUP BY ?qleverui_entity }', 'PREDICATE_NAME_AND_ALIAS_PATTERN_WITHOUT_CONTEXT': '?entity wikibase:directClaim ?qleverui_entity . ?entity @en@rdfs:label ?name . ?entity @en@rdfs:label|@en@skos:altLabel ?alias', 'PREDICATE_NAME_AND_ALIAS_PATTERN_WITH_CONTEXT': '?entity ?qleverui_tmp ?qleverui_entity . ?entity @en@rdfs:label ?name . ?entity @en@rdfs:label|@en@skos:altLabel ?alias', 'ENTITY_NAME_AND_ALIAS_PATTERN_DEFAULT': 'BIND(?qleverui_entity AS ?name) BIND(?qleverui_entity AS ?alias)', 'PREDICATE_NAME_AND_ALIAS_PATTERN_WITHOUT_CONTEXT_DEFAULT': '# VALUES ?qleverui_entity { schema:about_TEMPORARILY_DISABLED }\r\nBIND(?qleverui_entity AS ?name) BIND(?qleverui_entity AS ?alias)', 'PREDICATE_NAME_AND_ALIAS_PATTERN_WITH_CONTEXT_DEFAULT': 'BIND(?qleverui_entity AS ?name) BIND(?qleverui_entity AS ?alias)', 'WARMUP_QUERY_1': 'SELECT ?qleverui_entity (SAMPLE(?name) AS ?qleverui_name) (SAMPLE(?alias) AS ?qleverui_alias) (SAMPLE(?count) AS ?qleverui_count) WHERE {\r\n  { SELECT ?qleverui_entity ?name ?alias ?count WHERE {\r\n    %ENTITY_SCORE_PATTERN%\r\n    %ENTITY_NAME_AND_ALIAS_PATTERN% }\r\n  ORDER BY ?qleverui_entity }\r\n} GROUP BY ?qleverui_entity ORDER BY DESC(?qleverui_count)', 'WARMUP_QUERY_2': 'SELECT ?qleverui_entity ?name ?alias ?count WHERE {\r\n  %ENTITY_SCORE_PATTERN%\r\n  %ENTITY_NAME_AND_ALIAS_PATTERN%\r\n} INTERNAL SORT BY ?alias', 'WARMUP_QUERY_3': 'SELECT ?qleverui_entity ?name ?alias ?count WHERE {\r\n  %ENTITY_SCORE_PATTERN%\r\n  %ENTITY_NAME_AND_ALIAS_PATTERN%\r\n} INTERNAL SORT BY ?qleverui_entity', 'WARMUP_QUERY_4': 'SELECT ?qleverui_entity ?name ?alias ?count_1 WHERE {\r\n  { { SELECT ?qleverui_entity (COUNT(DISTINCT ?subject) AS ?count_1) WHERE { ?subject ?qleverui_entity ?object } GROUP BY ?qleverui_entity }\r\n    %PREDICATE_NAME_AND_ALIAS_PATTERN_WITHOUT_CONTEXT%\r\n  } UNION {\r\n  { { SELECT ?qleverui_entity (COUNT(DISTINCT ?subject) AS ?count_1) WHERE { ?subject ?qleverui_entity ?object } GROUP BY ?qleverui_entity }\r\n    %PREDICATE_NAME_AND_ALIAS_PATTERN_WITHOUT_CONTEXT_DEFAULT%\r\n  } } }', 'WARMUP_QUERY_5': 'SELECT ?qleverui_entity ?name ?alias ?count_1 WHERE {\r\n  { { SELECT ?qleverui_entity (COUNT(DISTINCT ?subject) AS ?count_1) WHERE { ?subject ?qleverui_entity ?object } GROUP BY ?qleverui_entity }\r\n    %PREDICATE_NAME_AND_ALIAS_PATTERN_WITH_CONTEXT%\r\n  } UNION {\r\n  { { SELECT ?qleverui_entity (COUNT(DISTINCT ?subject) AS ?count_1) WHERE { ?subject ?qleverui_entity ?object } GROUP BY ?qleverui_entity }\r\n    %PREDICATE_NAME_AND_ALIAS_PATTERN_WITH_CONTEXT_DEFAULT%\r\n  } } }'};
+         var DEFAULT_TIMEOUT = 5.0;
+         var MIXED_MODE_TIMEOUT = 1.0;
+      </script>
+
+      <!-- JS -->
+      <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+      <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+
+      <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+
+      <script src="https://cdn.jsdelivr.net/gh/ad-freiburg/qlever-ui/backend/static/js/helper.js"></script>
+      <script src="https://cdn.jsdelivr.net/gh/ad-freiburg/qlever-ui/backend/static/js/raphael.js"></script>
+      <script src="https://cdn.jsdelivr.net/gh/ad-freiburg/qlever-ui/backend/static/js/treant.js"></script>
+      <script src="https://cdn.jsdelivr.net/gh/ad-freiburg/qlever-ui/backend/static/js/qleverUI.js"></script>
+
+      <script src="https://cdn.jsdelivr.net/gh/ad-freiburg/qlever-ui/backend/static/js/codemirror/codemirror.js"></script>
+      <script src="https://cdn.jsdelivr.net/gh/ad-freiburg/qlever-ui/backend/static/js/codemirror/modules/autocomplete.js"></script>
+      <script src="https://cdn.jsdelivr.net/gh/ad-freiburg/qlever-ui/backend/static/js/codemirror/modules/active-line.js"></script>
+      <script src="https://cdn.jsdelivr.net/gh/ad-freiburg/qlever-ui/backend/static/js/codemirror/modules/show-hint.js"></script>
+      <script src="https://cdn.jsdelivr.net/gh/ad-freiburg/qlever-ui/backend/static/js/codemirror/modules/search.js"></script>
+      
+      <script src="https://cdn.jsdelivr.net/gh/ad-freiburg/qlever-ui/backend/static/js/codemirror/modes/sparql/sparql.js"></script>
+      <script src="https://cdn.jsdelivr.net/gh/ad-freiburg/qlever-ui/backend/static/js/codemirror/modes/sparql/sparql-hint.js"></script>
    </head>
+
    <body>
       <main>
+         <!--Map Container-->
          <div id='m'></div>
-		   <div id='ex'>
-			   <button id='ex-csv'>Export as CSV</button>
-			   <button id='ex-tsv'>Export as TSV</button>
-			   <button id='ex-geojson'>Export as GeoJSON</button>
-		   </div>
+         <!----------------->
+
+         <div id="options">
+            <!--Export-->
+            <div id='options-ex'>
+               <button id='options-ex-csv'>Export as CSV</button>
+               <button id='options-ex-tsv'>Export as TSV</button>
+               <button id='options-ex-geojson'>Export as GeoJSON</button>
+            </div>
+            <!---------->
+
+            <!--Toggle submit menu visibility-->
+            <button id="options-submit">Show Submit Menu</button>
+            <!--------------------------------->
+         </div>
+
+         <!--Stats (#objects)-->
 		   <div id='stats'></div>
+         <!--Stats------------->
+
       </main>
+
+      <!--Submit menu-->
+      <div id='submit'>
+         <!--Tabs links-->
+         <div class="submit-tabs">
+            <button class="submit-tab_link" onclick="openTab(event, 'query')" id="submit-tabs-default_open">Query</button>
+            <button class="submit-tab_link" onclick="openTab(event, 'geoJsonFile')">GeoJSON-File</button>
+         </div>
+         <!-------------->
+
+         <!--Tabs content-->
+         <div id="submit-query" class="submit-tab_content">
+
+            <!-- QLever UI -->
+
+            <!-- Backend Dropdown -->
+            <div class="btn-group" role="group">
+               <button id="dropdown-button" class="btn btn-default dropdown-toggle" type="button" data-toggle="dropdown">
+                  <i class="glyphicon glyphicon-flash"></i>
+                  <span id="dropdown-button-text" class="d">Wikidata</span>
+                  <span class="caret"></span>
+               </button>
+               <ul id="dropdown-options" class="dropdown-menu">
+                  <li><a id="backend-wikidata" data-url="https://qlever.cs.uni-freiburg.de/api/wikidata" data-text="Wikidata" href="javascript:onBackendSelected('wikidata');"><i class="glyphicon glyphicon-ok"></i> Wikidata</a></li>
+                  <li><a id="backend-wikimedia-commons" data-url="https://qlever.cs.uni-freiburg.de/api/wikimedia-commons" data-text="Wikimedia Commons" href="javascript:onBackendSelected('wikimedia-commons');">Wikimedia Commons</a></li>
+                  <li><a id="backend-freebase" data-url="https://qlever.informatik.uni-freiburg.de/api/freebase" data-text="Freebase" href="javascript:onBackendSelected('freebase');">Freebase</a></li>
+                  <li><a id="backend-fbeasy" data-url="https://qlever.cs.uni-freiburg.de/api/fbeasy" data-text="Freebase Easy" href="javascript:onBackendSelected('fbeasy');">Freebase Easy</a></li>
+                  <li><a id="backend-osm-planet" data-url="https://qlever.cs.uni-freiburg.de/api/osm-planet" data-text="OSM Planet" href="javascript:onBackendSelected('osm-planet');">OSM Planet</a></li>
+                  <li><a id="backend-ohm-planet" data-url="https://qlever.cs.uni-freiburg.de/api/ohm-planet" data-text="OHM Planet" href="javascript:onBackendSelected('ohm-planet');">OHM Planet</a></li>
+                  <li><a id="backend-uniprot" data-url="https://qlever.cs.uni-freiburg.de/api/uniprot" data-text="UniProt" href="javascript:onBackendSelected('uniprot');">UniProt</a></li>
+                  <li><a id="backend-pubchem" data-url="https://qlever.cs.uni-freiburg.de/api/pubchem" data-text="PubChem" href="javascript:onBackendSelected('pubchem');">PubChem</a></li>
+                  <li><a id="backend-dblp" data-url="https://qlever.cs.uni-freiburg.de/api/dblp" data-text="DBLP" href="javascript:onBackendSelected('dblp');">DBLP</a></li>
+                  <li><a id="backend-dblp-plus" data-url="https://qlever.cs.uni-freiburg.de/api/dblp-plus" data-text="DBLP Plus" href="javascript:onBackendSelected('dblp-plus');">DBLP Plus</a></li>
+                  <li><a id="backend-opencitations" data-url="https://qlever.cs.uni-freiburg.de/api/opencitations" data-text="OpenCitations" href="javascript:onBackendSelected('opencitations');">OpenCitations</a></li>
+                  <li><a id="backend-imdb" data-url="https://qlever.cs.uni-freiburg.de/api/imdb" data-text="IMDb" href="javascript:onBackendSelected('imdb');">IMDb</a></li>
+                  <li><a id="backend-dnb" data-url="https://qlever.cs.uni-freiburg.de/api/dnb" data-text="Deutsche Nationalbibliothek" href="javascript:onBackendSelected('dnb');">Deutsche Nationalbibliothek</a></li>
+                  <li><a id="backend-yago-3" data-url="https://qlever.cs.uni-freiburg.de/api/yago-3" data-text="Yago 3" href="javascript:onBackendSelected('yago-3');">Yago 3</a></li>
+                  <li><a id="backend-yago-4" data-url="https://qlever.cs.uni-freiburg.de/api/yago-4" data-text="Yago 4" href="javascript:onBackendSelected('yago-4');">Yago 4</a></li>
+                  <li><a id="backend-dbpedia" data-url="https://qlever.cs.uni-freiburg.de/api/dbpedia" data-text="DBpedia" href="javascript:onBackendSelected('dbpedia');">DBpedia</a></li>
+                  <li><a id="backend-olympics" data-url="https://qlever.cs.uni-freiburg.de/api/olympics" data-text="Olympics" href="javascript:onBackendSelected('olympics');">Olympics</a></li>
+               </ul>
+            </div>
+
+            <!-- Top Right Buttons -->
+            <div class="pull-right">
+               <!-- Shortcuts / Help -->
+               <button class="btn btn-default" onclick="expandEditor();" id="helpButton">
+                  <i class="glyphicon glyphicon-question-sign"></i> <span class="d">Shortcuts / Help</span>
+               </button>
+            </div>
+
+            <div class="well" id="queryBlock">
+               <div class="row">
+                  <div id="editorArea" class="col-md-12">
+                     <!--Main Editor (CodeMirror)-->
+                     <textarea id="query" class="form-control" placeholder="Start by typing SELECT or PREFIX ..."></textarea>
+                     <br>
+                  </div>
+                  <div class="col-md-4" id="help" style="display:none;">
+                     <div id="uiHelp">  
+                        <!--UI Help Panel-->
+                        <h4 style="margin-top: 0px;">QLever UI Shortcuts:</h4>
+                        <table class="table" style="margin-bottom: 9px;">
+                           <tr>
+                              <td><kbd>ctrl</kbd> + <kbd>enter</kbd></td>
+                              <td><em>Send query to backend</em></td>
+                           </tr>
+                           <tr>
+                              <td><kbd>tab</kbd></td>
+                              <td><em>Jump to the next placeholder</em></td>
+                           </tr>
+                           <tr>
+                              <td><kbd>ctrl</kbd> + <kbd>space</kbd></td>
+                              <td><em>Invoke auto suggestions</em></td>
+                           </tr>
+                           <tr>
+                              <td><kbd>&#9650;</kbd> or <kbd>&#9660;</kbd></td>
+                              <td><em>Move through suggestions</em></td>
+                           </tr>
+                           <tr>
+                              <td><kbd onclick="$()">enter</kbd></td>
+                              <td><em>Choose the selected suggestion</em></td>
+                           </tr>
+                           <tr>
+                              <td><kbd>esc</kbd></td>
+                              <td><em>Close suggestion window</em></td>
+                           </tr>
+                           <tr>
+                              <td><kbd>ctrl</kbd> + <kbd>f</kbd></td>
+                              <td><em>Search in editor (supports RegEx)</em></td>
+                           </tr>
+                           <tr>
+                              <td><kbd>ctrl</kbd> + <kbd>r</kbd></td>
+                              <td><em>Search and replace in editor</em></td>
+                           </tr>
+                        </table>
+                     </div>
+                  </div>
+               </div>
+            </div>
+            <!--------------->
+         </div>
+
+         <div id="submit-geoJsonFile" class="submit-tab_content">
+            <p>GeoJSON-File</p>
+            <input class="submit-file_input" id="submit-geoJsonFile-file" type="file" accept=".geojson,.json">
+         </div>
+         <!---------------->
+
+         <!--
+         Run button. Note: min-width keeps the same width regardless
+         of the label (Execute, Cancel or Cancelling)
+         -->
+         <button id="submit-button" class="btn btn-success" onclick="onClickSubmitButton()" style="min-width: 7.857em;">
+            <i class="glyphicon glyphicon-refresh"></i> <span>Submit</span>
+         </button>
+      </div>
+      <!--------------->
+
+
 	   <div id='msg'>
 		   <div id='msg-heading'>Loading results from QLever</div>
          <div id='msg-info'>

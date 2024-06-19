@@ -2,10 +2,9 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
+#include <algorithm>
 #include <cstring>
 #include <iostream>
-#include <algorithm>
-#include <regex>
 #include <sstream>
 
 #include "qlever-petrimaps/Misc.h"
@@ -25,57 +24,12 @@ using petrimaps::Requestor;
 using petrimaps::RequestReader;
 using petrimaps::ResObj;
 
-// _____________________________________________________________________________
-void Requestor::request(const std::string& qry) {
-  std::lock_guard<std::mutex> guard(_m);
-
-  if (_ready) {
-    // nothing to do
-    return;
-  }
-
-  if (!_cache->ready()) {
-    throw std::runtime_error("Geom cache not ready");
-  }
-
-  _query = qry;
-  _ready = false;
-  _objects.clear();
-  _clusterObjects.clear();
-
-  RequestReader reader(_cache->getBackendURL(), _maxMemory);
-  _query = qry;
-
-  LOG(INFO) << "[REQUESTOR] Requesting IDs for query " << qry;
-  reader.requestIds(prepQuery(qry));
-
-  LOG(INFO) << "[REQUESTOR] Done, have " << reader._ids.size()
-            << " ids in total.";
-
-  // join with geoms from GeomCache
-
-  // sort by qlever id
-  LOG(INFO) << "[REQUESTOR] Sorting results by qlever ID...";
-  std::sort(reader._ids.begin(), reader._ids.end());
-  LOG(INFO) << "[REQUESTOR] ... done";
-
-  LOG(INFO) << "[REQUESTOR] Retrieving geoms from cache...";
-
-  // (geom id, result row)
-  const auto& ret = _cache->getRelObjects(reader._ids);
-  _objects = ret.first;
-  _numObjects = ret.second;
-  LOG(INFO) << "[REQUESTOR] ... done, got " << _objects.size() << " objects.";
-
-  LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";
-
+void Requestor::createBboxes(util::geo::FBox& pointBbox,
+                             util::geo::DBox& lineBbox) {
   size_t NUM_THREADS = std::thread::hardware_concurrency();
-
   std::vector<util::geo::FBox> pointBoxes(NUM_THREADS);
   std::vector<util::geo::DBox> lineBoxes(NUM_THREADS);
   std::vector<size_t> numLines(NUM_THREADS, 0);
-  util::geo::FBox pointBbox;
-  util::geo::DBox lineBbox;
   size_t batch = ceil(static_cast<double>(_objects.size()) / NUM_THREADS);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
@@ -90,7 +44,6 @@ void Requestor::request(const std::string& qry) {
             util::geo::extendBox(_cache->getPoints()[pId], pointBoxes[t]);
       } else if (geomId < std::numeric_limits<ID_TYPE>::max()) {
         auto lId = geomId - I_OFFSET;
-
         lineBoxes[t] =
             util::geo::extendBox(_cache->getLineBBox(lId), lineBoxes[t]);
         numLines[t]++;
@@ -109,23 +62,12 @@ void Requestor::request(const std::string& qry) {
   // to avoid zero area boxes if only one point is requested
   pointBbox = util::geo::pad(pointBbox, 1);
   lineBbox = util::geo::pad(lineBbox, 1);
+}
 
-  LOG(INFO) << "[REQUESTOR] ... done";
-
-  if (pointBbox.getLowerLeft().getX() > pointBbox.getUpperRight().getX()) {
-    LOG(INFO) << "[REQUESTOR] Point BBox: <none>";
-  } else {
-    LOG(INFO) << "[REQUESTOR] Point BBox: " << util::geo::getWKT(pointBbox);
-  }
-  if (lineBbox.getLowerLeft().getX() > lineBbox.getUpperRight().getX()) {
-    LOG(INFO) << "[REQUESTOR] Line BBox: <none>";
-  } else {
-    LOG(INFO) << "[REQUESTOR] Line BBox: " << util::geo::getWKT(lineBbox);
-  }
-  LOG(INFO) << "[REQUESTOR] Building grid...";
-
+// _____________________________________________________________________________
+void Requestor::createGrid(util::geo::FBox pointBbox,
+                           util::geo::DBox lineBbox) {
   double GRID_SIZE = 65536;
-
   double pw =
       pointBbox.getUpperRight().getX() - pointBbox.getLowerLeft().getX();
   double ph =
@@ -161,7 +103,6 @@ void Requestor::request(const std::string& qry) {
       GRID_SIZE, GRID_SIZE, fLineBbox);
 
   std::exception_ptr ePtr;
-
 #pragma omp parallel sections
   {
 #pragma omp section
@@ -308,103 +249,6 @@ void Requestor::request(const std::string& qry) {
   if (ePtr) {
     std::rethrow_exception(ePtr);
   }
-
-  _ready = true;
-
-  LOG(INFO) << "[REQUESTOR] ...done";
-}
-
-// _____________________________________________________________________________
-std::vector<std::pair<std::string, std::string>> Requestor::requestRow(
-    uint64_t row) const {
-  if (!_cache->ready()) {
-    throw std::runtime_error("Geom cache not ready");
-  }
-  RequestReader reader(_cache->getBackendURL(), _maxMemory);
-  LOG(INFO) << "[REQUESTOR] Requesting single row " << row << " for query "
-            << _query;
-  auto query = prepQueryRow(_query, row);
-
-  LOG(INFO) << "[REQUESTOR] Row query is " << query;
-
-  reader.requestRows(query);
-
-  if (reader.rows.size() == 0) return {};
-
-  return reader.rows[0];
-}
-
-// _____________________________________________________________________________
-void Requestor::requestRows(
-    std::function<
-        void(std::vector<std::vector<std::pair<std::string, std::string>>>)>
-        cb) const {
-  if (!_cache->ready()) {
-    throw std::runtime_error("Geom cache not ready");
-  }
-  RequestReader reader(_cache->getBackendURL(), _maxMemory);
-  LOG(INFO) << "[REQUESTOR] Requesting rows for query " << _query;
-
-  ReaderCbPair cbPair{&reader, cb};
-
-  reader.requestRows(
-      _query,
-      [](void* contents, size_t size, size_t nmemb, void* ptr) {
-        size_t realsize = size * nmemb;
-        auto pr = static_cast<ReaderCbPair*>(ptr);
-        try {
-          // clear rows
-          pr->reader->rows = {};
-          pr->reader->parse(static_cast<const char*>(contents), realsize);
-          pr->cb(pr->reader->rows);
-        } catch (...) {
-          pr->reader->exceptionPtr = std::current_exception();
-          return static_cast<size_t>(CURLE_WRITE_ERROR);
-        }
-
-        return realsize;
-      },
-      &cbPair);
-}
-
-// _____________________________________________________________________________
-std::string Requestor::prepQuery(std::string query) const {
-  std::regex expr("select[^{]*(\\*|[\\?$][A-Z0-9_\\-+]*)+[^{]*\\s*\\{",
-                  std::regex_constants::icase);
-
-  std::string var;
-
-  std::smatch m;
-  std::regex_search(query, m, expr);
-
-  if (m.size() == 2) var = m[1].str();
-
-  if (var == "*") {
-    // if we have a wildcard variable (*), we request the list of variables
-    // from the backend by sending a LIMIT 0 requests.
-    RequestReader reader(_cache->getBackendURL(), _maxMemory);
-    auto cols = reader.requestColumns(query + " LIMIT 0");
-    if (cols.size() > 0) var = cols.back();
-  }
-
-  query = std::regex_replace(query, expr, "SELECT " + var + " WHERE {$&",
-                             std::regex_constants::format_first_only) + "}";
-
-  query += " LIMIT 18446744073709551615";
-
-  return query;
-}
-
-// _____________________________________________________________________________
-std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
-  // replace first select
-  std::regex expr("select[^{]*(\\*|[\\?$][A-Z0-9_\\-+]*)+[^{]*\\s*\\{",
-                  std::regex_constants::icase);
-
-  query = std::regex_replace(query, expr, "SELECT * {$&",
-                             std::regex_constants::format_first_only) + "}";
-  query += " OFFSET " + std::to_string(row) + " LIMIT 1";
-  return query;
 }
 
 // _____________________________________________________________________________
@@ -435,9 +279,7 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
 #pragma omp section
     {
       // points
-
       std::vector<ID_TYPE> ret;
-
       if (res > 0)
         _pgrid.get(fullbox, &ret);
       else
@@ -621,7 +463,6 @@ const ResObj Requestor::getGeom(size_t id, double rad) const {
     throw std::runtime_error("Geom cache not ready");
   }
   auto obj = _objects[id];
-
   if (obj.first >= I_OFFSET) {
     size_t lineId = obj.first - I_OFFSET;
 

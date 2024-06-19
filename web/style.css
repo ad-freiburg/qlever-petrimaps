@@ -26,7 +26,8 @@
 .leaflet-safari .leaflet-tile-container {
     width: 1600px;
     height: 1600px;
-    -webkit-transform-origin: 0 0
+    -webkit-transform-origin: 0 0;
+    transform-origin: 0 0;
 }
 
 .leaflet-container .leaflet-overlay-pane svg, .leaflet-container .leaflet-shadow-pane img, .leaflet-container .leaflet-tile, .leaflet-container .leaflet-tile-pane img, .leaflet-container img.leaflet-image-layer {
@@ -76,7 +77,8 @@
 }
 
 .leaflet-overlay-pane svg {
-    -moz-user-select: none
+    -moz-user-select: none;
+    user-select: none;
 }
 
 .leaflet-pane {
@@ -382,7 +384,8 @@
 }
 
 .leaflet-popup-content {
-    margin: 13px 19px;
+    width: auto;
+    margin: 12px 12px;
     line-height: 1.4
 }
 
@@ -630,7 +633,15 @@ tt {
     margin: 5px -10px 5px -6px;
 }
 
-h1, #msg-heading {
+.leaflet-popup-content img {
+    width: 200px;
+}
+
+.leaflet-popup-content a {
+    border: none;
+}
+
+h1, #msg-inner {
     font: 1.5em sans-serif;
     margin-bottom: 40px;
     opacity: 0.8;
@@ -646,7 +657,7 @@ h1, #msg-heading {
     background-color: white;
     border: solid 1px black;
     text-align: center;
-    z-index: 99999;
+    z-index: 99998;
     padding: 50px;
 }
 
@@ -680,19 +691,45 @@ h1, #msg-heading {
     }
 }
 
-.leaflet-popup-content img {
-    width: 200px;
-}
-
-.leaflet-popup-content a {
-    border: none;
-}
-
-#ex {
+#options {
     position: absolute;
     top: 10px;
     right: 10px;
-    z-index: 9999;
+    z-index: 9998;
+}
+
+#options-submit {
+    display: inline-block;
+}
+
+#options-ex {
+    display: none;
+}
+
+button {
+    padding: 6px 12px;
+    margin-bottom: 0;
+    font-size: 15px;
+    -ms-touch-action: manipulation;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    border: 1px solid #9d9d9d;
+    border-radius: 4px;
+    margin-left: 10px;
+    cursor: pointer;
+    vertical-align: middle;
+    font-weight: 400;
+    line-height: 1.42857143;
+    text-align: center;
+    white-space: nowrap;
+    background-color: white;
+}
+
+#button:hover {
+    background-color: #f4f4f4;
 }
 
 #stats {
@@ -706,11 +743,76 @@ h1, #msg-heading {
     background: white;
 }
 
+#msg {
+    display: none;
+}
+
+#submit {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 60%;
+    height: 61%;
+    max-width: 80%;
+    border-radius: 4px;
+    background-color: white;
+    border: solid 1px black;
+    z-index: 99999;
+}
+
+.submit-tabs {
+    overflow: hidden;
+    border: 1px solid #ccc;
+    background-color: #f1f1f1;
+}
+
+.submit-tabs button {
+    background-color: inherit;
+    float: left;
+    border: none;
+    border-radius: 0px;
+    margin-left: 0px;
+    outline: none;
+    cursor: pointer;
+    padding: 14px 16px;
+    transition: 0.3s;
+    width: 50%;
+}
+
+.submit-tabs button.active {
+    background-color: #ccc;
+}
+
+.submit-tab_content {
+    display: none;
+    box-sizing: border-box;
+    padding: 12px;
+    text-align: left;
+}
+
+#submit-button {
+    position: absolute;
+    bottom: 12px;
+    left: 0;
+    right: 0;
+    width: 72px;
+    margin: auto;
+}
+
+#queryBlock {
+    margin-top: 12px;
+}
+
+#load {
+    display: none;
+}
+
 #load-status {
     display: grid;
     width: 100%;
     background-color: white;
-
     border-radius: 4px;
     border: solid 1px black;
 }
@@ -753,32 +855,6 @@ h1, #msg-heading {
 
 #stats span {
     padding: 5px;
-}
-
-#ex button {
-    padding: 6px 12px;
-    margin-bottom: 0;
-    font-size: 15px;
-    -ms-touch-action: manipulation;
-    touch-action: manipulation;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-    border: 1px solid #9d9d9d;
-    border-radius: 4px;
-    margin-left: 10px;
-    cursor: pointer;
-    vertical-align: middle;
-    font-weight: 400;
-    line-height: 1.42857143;
-    text-align: center;
-    white-space: nowrap;
-    background-color: white;
-}
-
-#ex button:hover {
-    background-color: #f4f4f4;
 }
 
 .export-link {

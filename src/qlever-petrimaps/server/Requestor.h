@@ -31,33 +31,22 @@ struct ResObj {
   std::vector<util::geo::DPolygon> poly;
 };
 
-struct ReaderCbPair {
-  RequestReader* reader;
-  std::function<void(
-      std::vector<std::vector<std::pair<std::string, std::string>>>)>
-      cb;
-};
-
 class Requestor {
  public:
-  Requestor() : _maxMemory(-1) {}
-  Requestor(std::shared_ptr<const GeomCache> cache, size_t maxMemory)
-      : _cache(cache),
-        _maxMemory(maxMemory),
-        _createdAt(std::chrono::system_clock::now()) {}
-
-  void request(const std::string& query);
-
-  std::vector<std::pair<std::string, std::string>> requestRow(
-      uint64_t row) const;
-
-  void requestRows(
+  virtual ~Requestor(){};
+  virtual void request(){};
+  virtual void request(const std::string&){};
+  virtual std::vector<std::pair<std::string, std::string>> requestRow(
+      uint64_t) const = 0;
+  virtual void requestRows(
       std::function<
-          void(std::vector<std::vector<std::pair<std::string, std::string>>>)>
-          cb) const;
+          void(std::vector<std::vector<std::pair<std::string, std::string>>>)>)
+      const = 0;
+
+  void createBboxes(util::geo::FBox& pointBbox, util::geo::DBox& lineBbox);
+  void createGrid(util::geo::FBox pointBbox, util::geo::DBox lineBbox);
 
   const petrimaps::Grid<ID_TYPE, float>& getPointGrid() const { return _pgrid; }
-
   const petrimaps::Grid<ID_TYPE, float>& getLineGrid() const { return _lgrid; }
 
   const petrimaps::Grid<util::geo::Point<uint8_t>, float>& getLinePointGrid()
@@ -69,7 +58,8 @@ class Requestor {
     return _objects;
   }
 
-  const std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>& getClusters() const {
+  const std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>&
+  getClusters() const {
     return _clusterObjects;
   }
 
@@ -89,8 +79,8 @@ class Requestor {
     return _cache->getLineBBox(id);
   }
 
-  const ResObj getNearest(util::geo::DPoint p, double rad, double res, util::geo::FBox box) const;
-
+  const ResObj getNearest(util::geo::DPoint p, double rad, double res,
+                          util::geo::FBox box) const;
   const ResObj getGeom(size_t id, double rad) const;
 
   util::geo::MultiPolygon<double> geomPolyGeoms(size_t oid, double eps) const;
@@ -116,30 +106,20 @@ class Requestor {
   }
 
  private:
-  std::string _backendUrl;
-
-  std::shared_ptr<const GeomCache> _cache;
-
-  size_t _maxMemory;
-
-  std::string prepQuery(std::string query) const;
-  std::string prepQueryRow(std::string query, uint64_t row) const;
-
-  std::string _query;
-
-  mutable std::mutex _m;
-
-  std::vector<std::pair<ID_TYPE, ID_TYPE>> _objects;
-  std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>> _clusterObjects;
-  size_t _numObjects = 0;
-
   petrimaps::Grid<ID_TYPE, float> _pgrid;
   petrimaps::Grid<ID_TYPE, float> _lgrid;
   petrimaps::Grid<util::geo::Point<uint8_t>, float> _lpgrid;
 
+ protected:
+  std::shared_ptr<const GeomCache> _cache;
+  mutable std::mutex _m;
+  size_t _maxMemory;
+  std::chrono::time_point<std::chrono::system_clock> _createdAt;
   bool _ready = false;
 
-  std::chrono::time_point<std::chrono::system_clock> _createdAt;
+  std::vector<std::pair<ID_TYPE, ID_TYPE>> _objects;
+  std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>> _clusterObjects;
+  size_t _numObjects = 0;
 };
 }  // namespace petrimaps
 
