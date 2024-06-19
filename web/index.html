@@ -24,11 +24,15 @@
 		   <div id='stats'></div>
       </main>
 	   <div id='msg'>
-		   <div id='msg-inner'>Loading results from QLever</div>
-		   <div id='msg-inner-desc'></div>
-        
+		   <div id='msg-heading'>Loading results from QLever</div>
+         <div id='msg-info'>
+            <div id='msg-info-heading'>Filling the geometry cache</div>
+            <div id='msg-info-desc'>This needs to be done only once after the server has been started and does not have to be repeated for subsequent queries.</div>
+         </div>
+         <div id='msg-error'></div>
+
          <div id="load">
-            <div id="load-stage">Parsing geometry... (1/2)</div>
+            <div id="load-stage"></div>
             <div id="load-status">
                <div id="load-bar"></div>
                <div id="load-percent">0.00%</div>

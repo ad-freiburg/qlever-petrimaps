@@ -13,6 +13,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <atomic>
 
 #include "qlever-petrimaps/Misc.h"
 #include "util/geo/Geo.h"
@@ -24,8 +25,7 @@ class GeomCache {
   GeomCache() : _backendUrl(""), _curl(0) {}
   explicit GeomCache(const std::string& backendUrl)
       : _backendUrl(backendUrl),
-        _curl(curl_easy_init()) {
-        }
+        _curl(curl_easy_init()) {}
 
   GeomCache& operator=(GeomCache&& o) {
     _backendUrl = o._backendUrl;
@@ -92,6 +92,8 @@ class GeomCache {
   double getLoadStatusPercent(bool total);
   double getLoadStatusPercent() { return getLoadStatusPercent(false); };
   int getLoadStatusStage();
+  size_t getTotalProgress();
+  size_t getCurrentProgress();
 
  private:
   std::string _backendUrl;
@@ -100,18 +102,17 @@ class GeomCache {
   uint8_t _curByte;
   ID _curId;
   QLEVER_ID_TYPE _maxQid;
-  size_t _curRow, _curUniqueGeom;
+  size_t _totalSize = 0;
+  std::atomic<size_t> _curRow;
+  size_t _curUniqueGeom;
 
-  enum _LoadStatusStages {Parse = 1, ParseIds};
+  enum _LoadStatusStages {Parse = 1, ParseIds, FromFile};
   _LoadStatusStages _loadStatusStage = Parse;
 
   static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
-  static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
-                           void* userp);
-  static size_t writeCbCount(void* contents, size_t size, size_t nmemb,
-                             void* userp);
-  static size_t writeCbString(void* contents, size_t size, size_t nmemb,
-                              void* userp);
+  static size_t writeCbIds(void* contents, size_t size, size_t nmemb, void* userp);
+  static size_t writeCbCount(void* contents, size_t size, size_t nmemb, void* userp);
+  static size_t writeCbString(void* contents, size_t size, size_t nmemb, void* userp);
 
   // Get the right SPARQL query for the given backend.
   const std::string& getQuery(const std::string& backendUrl) const;
@@ -145,7 +146,6 @@ class GeomCache {
   std::fstream _linesF;
   std::fstream _qidToIdF;
 
-  size_t _totalSize = 0;
   size_t _geometryDuplicates = 0;
 
   IdMapping _lastQidToId;

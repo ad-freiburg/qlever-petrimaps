@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -384,8 +385,8 @@ double GeomCache::getLoadStatusPercent(bool total) {
   }
 
   if (!total) {
-    return std::atomic<size_t>(_curRow) / static_cast<double>(_totalSize) *
-           100.0;
+    double percent = _curRow / static_cast<double>(_totalSize) * 100.0;
+    return std::min(100.0, percent);
   }
 
   double parsePercent = 95.0;
@@ -393,21 +394,31 @@ double GeomCache::getLoadStatusPercent(bool total) {
   double totalPercent = 0.0;
   switch (_loadStatusStage) {
     case _LoadStatusStages::Parse:
-      totalPercent = std::atomic<size_t>(_curRow) /
-                     static_cast<double>(_totalSize) * parsePercent;
+      totalPercent = _curRow / static_cast<double>(_totalSize) * parsePercent;
       break;
+
     case _LoadStatusStages::ParseIds:
       totalPercent = parsePercent;
-      totalPercent += std::atomic<size_t>(_curRow) /
-                      static_cast<double>(_totalSize) * parseIdsPercent;
+      totalPercent +=
+          _curRow / static_cast<double>(_totalSize) * parseIdsPercent;
+      break;
+
+    case _LoadStatusStages::FromFile:
+      totalPercent = _curRow / static_cast<double>(_totalSize) * 100.0;
       break;
   }
 
-  return totalPercent;
+  return std::min(100.0, totalPercent);
 }
 
 // _____________________________________________________________________________
 int GeomCache::getLoadStatusStage() { return _loadStatusStage; }
+
+// _____________________________________________________________________________
+size_t GeomCache::getTotalProgress() { return _totalSize; }
+
+// _____________________________________________________________________________
+size_t GeomCache::getCurrentProgress() { return _curRow; }
 
 // _____________________________________________________________________________
 void GeomCache::parseIds(const char *c, size_t size) {
@@ -1036,6 +1047,7 @@ std::string GeomCache::indexHashFromDisk(const std::string &fname) {
 
 // _____________________________________________________________________________
 void GeomCache::fromDisk(const std::string &fname) {
+  _loadStatusStage = _LoadStatusStages::FromFile;
   _points.clear();
   _linePoints.clear();
   _lines.clear();
@@ -1046,27 +1058,73 @@ void GeomCache::fromDisk(const std::string &fname) {
   char tmp[100];
   f.read(tmp, 100);
   tmp[99] = 0;
-
   _indexHash = util::trim(tmp);
 
   size_t numPoints;
+  size_t numLinePoints;
+  size_t numLines;
+  size_t numQidToId;
+  std::streampos posPoints;
+  std::streampos posLinePoints;
+  std::streampos posLines;
+  std::streampos posQidToId;
+  // get total num points
+  // points
   f.read(reinterpret_cast<char *>(&numPoints), sizeof(size_t));
   _points.resize(numPoints);
-  f.read(reinterpret_cast<char *>(&_points[0]),
-         sizeof(util::geo::FPoint) * numPoints);
+  posPoints = f.tellg();
+  f.seekg(sizeof(util::geo::FPoint) * numPoints, f.cur);
 
-  f.read(reinterpret_cast<char *>(&numPoints), sizeof(size_t));
-  _linePoints.resize(numPoints);
-  f.read(reinterpret_cast<char *>(&_linePoints[0]),
-         sizeof(util::geo::Point<int16_t>) * numPoints);
+  // linePoints
+  f.read(reinterpret_cast<char *>(&numLinePoints), sizeof(size_t));
+  _linePoints.resize(numLinePoints);
+  posLinePoints = f.tellg();
+  f.seekg(sizeof(util::geo::Point<int16_t>) * numLinePoints, f.cur);
 
-  f.read(reinterpret_cast<char *>(&numPoints), sizeof(size_t));
-  _lines.resize(numPoints);
-  f.read(reinterpret_cast<char *>(&_lines[0]), sizeof(size_t) * numPoints);
+  // lines
+  f.read(reinterpret_cast<char *>(&numLines), sizeof(size_t));
+  _lines.resize(numLines);
+  posLines = f.tellg();
+  f.seekg(sizeof(size_t) * numLines, f.cur);
 
-  f.read(reinterpret_cast<char *>(&numPoints), sizeof(size_t));
-  _qidToId.resize(numPoints);
-  f.read(reinterpret_cast<char *>(&_qidToId[0]), sizeof(IdMapping) * numPoints);
+  // qidToId
+  f.read(reinterpret_cast<char *>(&numQidToId), sizeof(size_t));
+  _qidToId.resize(numQidToId);
+  posQidToId = f.tellg();
+  f.seekg(sizeof(IdMapping) * numQidToId, f.cur);
+
+  _totalSize = numPoints + numLinePoints + numLines + numQidToId;
+  _curRow = 0;
+
+  // read data from file
+  // points
+  f.seekg(posPoints);
+  for (size_t i = 0; i < numPoints; i++) {
+    f.read(reinterpret_cast<char *>(&_points[i]), sizeof(util::geo::FPoint));
+    _curRow += 1;
+  }
+
+  // linePoints
+  f.seekg(posLinePoints);
+  for (size_t i = 0; i < numLinePoints; i++) {
+    f.read(reinterpret_cast<char *>(&_linePoints[i]),
+           sizeof(util::geo::Point<int16_t>));
+    _curRow += 1;
+  }
+
+  // lines
+  f.seekg(posLines);
+  for (size_t i = 0; i < numLines; i++) {
+    f.read(reinterpret_cast<char *>(&_lines[i]), sizeof(size_t));
+    _curRow += 1;
+  }
+
+  // qidToId
+  f.seekg(posQidToId);
+  for (size_t i = 0; i < numQidToId; i++) {
+    f.read(reinterpret_cast<char *>(&_qidToId[i]), sizeof(IdMapping));
+    _curRow += 1;
+  }
 
   f.close();
 }

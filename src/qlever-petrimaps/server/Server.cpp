@@ -48,6 +48,7 @@ using util::geo::LineSegment;
 using util::geo::webMercToLatLng;
 
 const static double THRESHOLD = 200;
+static std::atomic<size_t> _curRow;
 
 // _____________________________________________________________________________
 Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime)
@@ -154,7 +155,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
 
   std::shared_ptr<Requestor> r;
-
   {
     std::lock_guard<std::mutex> guard(_m);
     bool has = _rs.count(id);
@@ -297,7 +297,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   }
 
   // LINES
-
   const auto& lgrid = r->getLineGrid();
 
   if (intersects(lgrid.getBBox(), fbbox)) {
@@ -638,7 +637,6 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   LOG(INFO) << "[SERVER] Click at " << x << ", " << y;
 
   std::shared_ptr<Requestor> reqor;
-
   {
     std::lock_guard<std::mutex> guard(_m);
     bool has = _rs.count(id);
@@ -846,6 +844,10 @@ std::string Server::parseUrl(std::string u, std::string pl,
   return util::urlDecode(parts.front());
 }
 
+void Server::pngWriteRowCb(png_structp png_ptr, png_uint_32 row, int pass) {
+  _curRow = row;
+}
+
 // _____________________________________________________________________________
 inline void pngWriteCb(png_structp png_ptr, png_bytep data, png_size_t length) {
   int sock = *((int*)png_get_io_ptr(png_ptr));
@@ -874,7 +876,7 @@ inline void pngErrorCb(png_structp, png_const_charp error_msg) {
 }
 
 // _____________________________________________________________________________
-void Server::writePNG(const unsigned char* data, size_t w, size_t h, int sock) {
+void Server::writePNG(const unsigned char* data, size_t w, size_t h, int sock) const {
   png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr,
                                                 pngErrorCb, pngWarnCb);
   if (!png_ptr) return;
@@ -890,8 +892,12 @@ void Server::writePNG(const unsigned char* data, size_t w, size_t h, int sock) {
     return;
   }
 
-  png_set_write_fn(png_ptr, &sock, pngWriteCb, 0);
+  // Handle Load Status
+  _totalSize = h;
+  _curRow = 0;
 
+  png_set_write_status_fn(png_ptr, pngWriteRowCb);
+  png_set_write_fn(png_ptr, &sock, pngWriteCb, 0);
   png_set_filter(png_ptr, 0, PNG_FILTER_NONE | PNG_FILTER_VALUE_NONE);
   png_set_compression_level(png_ptr, 7);
 
@@ -901,8 +907,7 @@ void Server::writePNG(const unsigned char* data, size_t w, size_t h, int sock) {
   png_set_IHDR(png_ptr, info_ptr, w, h, bit_depth, color_type, interlace_type,
                PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
 
-  png_bytep* row_pointers =
-      (png_byte**)png_malloc(png_ptr, h * sizeof(png_bytep));
+  png_bytep* row_pointers = (png_byte**)png_malloc(png_ptr, h * sizeof(png_bytep));
 
   for (size_t y = 0; y < h; ++y) {
     row_pointers[y] = const_cast<png_bytep>(data + y * w * 4);
@@ -1125,12 +1130,30 @@ util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
   auto backend = pars.find("backend")->second;
   createCache(backend);
   std::shared_ptr<GeomCache> cache = _caches[backend];
-  double loadStatusPercent = cache->getLoadStatusPercent(true);
+
+  // We have 3 loading stages:
+  // 1) Filling geometry cache / reading cache from disk
+  // 2) Fetching geometries
+  // 3) Rendering result
+  // 1) + 2) by GeomCache, 3) by Server
+  // => Merge load status
+  // 1) + 2) = 95%, 3) = 5%
+
+  double geomCachePercent = 0.95;
+  double serverPercent = 0.05;
+  double geomCacheLoadStatusPercent = cache->getLoadStatusPercent(true);
+  double serverLoadStatusPercent = getLoadStatusPercent();
+  double totalPercent = geomCachePercent * geomCacheLoadStatusPercent + serverPercent * serverLoadStatusPercent;
+
   int loadStatusStage = cache->getLoadStatusStage();
+  size_t totalProgress = cache->getTotalProgress();
+  size_t currentProgress = cache->getCurrentProgress();
 
   std::stringstream json;
-  json << "{\"percent\": " << loadStatusPercent
-       << ", \"stage\": " << loadStatusStage << "}";
+  json << "{\"percent\": " << totalPercent
+       << ", \"stage\": " << loadStatusStage
+       << ", \"totalProgress\": " << totalProgress
+       << ", \"currentProgress\": " << currentProgress << "}";
   util::http::Answer ans = util::http::Answer("200 OK", json.str());
 
   return ans;
@@ -1166,6 +1189,17 @@ std::string Server::getSessionId() const {
       1, std::numeric_limits<int>::max());
 
   return std::to_string(d(rng));
+}
+
+double Server::getLoadStatusPercent() const {
+  if (_totalSize == 0) {
+    return 0.0;
+  }
+
+  double percent = _curRow / static_cast<double>(_totalSize) * 100.0;
+  assert(percent <= 100.0);
+
+  return percent;
 }
 
 void Server::createCache(const std::string& backend) const {

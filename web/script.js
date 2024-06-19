@@ -126,16 +126,16 @@ function getGeoJsonLayer(geom) {
 function showError(error) {
     error = error.toString();
     document.getElementById("msg").style.display = "block";
+    document.getElementById("msg-info").style.display = "none";
     document.getElementById("load").style.display = "none";
-    document.getElementById("msg-inner").style.color = "red";
-    document.getElementById("msg-inner").style.fontSize = "20px";
-    document.getElementById("msg-inner").innerHTML = error.split("\n")[0];
-    if (error.search("\n") > 0) document.getElementById("msg-inner-desc").innerHTML = "<pre>" + error.substring(error.search("\n")) + "</pre>";
-    else document.getElementById("msg-inner-desc").innerHTML = "";
+    document.getElementById("msg-heading").style.color = "red";
+    document.getElementById("msg-heading").style.fontSize = "20px";
+    document.getElementById("msg-heading").innerHTML = error.split("\n")[0];
+    if (error.search("\n") > 0) document.getElementById("msg-error").innerHTML = "<pre>" + error.substring(error.search("\n")) + "</pre>";
+    else document.getElementById("msg-error").innerHTML = "";
 }
 
 function loadMap(id, bounds, numObjects) {
-    document.getElementById("msg").style.display = "none";
     const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
     const ur =  L.Projection.SphericalMercator.unproject({"x": bounds[1][0], "y":bounds[1][1]});
     const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
@@ -162,41 +162,40 @@ function loadMap(id, bounds, numObjects) {
         format: 'image/png'
     });
 
-	const autoLayer = L.layerGroup([
-        L.nonTiledLayer.wms('heatmap', {
-            minZoom: 0,
-            maxZoom: 15,
-            opacity: 0.8,
-            layers: id,
-            styles: ["heatmap"],
-            format: 'image/png',
-            transparent: true,
-        }), L.nonTiledLayer.wms('heatmap', {
-            minZoom: 16,
-            maxZoom: 19,
-            layers: id,
-            styles: ["objects"],
-            format: 'image/png'
-        })
-    ]);
+    const autoHeatmapLayer = L.nonTiledLayer.wms('heatmap', {
+        minZoom: 0,
+        maxZoom: 15,
+        opacity: 0.8,
+        layers: id,
+        styles: ["heatmap"],
+        format: 'image/png',
+        transparent: true,
+    });
 
-	heatmapLayer.on('error', function() {showError(genError);});
-	objectsLayer.on('error', function() {showError(genError);});
-	heatmapLayer.on('load', function() {console.log("Finished loading map!");});
-	objectsLayer.on('load', function() {console.log("Finished loading map!");});
-	autoLayer.on('error', function() {showError(genError);});
-	autoLayer.on('load', function() {console.log("Finished loading map!");});
+    const autoObjectLayer = L.nonTiledLayer.wms('heatmap', {
+        minZoom: 16,
+        maxZoom: 19,
+        layers: id,
+        styles: ["objects"],
+        format: 'image/png'
+    });
+	const autoLayerGroup = L.layerGroup([autoHeatmapLayer, autoObjectLayer]);
+
+    heatmapLayer.on('load', _onLayerLoad);
+    objectsLayer.on('load', _onLayerLoad);
+    autoHeatmapLayer.on('load', _onLayerLoad);
+    autoObjectLayer.on('load', _onLayerLoad);
 
 	layerControl.addBaseLayer(heatmapLayer, "Heatmap");
 	layerControl.addBaseLayer(objectsLayer, "Objects");
-	layerControl.addBaseLayer(autoLayer, "Auto");
+	layerControl.addBaseLayer(autoLayerGroup, "Auto");
 
     if (mode == "heatmap") {
         heatmapLayer.addTo(map).on('error', function() {showError(genError);});
     } else if (mode == "objects") {
         objectsLayer.addTo(map).on('error', function() {showError(genError);});
     } else {
-        autoLayer.addTo(map).on('error', function() {showError(genError);});
+        autoLayerGroup.addTo(map).on('error', function() {showError(genError);});
     }
 
     map.on('click', function(e) {
@@ -213,7 +212,6 @@ function loadMap(id, bounds, numObjects) {
 
         let styles = "objects";
         if (map.hasLayer(heatmapLayer)) styles = "heatmap";
-        if (map.hasLayer(objectsLayer)) styles = "objects";
         if (map.hasLayer(objectsLayer)) styles = "objects";
 
         fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=' + bounds.join(',') + '&styles=' + styles)
@@ -239,20 +237,33 @@ function loadMap(id, bounds, numObjects) {
     });
 }
 
-function updateLoad(stage, percent) {
+function updateLoad(stage, percent, totalProgress, currentProgress) {
+    const infoElem = document.getElementById("msg-info");
+    const infoHeadingElem = document.getElementById("msg-info-heading");
+    const infoDescElem = document.getElementById("msg-info-desc");
     const stageElem = document.getElementById("load-stage");
     const barElem = document.getElementById("load-bar");
     const percentElem = document.getElementById("load-percent");
     switch (stage) {
         case 1:
-            stageElem.innerHTML = "Parsing geometry... (1/2)";
+            infoHeadingElem.innerHTML = "Filling the geometry cache";
+            infoDescElem.innerHTML = "This needs to be done only once for each new version of the dataset and does not have to be repeated for subsequent queries.";
+            stageElem.innerHTML = `Parsing ${currentProgress}/${totalProgress} geometries... (1/2)`;
             break;
         case 2:
-            stageElem.innerHTML = "Parsing geometry Ids... (2/2)";
+            infoHeadingElem.innerHTML = "Filling the geometry cache";
+            infoDescElem.innerHTML = "This needs to be done only once for each new version of the dataset and does not have to be repeated for subsequent queries.";
+            stageElem.innerHTML = `Fetching ${currentProgress}/${totalProgress} geometries... (2/2)`;
+            break;
+        case 3:
+            infoHeadingElem.innerHTML = "Reading cached geometries from disk";
+            infoDescElem.innerHTML = "This needs to be done only once after the server has been started and does not have to be repeated for subsequent queries.";
+            stageElem.innerHTML = `Reading ${currentProgress}/${totalProgress} geometries from disk... (1/1)`;
             break;
     }
     barElem.style.width = percent + "%";
     percentElem.innerHTML = percent.toString() + "%";
+    infoElem.style.display = "block";
 }
 
 function fetchResults() {
@@ -265,7 +276,6 @@ function fetchResults() {
         })
     .then(response => response.json())
     .then(data => {
-        clearInterval(loadStatusIntervalId);
         loadMap(data["qid"], data["bounds"], data["numobjects"]);
     })
     .catch(error => showError(error));
@@ -283,12 +293,14 @@ async function fetchLoadStatus() {
     .then(response => {
         if (!response.ok) return response.text().then(text => {throw new Error(text)});
         return response;
-        })
+    })
     .then(response => response.json())
     .then(data => {
         var stage = data["stage"];
         var percent = parseFloat(data["percent"]).toFixed(2);
-        updateLoad(stage, percent);
+        var totalProgress = data["totalProgress"].toLocaleString('en');
+        var currentProgress = data["currentProgress"].toLocaleString('en');
+        updateLoad(stage, percent, totalProgress, currentProgress);
     })
     .catch(error => {
         showError(error);
@@ -298,6 +310,13 @@ async function fetchLoadStatus() {
 
 fetchResults();
 fetchLoadStatusInterval(333);
+
+function _onLayerLoad(e) {
+    console.log("Map finished loading.");
+    clearInterval(loadStatusIntervalId);
+    
+    document.getElementById("msg").style.display = "none";
+}
 
 document.getElementById("ex-geojson").onclick = function() {
     if (!sessionId) return;

@@ -630,7 +630,7 @@ tt {
     margin: 5px -10px 5px -6px;
 }
 
-h1, #msg-inner {
+h1, #msg-heading {
     font: 1.5em sans-serif;
     margin-bottom: 40px;
     opacity: 0.8;
@@ -650,7 +650,15 @@ h1, #msg-inner {
     padding: 50px;
 }
 
-#msg-inner-desc {
+#msg-info-heading {
+    font-weight: bold;
+}
+
+#msg-info-desc {
+    margin-bottom: 40px;
+}
+
+#msg-error {
     font: 0.9em mono;
     text-align: left;
     background-color: #fefefe;
