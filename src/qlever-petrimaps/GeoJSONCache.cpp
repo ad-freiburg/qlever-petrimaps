@@ -131,9 +131,10 @@ void GeoJSONCache::load() {
     auto coords = geom["coordinates"];
     auto properties = feature["properties"];
 
-    LOG(INFO) << geom["type"];
+    LOG(INFO) << type;
 
     // PRIMITIVES
+    // Point
     if (type == "Point") {
       auto point = latLngToWebMerc(FPoint(coords[0], coords[1]));
       if (!pointValid(point)) {
@@ -145,7 +146,8 @@ void GeoJSONCache::load() {
       _curUniqueGeom++;
       _attr[numPoints] = properties;
       numPoints++;
-
+    
+    // LineString
     } else if (type == "LineString") {
       util::geo::DLine line;
       line.reserve(2);
@@ -166,7 +168,8 @@ void GeoJSONCache::load() {
       _curUniqueGeom++;
       _attr[numLines + I_OFFSET] = properties;
       numLines++;
-
+    
+    // Polygon
     } else if (type == "Polygon") {
       for (auto args : coords) {
         util::geo::DLine line;
@@ -184,13 +187,14 @@ void GeoJSONCache::load() {
         _lines.push_back(idx);
         line = util::geo::densify(line, 200 * 3);
         insertLine(line, true);
+
+        _curUniqueGeom++;
+        _attr[numLines + I_OFFSET] = properties;
+        numLines++;
       }
 
-      _curUniqueGeom++;
-      _attr[numLines + I_OFFSET] = properties;
-      numLines++;
-
-      // MULTIPART
+    // MULTIPART
+    // MultiPoint
     } else if (type == "MultiPoint") {
       for (std::vector<float> coord : coords) {
         auto point = latLngToWebMerc(FPoint(coord[0], coord[1]));
@@ -199,11 +203,13 @@ void GeoJSONCache::load() {
           continue;
         }
         _points.push_back(point);
+
+        _curUniqueGeom++;
+        _attr[numPoints] = properties;
+        numPoints++;
       }
 
-      _curUniqueGeom++;
-      _attr[numPoints] = properties;
-      numPoints++;
+    // MultiLineString
     } else if (type == "MultiLineString") {
       for (auto args : coords) {
         util::geo::DLine line;
@@ -221,12 +227,13 @@ void GeoJSONCache::load() {
         _lines.push_back(idx);
         line = util::geo::densify(line, 200 * 3);
         insertLine(line, false);
+
+        _curUniqueGeom++;
+        _attr[numLines + I_OFFSET] = properties;
+        numLines++;
       }
-
-      _curUniqueGeom++;
-      _attr[numLines + I_OFFSET] = properties;
-      numLines++;
-
+    
+    // MultiPolygon
     } else if (type == "MultiPolygon") {
       for (auto args1 : coords) {
         for (auto args2 : args1) {
@@ -245,12 +252,12 @@ void GeoJSONCache::load() {
           _lines.push_back(idx);
           line = util::geo::densify(line, 200 * 3);
           insertLine(line, true);
+
+          _curUniqueGeom++;
+          _attr[numLines + I_OFFSET] = properties;
+          numLines++;
         }
       }
-
-      _curUniqueGeom++;
-      _attr[numLines + I_OFFSET] = properties;
-      numLines++;
     }
 
     _curRow++;
