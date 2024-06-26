@@ -14,6 +14,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <atomic>
 
 #include "qlever-petrimaps/Misc.h"
 #include "util/geo/Geo.h"
@@ -62,10 +63,11 @@ class GeomCache {
 
  protected:
   CURL* _curl;
-  enum _LoadStatusStages { Parse = 1, ParseIds };
+  enum _LoadStatusStages { Parse = 1, ParseIds, FromFile};
   _LoadStatusStages _loadStatusStage = Parse;
 
-  size_t _curRow = 0, _curUniqueGeom = 0, _geometryDuplicates = 0;
+  std::atomic<size_t> _curRow;
+  size_t _curUniqueGeom = 0, _geometryDuplicates = 0;
   size_t _totalSize = 0;
   mutable std::mutex _m;
   bool _ready = false;
