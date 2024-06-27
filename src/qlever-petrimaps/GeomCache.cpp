@@ -13,12 +13,12 @@
 #include <iostream>
 #include <sstream>
 
+#include "GeomCache.h"
 #include "qlever-petrimaps/Misc.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "util/Misc.h"
 #include "util/geo/Geo.h"
 #include "util/geo/PolyLine.h"
-#include "GeomCache.h"
 
 using petrimaps::GeomCache;
 
@@ -50,6 +50,10 @@ double GeomCache::getLoadStatusPercent(bool total) {
       totalPercent = parsePercent;
       totalPercent +=
           _curRow / static_cast<double>(_totalSize) * parseIdsPercent;
+      break;
+
+    case _LoadStatusStages::FromFile:
+      totalPercent = _curRow / static_cast<double>(_totalSize) * 100.0;
       break;
   }
 
@@ -118,5 +122,3 @@ util::geo::DBox GeomCache::getLineBBox(size_t lid) const {
 
   return ret;
 }
- 
- 

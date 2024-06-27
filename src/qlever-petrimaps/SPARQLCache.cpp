@@ -922,6 +922,8 @@ std::string SPARQLCache::indexHashFromDisk(const std::string& fname) {
 
 // _____________________________________________________________________________
 void SPARQLCache::fromDisk(const std::string& fname) {
+  _loadStatusStage = _LoadStatusStages::FromFile;
+
   _points.clear();
   _linePoints.clear();
   _lines.clear();
@@ -936,23 +938,69 @@ void SPARQLCache::fromDisk(const std::string& fname) {
   _indexHash = util::trim(tmp);
 
   size_t numPoints;
+  size_t numLinePoints;
+  size_t numLines;
+  size_t numQidToId;
+  std::streampos posPoints;
+  std::streampos posLinePoints;
+  std::streampos posLines;
+  std::streampos posQidToId;
+  // get total num points
+  // points
   f.read(reinterpret_cast<char*>(&numPoints), sizeof(size_t));
   _points.resize(numPoints);
-  f.read(reinterpret_cast<char*>(&_points[0]),
-         sizeof(std::tuple<util::geo::FPoint, bool>) * numPoints);
+  posPoints = f.tellg();
+  f.seekg(sizeof(std::tuple<util::geo::FPoint, bool>) * numPoints, f.cur);
 
-  f.read(reinterpret_cast<char*>(&numPoints), sizeof(size_t));
-  _linePoints.resize(numPoints);
-  f.read(reinterpret_cast<char*>(&_linePoints[0]),
-         sizeof(util::geo::Point<int16_t>) * numPoints);
+  // linePoints
+  f.read(reinterpret_cast<char*>(&numLinePoints), sizeof(size_t));
+  _linePoints.resize(numLinePoints);
+  posLinePoints = f.tellg();
+  f.seekg(sizeof(util::geo::Point<int16_t>) * numLinePoints, f.cur);
 
-  f.read(reinterpret_cast<char*>(&numPoints), sizeof(size_t));
-  _lines.resize(numPoints);
-  f.read(reinterpret_cast<char*>(&_lines[0]), sizeof(std::tuple<size_t, bool>) * numPoints);
+  // lines
+  f.read(reinterpret_cast<char*>(&numLines), sizeof(size_t));
+  _lines.resize(numLines);
+  posLines = f.tellg();
+  f.seekg(sizeof(std::tuple<size_t, bool>) * numLines, f.cur);
 
-  f.read(reinterpret_cast<char*>(&numPoints), sizeof(size_t));
-  _qidToId.resize(numPoints);
-  f.read(reinterpret_cast<char*>(&_qidToId[0]), sizeof(IdMapping) * numPoints);
+  // qidToId
+  f.read(reinterpret_cast<char*>(&numQidToId), sizeof(size_t));
+  _qidToId.resize(numQidToId);
+  posQidToId = f.tellg();
+  f.seekg(sizeof(IdMapping) * numQidToId, f.cur);
+
+  _totalSize = numPoints + numLinePoints + numLines + numQidToId;
+  _curRow = 0;
+
+  // read data from file
+  // points
+  f.seekg(posPoints);
+  for (size_t i = 0; i < numPoints; i++) {
+    f.read(reinterpret_cast<char*>(&_points[i]), sizeof(util::geo::FPoint));
+    _curRow += 1;
+  }
+
+  // linePoints
+  f.seekg(posLinePoints);
+  for (size_t i = 0; i < numLinePoints; i++) {
+    f.read(reinterpret_cast<char*>(&_linePoints[i]), sizeof(util::geo::Point<int16_t>));
+    _curRow += 1;
+  }
+
+  // lines
+  f.seekg(posLines);
+  for (size_t i = 0; i < numLines; i++) {
+    f.read(reinterpret_cast<char*>(&_lines[i]), sizeof(size_t));
+    _curRow += 1;
+  }
+
+  // qidToId
+  f.seekg(posQidToId);
+  for (size_t i = 0; i < numQidToId; i++) {
+    f.read(reinterpret_cast<char*>(&_qidToId[i]), sizeof(IdMapping));
+    _curRow += 1;
+  }
 
   f.close();
 }
