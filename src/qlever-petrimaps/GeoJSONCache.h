@@ -22,6 +22,16 @@ class GeoJSONCache : public GeomCache {
     return *this;
   };
 
+  const util::geo::FPoint& getPoint(ID_TYPE id) const {
+    return std::get<0>(_points[id]);
+  }
+  size_t getLine(ID_TYPE id) const {
+    return std::get<0>(_lines[id]);
+  }
+  size_t getLineEnd(ID_TYPE id) const {
+    return id + 1 < _lines.size() ? getLine(id + 1) : _linePoints.size();
+  }
+
   void load();
   void setContent(const std::string& content);
   std::vector<std::pair<ID_TYPE, ID_TYPE>> getRelObjects() const;
@@ -36,6 +46,8 @@ class GeoJSONCache : public GeomCache {
   // Map geomID to map<key, value>
   std::map<size_t, std::map<std::string, std::string>> _attr;
   // ------------------------
+  std::vector<std::tuple<util::geo::FPoint, bool>> _points;
+  std::vector<std::tuple<size_t, bool>> _lines;
 
  protected:
     

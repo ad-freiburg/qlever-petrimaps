@@ -27,6 +27,16 @@ class SPARQLCache : public GeomCache {
     return *this;
   };
 
+  const util::geo::FPoint& getPoint(ID_TYPE id) const {
+    return _points[id];
+  }
+  size_t getLine(ID_TYPE id) const {
+    return _lines[id];
+  }
+  size_t getLineEnd(ID_TYPE id) const {
+    return id + 1 < _lines.size() ? getLine(id + 1) : _linePoints.size();
+  }
+
   std::string load(const std::string& cacheFile);
   void request();
   size_t requestSize();
@@ -83,6 +93,8 @@ class SPARQLCache : public GeomCache {
   IdMapping _lastQidToId;
 
   std::vector<IdMapping> _qidToId;
+  std::vector<util::geo::FPoint> _points;
+  std::vector<size_t> _lines;
 
   std::string _dangling, _prev, _raw;
   ParseState _state;

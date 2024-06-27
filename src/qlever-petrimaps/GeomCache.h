@@ -40,17 +40,12 @@ class GeomCache {
     return ready;
   }
 
-  const util::geo::FPoint& getPoint(ID_TYPE id) const {
-    return std::get<0>(_points[id]);
-  }
+  const virtual util::geo::FPoint& getPoint(ID_TYPE id) const = 0;
+  virtual size_t getLine(ID_TYPE id) const = 0;
+  virtual size_t getLineEnd(ID_TYPE id) const = 0;
+
   const std::vector<util::geo::Point<int16_t>>& getLinePoints() const {
     return _linePoints;
-  }
-  size_t getLine(ID_TYPE id) const {
-    return std::get<0>(_lines[id]);
-  }
-  size_t getLineEnd(ID_TYPE id) const {
-    return id + 1 < _lines.size() ? getLine(id + 1) : _linePoints.size();
   }
   
   util::geo::DBox getLineBBox(size_t id) const;
@@ -74,8 +69,6 @@ class GeomCache {
   mutable std::mutex _m;
   bool _ready = false;
 
-  std::vector<std::tuple<util::geo::FPoint, bool>> _points;
-  std::vector<std::tuple<size_t, bool>> _lines;
   std::vector<util::geo::Point<int16_t>> _linePoints;
 
   static bool pointValid(const util::geo::FPoint& p);

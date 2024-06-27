@@ -629,7 +629,7 @@ void SPARQLCache::request() {
   _points.resize(_pointsFSize);
   _pointsF.seekg(0);
   _pointsF.read(reinterpret_cast<char*>(&_points[0]),
-                sizeof(std::tuple<util::geo::FPoint, bool>) * _pointsFSize);
+                sizeof(util::geo::FPoint) * _pointsFSize);
   _pointsF.close();
 
   _linePoints.resize(_linePointsFSize);
@@ -641,7 +641,7 @@ void SPARQLCache::request() {
   _lines.resize(_linesFSize);
   _linesF.seekg(0);
   _linesF.read(reinterpret_cast<char*>(&_lines[0]),
-               sizeof(std::tuple<size_t, bool>) * _linesFSize);
+               sizeof(size_t) * _linesFSize);
   _linesF.close();
 
   _qidToId.resize(_qidToIdFSize);
@@ -950,7 +950,7 @@ void SPARQLCache::fromDisk(const std::string& fname) {
   f.read(reinterpret_cast<char*>(&numPoints), sizeof(size_t));
   _points.resize(numPoints);
   posPoints = f.tellg();
-  f.seekg(sizeof(std::tuple<util::geo::FPoint, bool>) * numPoints, f.cur);
+  f.seekg(sizeof(util::geo::FPoint) * numPoints, f.cur);
 
   // linePoints
   f.read(reinterpret_cast<char*>(&numLinePoints), sizeof(size_t));
@@ -962,7 +962,7 @@ void SPARQLCache::fromDisk(const std::string& fname) {
   f.read(reinterpret_cast<char*>(&numLines), sizeof(size_t));
   _lines.resize(numLines);
   posLines = f.tellg();
-  f.seekg(sizeof(std::tuple<size_t, bool>) * numLines, f.cur);
+  f.seekg(sizeof(size_t) * numLines, f.cur);
 
   // qidToId
   f.read(reinterpret_cast<char*>(&numQidToId), sizeof(size_t));
@@ -1020,7 +1020,7 @@ void SPARQLCache::serializeToDisk(const std::string& fname) const {
   size_t num = _points.size();
   f.write(reinterpret_cast<const char*>(&num), sizeof(size_t));
   f.write(reinterpret_cast<const char*>(&_points[0]),
-          sizeof(std::tuple<util::geo::FPoint, bool>) * num);
+          sizeof(util::geo::FPoint) * num);
 
   num = _linePoints.size();
   f.write(reinterpret_cast<const char*>(&num), sizeof(size_t));
@@ -1029,7 +1029,7 @@ void SPARQLCache::serializeToDisk(const std::string& fname) const {
 
   num = _lines.size();
   f.write(reinterpret_cast<const char*>(&num), sizeof(size_t));
-  f.write(reinterpret_cast<const char*>(&_lines[0]), sizeof(std::tuple<size_t, bool>) * num);
+  f.write(reinterpret_cast<const char*>(&_lines[0]), sizeof(size_t) * num);
 
   num = _qidToId.size();
   f.write(reinterpret_cast<const char*>(&num), sizeof(size_t));
