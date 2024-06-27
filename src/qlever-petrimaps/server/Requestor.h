@@ -64,7 +64,7 @@ class Requestor {
   }
 
   const util::geo::FPoint& getPoint(ID_TYPE id) const {
-    return _cache->getPoints()[id];
+    return _cache->getPoint(id);
   }
 
   size_t getLine(ID_TYPE id) const { return _cache->getLine(id); }

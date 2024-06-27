@@ -34,18 +34,14 @@ void Requestor::createBboxes(util::geo::FBox& pointBbox,
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
   for (size_t t = 0; t < NUM_THREADS; t++) {
-    for (size_t i = batch * t; i < batch * (t + 1) && i < _objects.size();
-         i++) {
+    for (size_t i = batch * t; i < batch * (t + 1) && i < _objects.size(); i++) {
       auto geomId = _objects[i].first;
-
       if (geomId < I_OFFSET) {
         auto pId = geomId;
-        pointBoxes[t] =
-            util::geo::extendBox(_cache->getPoints()[pId], pointBoxes[t]);
+        pointBoxes[t] = util::geo::extendBox(_cache->getPoint(pId), pointBoxes[t]);
       } else if (geomId < std::numeric_limits<ID_TYPE>::max()) {
         auto lId = geomId - I_OFFSET;
-        lineBoxes[t] =
-            util::geo::extendBox(_cache->getLineBBox(lId), lineBoxes[t]);
+        lineBoxes[t] = util::geo::extendBox(_cache->getLineBBox(lId), lineBoxes[t]);
         numLines[t]++;
       }
     }
@@ -126,12 +122,12 @@ void Requestor::createGrid(util::geo::FBox pointBbox,
           for (size_t m = 0; m < clusterI; m++) {
             const auto& p = _objects[i - m];
             auto geomId = p.first;
-            _pgrid.add(_cache->getPoints()[geomId], j);
+            _pgrid.add(_cache->getPoint(geomId), j);
             _clusterObjects.push_back({i - m, {m, clusterI}});
             j++;
           }
         } else {
-          _pgrid.add(_cache->getPoints()[geomId], i);
+          _pgrid.add(_cache->getPoint(geomId), i);
         }
 
         // every 100000 objects, check memory...
@@ -293,7 +289,7 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
           size_t cid = i - _objects.size();
           p = clusterGeom(cid, res);
         } else {
-          p = _cache->getPoints()[_objects[i].first];
+          p = _cache->getPoint(_objects[i].first);
         }
 
         if (!util::geo::contains(p, fbox)) continue;
@@ -564,13 +560,13 @@ util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid,
   for (size_t i = oid;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
     if (_objects[oid].first >= I_OFFSET) continue;
-    points.push_back(_cache->getPoints()[_objects[i].first]);
+    points.push_back(_cache->getPoint(_objects[i].first));
   }
 
   for (size_t i = oid - 1;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
     if (_objects[oid].first >= I_OFFSET) continue;
-    points.push_back(_cache->getPoints()[_objects[i].first]);
+    points.push_back(_cache->getPoint(_objects[i].first));
   }
 
   return points;
@@ -602,7 +598,7 @@ util::geo::MultiPolygon<double> Requestor::geomPolyGeoms(size_t oid,
 // _____________________________________________________________________________
 util::geo::FPoint Requestor::clusterGeom(size_t cid, double res) const {
   size_t oid = _clusterObjects[cid].first;
-  const auto& pp = _cache->getPoints()[_objects[oid].first];
+  const auto& pp = _cache->getPoint(_objects[oid].first);
 
   if (res < 0) return {pp};
 

@@ -629,7 +629,7 @@ void SPARQLCache::request() {
   _points.resize(_pointsFSize);
   _pointsF.seekg(0);
   _pointsF.read(reinterpret_cast<char*>(&_points[0]),
-                sizeof(util::geo::FPoint) * _pointsFSize);
+                sizeof(std::tuple<util::geo::FPoint, bool>) * _pointsFSize);
   _pointsF.close();
 
   _linePoints.resize(_linePointsFSize);
@@ -641,7 +641,7 @@ void SPARQLCache::request() {
   _lines.resize(_linesFSize);
   _linesF.seekg(0);
   _linesF.read(reinterpret_cast<char*>(&_lines[0]),
-               sizeof(size_t) * _linesFSize);
+               sizeof(std::tuple<size_t, bool>) * _linesFSize);
   _linesF.close();
 
   _qidToId.resize(_qidToIdFSize);
@@ -939,7 +939,7 @@ void SPARQLCache::fromDisk(const std::string& fname) {
   f.read(reinterpret_cast<char*>(&numPoints), sizeof(size_t));
   _points.resize(numPoints);
   f.read(reinterpret_cast<char*>(&_points[0]),
-         sizeof(util::geo::FPoint) * numPoints);
+         sizeof(std::tuple<util::geo::FPoint, bool>) * numPoints);
 
   f.read(reinterpret_cast<char*>(&numPoints), sizeof(size_t));
   _linePoints.resize(numPoints);
@@ -948,7 +948,7 @@ void SPARQLCache::fromDisk(const std::string& fname) {
 
   f.read(reinterpret_cast<char*>(&numPoints), sizeof(size_t));
   _lines.resize(numPoints);
-  f.read(reinterpret_cast<char*>(&_lines[0]), sizeof(size_t) * numPoints);
+  f.read(reinterpret_cast<char*>(&_lines[0]), sizeof(std::tuple<size_t, bool>) * numPoints);
 
   f.read(reinterpret_cast<char*>(&numPoints), sizeof(size_t));
   _qidToId.resize(numPoints);
@@ -972,7 +972,7 @@ void SPARQLCache::serializeToDisk(const std::string& fname) const {
   size_t num = _points.size();
   f.write(reinterpret_cast<const char*>(&num), sizeof(size_t));
   f.write(reinterpret_cast<const char*>(&_points[0]),
-          sizeof(util::geo::FPoint) * num);
+          sizeof(std::tuple<util::geo::FPoint, bool>) * num);
 
   num = _linePoints.size();
   f.write(reinterpret_cast<const char*>(&num), sizeof(size_t));
@@ -981,7 +981,7 @@ void SPARQLCache::serializeToDisk(const std::string& fname) const {
 
   num = _lines.size();
   f.write(reinterpret_cast<const char*>(&num), sizeof(size_t));
-  f.write(reinterpret_cast<const char*>(&_lines[0]), sizeof(size_t) * num);
+  f.write(reinterpret_cast<const char*>(&_lines[0]), sizeof(std::tuple<size_t, bool>) * num);
 
   num = _qidToId.size();
   f.write(reinterpret_cast<const char*>(&num), sizeof(size_t));
