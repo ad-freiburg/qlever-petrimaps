@@ -129,7 +129,7 @@ function showError(error) {
     error = error.toString();
     document.getElementById("msg").style.display = "block";
     document.getElementById("msg-info").style.display = "none";
-    document.getElementById("load").style.display = "none";
+    document.getElementById("msg-load").style.display = "none";
     document.getElementById("msg-heading").style.color = "red";
     document.getElementById("msg-heading").style.fontSize = "20px";
     document.getElementById("msg-heading").innerHTML = error.split("\n")[0];
@@ -251,9 +251,9 @@ function updateLoad(stage, percent, totalProgress, currentProgress) {
     const infoElem = document.getElementById("msg-info");
     const infoHeadingElem = document.getElementById("msg-info-heading");
     const infoDescElem = document.getElementById("msg-info-desc");
-    const stageElem = document.getElementById("load-stage");
-    const barElem = document.getElementById("load-bar");
-    const percentElem = document.getElementById("load-percent");
+    const stageElem = document.getElementById("msg-load-stage");
+    const barElem = document.getElementById("msg-load-bar");
+    const percentElem = document.getElementById("msg-load-percent");
     switch (stage) {
         case 1:
             infoHeadingElem.innerHTML = "Filling the geometry cache";
@@ -370,7 +370,7 @@ function fetchResults(url) {
 function fetchLoadStatusInterval(interval, source) {
     fetchLoadStatus();
     loadStatusIntervalId = setInterval(fetchLoadStatus, interval, source);
-    document.getElementById("load").style.display = "block";
+    document.getElementById("msg-load").style.display = "block";
 }
 
 async function fetchLoadStatus(source) {
@@ -397,6 +397,8 @@ async function fetchLoadStatus(source) {
 }
 
 function fileToText(file) {
+    document.getElementById("submit-geoJsonFile-load").style.display = "block";
+
     const reader = new FileReader();
     reader.readAsText(file, "UTF-8");
     reader.onprogress = fileToTextOnProgress;
@@ -405,9 +407,19 @@ function fileToText(file) {
 }
 
 function fileToTextOnProgress(evt) {
+    const barElem = document.getElementById("submit-geoJSonFile-load-bar");
+    const percentElem = document.getElementById("submit-geoJsonFile-load-percent");
+    const loaded = evt.loaded;
+    const total = evt.total;
+    const percent = loaded / total * 100.0;
+
+    barElem.style.width = percent + "%";
+    percentElem.innerHTML = percent.toFixed(2) + "%";
 }
 
 function fileToTextOnLoad(evt) {
+    document.getElementById("submit-geoJsonFile-load").style.display = "none";
+
     let content = evt.target.result;
     content = encodeURIComponent(content);
     fetchGeoJsonHash(content);

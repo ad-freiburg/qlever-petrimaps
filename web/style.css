@@ -805,11 +805,11 @@ button {
     margin-top: 12px;
 }
 
-#load {
+#msg-load {
     display: none;
 }
 
-#load-status {
+#msg-load-status {
     display: grid;
     width: 100%;
     background-color: white;
@@ -817,7 +817,7 @@ button {
     border: solid 1px black;
 }
 
-#load-bar {
+#msg-load-bar {
     grid-column: 1;
     grid-row: 1;
 
@@ -828,7 +828,7 @@ button {
     transition-timing-function: linear;
 }
 
-#load-percent {
+#msg-load-percent {
     grid-column: 1;
     grid-row: 1;
 
@@ -839,7 +839,7 @@ button {
     mix-blend-mode: difference;
 }
 
-#load-spinner {
+#msg-load-spinner {
     position: absolute;
     right: 8px;
     top: 8px;
@@ -851,6 +851,41 @@ button {
     border-top-color: #fff;
     animation: spin 1s ease-in-out infinite;
     -webkit-animation: spin 1s ease-in-out infinite;
+}
+
+#submit-geoJsonFile-load {
+    display: none;
+    width: 120px;
+}
+
+#submit-geoJSonFile-load-status {
+    display: grid;
+    width: 100%;
+    background-color: white;
+    border-radius: 4px;
+    border: solid 1px black;
+}
+
+#submit-geoJSonFile-load-bar {
+    grid-column: 1;
+    grid-row: 1;
+
+    width: 0%;
+    height: 12px;
+    background-color: black;
+    transition: width 400ms;
+    transition-timing-function: linear;
+}
+
+#submit-geoJsonFile-load-percent {
+    grid-column: 1;
+    grid-row: 1;
+
+    text-align: center;
+    font-size: 12px;
+    line-height: 12px;
+    color: white;
+    mix-blend-mode: difference;
 }
 
 #stats span {
