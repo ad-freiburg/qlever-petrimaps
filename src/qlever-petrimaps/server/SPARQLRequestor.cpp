@@ -49,14 +49,12 @@ void SPARQLRequestor::request(const std::string& query) {
   _numObjects = ret.second;
   LOG(INFO) << "[REQUESTOR] ... done, got " << _objects.size() << " objects.";
 
-  // Create mapping row_id to object_id for multigeometries
-  for (size_t oid = 0; oid < _objects.size(); oid++) {
-    std::pair<ID_TYPE, ID_TYPE> object = _objects[oid];
-    ID_TYPE object_row_id = object.second;
-    _rowIdToObjectId[object_row_id] = oid;
+  // Create mapping rowId to objectId for multigeometries
+  for (size_t objectId = 0; objectId < _objects.size(); objectId++) {
+    std::pair<ID_TYPE, ID_TYPE> object = _objects[objectId];
+    ID_TYPE rowId = object.second;
+    _rowIdToObjectId[rowId] = objectId;
   }
-
-  LOG(INFO) << "[REQUESTOR] Matching size: " << _rowIdToObjectId.size();
 
   LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";
 

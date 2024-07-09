@@ -1074,7 +1074,7 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
   size_t rowId = 0;
 
   reqor->requestRows(
-      [sock, &first, reqor, &rowId, this](
+      [sock, &first, &rowId, reqor, this](
           std::vector<std::vector<std::pair<std::string, std::string>>> rows) {
         std::stringstream ss;
         ss << std::setprecision(10);
@@ -1094,7 +1094,7 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
           first = true;
           ss << "\n";
 
-          rowId += 1;
+          rowId++;
         }
 
         std::string buff = ss.str();
