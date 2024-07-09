@@ -454,23 +454,23 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
 }
 
 // _____________________________________________________________________________
-const ResObj Requestor::getGeom(size_t id, double rad) const {
+const ResObj Requestor::getGeom(size_t objectId, double rad) const {
   if (!_cache->ready()) {
     throw std::runtime_error("Geom cache not ready");
   }
-  auto obj = _objects[id];
+  std::pair<ID_TYPE, ID_TYPE> obj = _objects[objectId];
+
   if (obj.first >= I_OFFSET) {
     size_t lineId = obj.first - I_OFFSET;
 
     bool isArea = Requestor::isArea(lineId);
-
     if (isArea) {
-      return {true, id, {{0, 0}}, {}, {}, geomPolyGeoms(id, rad / 10)};
+      return {true, objectId, {{0, 0}}, {}, {}, geomPolyGeoms(objectId, rad / 10)};
     } else {
-      return {true, id, {{0, 0}}, {}, geomLineGeoms(id, rad / 10), {}};
+      return {true, objectId, {{0, 0}}, {}, geomLineGeoms(objectId, rad / 10), {}};
     }
   } else {
-    return {true, id, geomPointGeoms(id), {}, {}, {}};
+    return {true, objectId, geomPointGeoms(objectId), {}, {}, {}};
   }
 }
 

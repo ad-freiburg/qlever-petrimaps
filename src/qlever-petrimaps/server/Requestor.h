@@ -63,6 +63,10 @@ class Requestor {
     return _clusterObjects;
   }
 
+  ID_TYPE getObjectIdFromRowId(ID_TYPE row_id) const {
+    return _rowIdToObjectId.at(row_id);
+  }
+
   const util::geo::FPoint& getPoint(ID_TYPE id) const {
     return _cache->getPoint(id);
   }
@@ -120,6 +124,7 @@ class Requestor {
   std::vector<std::pair<ID_TYPE, ID_TYPE>> _objects;
   std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>> _clusterObjects;
   size_t _numObjects = 0;
+  std::map<ID_TYPE, ID_TYPE> _rowIdToObjectId; // Match row_id to object_id for multigeometries
 };
 }  // namespace petrimaps
 

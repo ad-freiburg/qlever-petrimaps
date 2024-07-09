@@ -1071,16 +1071,18 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
   }
 
   bool first = false;
+  size_t rowId = 0;
 
   reqor->requestRows(
-      [sock, &first, reqor, this](
+      [sock, &first, reqor, &rowId, this](
           std::vector<std::vector<std::pair<std::string, std::string>>> rows) {
         std::stringstream ss;
         ss << std::setprecision(10);
         util::json::Val attrs;
         for (size_t i = 0; i < rows.size(); i++) {
           auto& row = rows[i];
-          auto res = reqor->getGeom(i, 0);
+          ID_TYPE objectId = reqor->getObjectIdFromRowId(rowId);
+          auto res = reqor->getGeom(objectId, 0);
 
           for (size_t j = 0; j < row.size(); j++) {
             attrs.dict[row[j].first] = row[j].second;
@@ -1091,6 +1093,8 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
           processGeoJsonOutput(geoJsonOut, res, attrs);
           first = true;
           ss << "\n";
+
+          rowId += 1;
         }
 
         std::string buff = ss.str();
