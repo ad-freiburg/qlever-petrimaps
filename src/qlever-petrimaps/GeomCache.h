@@ -40,23 +40,20 @@ class GeomCache {
     return ready;
   }
 
-  const std::vector<util::geo::FPoint>& getPoints() const { return _points; }
+  const virtual util::geo::FPoint& getPoint(ID_TYPE id) const = 0;
+  virtual size_t getLine(ID_TYPE id) const = 0;
+  virtual size_t getLineEnd(ID_TYPE id) const = 0;
+
   const std::vector<util::geo::Point<int16_t>>& getLinePoints() const {
     return _linePoints;
   }
-  const std::vector<size_t>& getLines() const { return _lines; }
-  size_t getLine(ID_TYPE id) const { return _lines[id]; }
-  size_t getLineEnd(ID_TYPE id) const {
-    return id + 1 < _lines.size() ? _lines[id + 1] : _linePoints.size();
-  }
-
-  util::geo::FBox getPointBBox(size_t id) const {
-    return util::geo::getBoundingBox(_points[id]);
-  }
+  
   util::geo::DBox getLineBBox(size_t id) const;
 
   double getLoadStatusPercent(bool total);
-  double getLoadStatusPercent() { return getLoadStatusPercent(false); };
+  double getLoadStatusPercent() {
+    return getLoadStatusPercent(false);
+  };
   int getLoadStatusStage();
   size_t getTotalProgress();
   size_t getCurrentProgress();
@@ -72,9 +69,7 @@ class GeomCache {
   mutable std::mutex _m;
   bool _ready = false;
 
-  std::vector<util::geo::FPoint> _points;
   std::vector<util::geo::Point<int16_t>> _linePoints;
-  std::vector<size_t> _lines;
 
   static bool pointValid(const util::geo::FPoint& p);
   static bool pointValid(const util::geo::DPoint& p);

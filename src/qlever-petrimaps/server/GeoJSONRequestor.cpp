@@ -20,11 +20,19 @@ void GeoJSONRequestor::request() {
   _ready = false;
   _objects.clear();
   _clusterObjects.clear();
+  _rowIdToObjectId.clear();
 
   _objects = _cache->getRelObjects();
   _numObjects = _objects.size();
 
   LOG(INFO) << "[REQUESTOR] ... done, got " << _objects.size() << " objects.";
+
+  // Create mapping rowId to objectId for multigeometries
+  for (size_t objectId = 0; objectId < _objects.size(); objectId++) {
+    std::pair<ID_TYPE, ID_TYPE> object = _objects[objectId];
+    ID_TYPE rowId = object.second;
+    _rowIdToObjectId[rowId] = objectId;
+  }
 
   LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";
 

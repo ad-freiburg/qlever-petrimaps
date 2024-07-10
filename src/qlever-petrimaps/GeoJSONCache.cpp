@@ -14,13 +14,24 @@ std::vector<std::pair<ID_TYPE, ID_TYPE>> GeoJSONCache::getRelObjects() const {
   // Used for GeoJSON, returns all objects as vector<pair<geomID, Row>>
   // geomID starts from 0 ascending, Row = geomID
   std::vector<std::pair<ID_TYPE, ID_TYPE>> objects;
-  objects.reserve(_points.size() + _linePoints.size());
+  objects.reserve(_points.size() + _lines.size());
 
+  size_t idx = 0;
   for (size_t i = 0; i < _points.size(); i++) {
-    objects.push_back({i, i});
+    bool isFirst = std::get<1>(_points[i]);
+    if (isFirst && i > 0) {
+      idx++;
+    }
+    objects.push_back({i, idx});
   }
+
+  idx = 0;
   for (size_t i = 0; i < _lines.size(); i++) {
-    objects.push_back({i + I_OFFSET, i + I_OFFSET});
+    bool isFirst = std::get<1>(_lines[i]);
+    if (isFirst && i > 0) {
+      idx++;
+    }
+    objects.push_back({i + I_OFFSET, idx + I_OFFSET});
   }
 
   return objects;
@@ -131,24 +142,26 @@ void GeoJSONCache::load() {
     auto coords = geom["coordinates"];
     auto properties = feature["properties"];
 
-    LOG(INFO) << geom["type"];
+    LOG(INFO) << type;
 
     // PRIMITIVES
+    // Point
     if (type == "Point") {
       auto point = latLngToWebMerc(FPoint(coords[0], coords[1]));
       if (!pointValid(point)) {
         LOG(INFO) << "[GeomCache] Invalid point found. Skipping...";
         continue;
       }
-      _points.push_back(point);
+      _points.push_back({point, true});
 
       _curUniqueGeom++;
       _attr[numPoints] = properties;
       numPoints++;
-
+    
+    // LineString
     } else if (type == "LineString") {
       util::geo::DLine line;
-      line.reserve(2);
+      line.reserve(coords.size());
 
       for (std::vector<float> coord : coords) {
         auto point = latLngToWebMerc(DPoint(coord[0], coord[1]));
@@ -159,18 +172,20 @@ void GeoJSONCache::load() {
         line.push_back(point);
       }
       std::size_t idx = _linePoints.size();
-      _lines.push_back(idx);
+      _lines.push_back({idx, true});
       line = util::geo::densify(line, 200 * 3);
       insertLine(line, false);
 
       _curUniqueGeom++;
       _attr[numLines + I_OFFSET] = properties;
       numLines++;
-
+    
+    // Polygon
     } else if (type == "Polygon") {
-      for (auto args : coords) {
+      for (size_t i = 0; i < coords.size(); i++) {
+        auto args = coords[i];
         util::geo::DLine line;
-        line.reserve(2);
+        line.reserve(args.size());
 
         for (std::vector<float> coord : args) {
           auto point = latLngToWebMerc(DPoint(coord[0], coord[1]));
@@ -180,8 +195,10 @@ void GeoJSONCache::load() {
           }
           line.push_back(point);
         }
+
         std::size_t idx = _linePoints.size();
-        _lines.push_back(idx);
+        bool isFirst = i == 0;
+        _lines.push_back({idx, isFirst});
         line = util::geo::densify(line, 200 * 3);
         insertLine(line, true);
       }
@@ -190,24 +207,30 @@ void GeoJSONCache::load() {
       _attr[numLines + I_OFFSET] = properties;
       numLines++;
 
-      // MULTIPART
+    // MULTIPART
+    // MultiPoint
     } else if (type == "MultiPoint") {
-      for (std::vector<float> coord : coords) {
+      for (size_t i = 0; i < coords.size(); i++) {
+        std::vector<float> coord = coords[i];
         auto point = latLngToWebMerc(FPoint(coord[0], coord[1]));
         if (!pointValid(point)) {
           LOG(INFO) << "[GeomCache] Invalid point found. Skipping...";
           continue;
         }
-        _points.push_back(point);
+        bool isFirst = i == 0;
+        _points.push_back({point, isFirst});
       }
 
       _curUniqueGeom++;
       _attr[numPoints] = properties;
       numPoints++;
+
+    // MultiLineString
     } else if (type == "MultiLineString") {
-      for (auto args : coords) {
+      for (size_t i = 0; i < coords.size(); i++) {
+        auto args = coords[i];
         util::geo::DLine line;
-        line.reserve(2);
+        line.reserve(args.size());
 
         for (std::vector<float> coord : args) {
           auto point = latLngToWebMerc(DPoint(coord[0], coord[1]));
@@ -218,7 +241,8 @@ void GeoJSONCache::load() {
           line.push_back(point);
         }
         std::size_t idx = _linePoints.size();
-        _lines.push_back(idx);
+        bool isFirst = i == 0;
+        _lines.push_back({idx, isFirst});
         line = util::geo::densify(line, 200 * 3);
         insertLine(line, false);
       }
@@ -226,12 +250,14 @@ void GeoJSONCache::load() {
       _curUniqueGeom++;
       _attr[numLines + I_OFFSET] = properties;
       numLines++;
-
+    
+    // MultiPolygon
     } else if (type == "MultiPolygon") {
-      for (auto args1 : coords) {
+      for (size_t i = 0; i < coords.size(); i++) {
+        auto args1 = coords[i];
         for (auto args2 : args1) {
           util::geo::DLine line;
-          line.reserve(2);
+          line.reserve(args2.size());
 
           for (std::vector<float> coord : args2) {
             auto point = latLngToWebMerc(DPoint(coord[0], coord[1]));
@@ -242,7 +268,8 @@ void GeoJSONCache::load() {
             line.push_back(point);
           }
           std::size_t idx = _linePoints.size();
-          _lines.push_back(idx);
+          bool isFirst = i == 0;
+          _lines.push_back({idx, isFirst});
           line = util::geo::densify(line, 200 * 3);
           insertLine(line, true);
         }
