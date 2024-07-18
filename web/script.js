@@ -129,7 +129,7 @@ function showError(error) {
     error = error.toString();
     document.getElementById("msg").style.display = "block";
     document.getElementById("msg-info").style.display = "none";
-    document.getElementById("load").style.display = "none";
+    document.getElementById("msg-load").style.display = "none";
     document.getElementById("msg-heading").style.color = "red";
     document.getElementById("msg-heading").style.fontSize = "20px";
     document.getElementById("msg-heading").innerHTML = error.split("\n")[0];
@@ -251,9 +251,9 @@ function updateLoad(stage, percent, totalProgress, currentProgress) {
     const infoElem = document.getElementById("msg-info");
     const infoHeadingElem = document.getElementById("msg-info-heading");
     const infoDescElem = document.getElementById("msg-info-desc");
-    const stageElem = document.getElementById("load-stage");
-    const barElem = document.getElementById("load-bar");
-    const percentElem = document.getElementById("load-percent");
+    const stageElem = document.getElementById("msg-load-stage");
+    const barElem = document.getElementById("msg-load-bar");
+    const percentElem = document.getElementById("msg-load-percent");
     switch (stage) {
         case 1:
             infoHeadingElem.innerHTML = "Filling the geometry cache";
@@ -299,20 +299,107 @@ function fetchQuery(query, backend) {
     fetchLoadStatusInterval(1000, backend_encoded);
 }
 
-function fetchGeoJsonHash(content) {
+async function fetchGeoJsonHash(content) {
     // Fetch MD5-Hash of GeoJson-File content
-    fetch("geoJsonHash", {
-        method: "POST",
-        body: "geoJsonFile=" + content,
-        headers: {
-            "Content-type": "application/json; charset=UTF-8"
+    // Track progress because content can be large
+
+    // Method 1: TransformStream
+    // const barElem = document.getElementById("submit-geoJSonFile-load-bar");
+    // const percentElem = document.getElementById("submit-geoJsonFile-load-percent");
+    // const body = "geoJsonFile=" + content;
+    // const blob = new Blob([body]);
+    // const totalBytes = blob.size;
+    // let bytesUploaded = 0;
+
+    // // Custom TransformStream to track upload progress
+    // const stream = new TransformStream({
+    //     transform(chunk, controller) {
+    //         controller.enqueue(chunk);
+    //         bytesUploaded += chunk.byteLength;
+    //         const percent = bytesUploaded / totalBytes * 100.0;
+    //         console.log("upload progress: ", percent);
+    //         barElem.style.width = percent + "%";
+    //         percentElem.innerHTML = percent.toFixed(2) + "%";
+    //     },
+    //     flush(controller) {
+    //         console.log("Completed stream");
+    //     }
+    // });
+    // fetch("geoJsonHash", {
+    //     method: "POST",
+    //     body: blob.stream().pipeThrough(stream),
+    //     headers: {
+    //         "Content-type": "application/json; charset=UTF-8"
+    //     },
+    //     duplex: "half"
+    // })
+    // .then((response) => response.text())
+    // .then(md5_hash => {
+    //     fetchGeoJsonFile(md5_hash);
+    // })
+    // .catch(error => showError(error));
+
+    // Method 2: XMLHttpRequest
+    // const barElem = document.getElementById("submit-geoJSonFile-load-bar");
+    // const percentElem = document.getElementById("submit-geoJsonFile-load-percent");
+
+    // const xhr = new XMLHttpRequest();
+    // const success = await new Promise((resolve) => {
+    //     xhr.upload.addEventListener("progress", (evt) => {
+    //         if (evt.lengthComputable) {
+    //             const percent = evt.loaded / evt.total * 100.0;
+    //             console.log("upload progress: ", percent);
+    //             barElem.style.width = percent + "%";
+    //             percentElem.innerHTML = percent.toFixed(2) + "%";
+    //         }
+    //     });
+    //     xhr.addEventListener("loadend", () => {
+    //         resolve(xhr.readyState === 4 && xhr.status === 200);
+    //     });
+    //     xhr.open("POST", "geoJsonHash", true);
+    //     xhr.setRequestHeader("Content-Type", "application/json; charset=UTF-8");
+    //     xhr.send("geoJsonFile=" + content);
+    // })
+    // .then((response) => response.text())
+    // .then(md5_hash => {
+    //     fetchGeoJsonFile(md5_hash);
+    // })
+    // .catch(error => showError(error));
+
+    document.getElementById("submit-geoJsonFile-load").style.display = "block";
+    const barElem = document.getElementById("submit-geoJSonFile-load-bar");
+    const percentElem = document.getElementById("submit-geoJsonFile-load-percent");
+    new Promise((res, rej) => {
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "geoJsonHash")
+        xhr.setRequestHeader("Content-Type", "application/json; charset=UTF-8");
+        xhr.onload = evt => {
+            document.getElementById("submit-geoJsonFile-load").style.display = "none";
+            const md5_hash = evt.target.responseText;
+            fetchGeoJsonFile(md5_hash);
         }
-    })
-    .then((response) => response.text())
-    .then(md5_hash => {
-        fetchGeoJsonFile(md5_hash);
-    })
-    .catch(error => showError(error));
+        xhr.onerror = error => showError(error);
+        xhr.upload.onprogress = evt => {
+            const percent = evt.loaded / evt.total * 100.0;
+            barElem.style.width = percent + "%";
+            percentElem.innerHTML = percent.toFixed(2) + "%";
+        }
+        xhr.send("geoJsonFile=" + content);
+    });
+
+    // Method 3: Plain fetch
+    // fetch("geoJsonHash", {
+    //     method: "POST",
+    //     body: "geoJsonFile=" + content,
+    //     headers: {
+    //         "Content-type": "application/json; charset=UTF-8"
+    //     }
+    // })
+    // .then((response) => response.text())
+    // .then(md5_hash => {
+    //     fetchGeoJsonFile(md5_hash);
+    // })
+    // .catch(error => showError(error));
 }
 
 function fetchGeoJsonFile(md5_hash) {
@@ -370,7 +457,7 @@ function fetchResults(url) {
 function fetchLoadStatusInterval(interval, source) {
     fetchLoadStatus();
     loadStatusIntervalId = setInterval(fetchLoadStatus, interval, source);
-    document.getElementById("load").style.display = "block";
+    document.getElementById("msg-load").style.display = "block";
 }
 
 async function fetchLoadStatus(source) {
@@ -397,6 +484,8 @@ async function fetchLoadStatus(source) {
 }
 
 function fileToText(file) {
+    document.getElementById("submit-geoJsonFile-load").style.display = "block";
+
     const reader = new FileReader();
     reader.readAsText(file, "UTF-8");
     reader.onprogress = fileToTextOnProgress;
@@ -405,9 +494,20 @@ function fileToText(file) {
 }
 
 function fileToTextOnProgress(evt) {
+    const barElem = document.getElementById("submit-geoJSonFile-load-bar");
+    const percentElem = document.getElementById("submit-geoJsonFile-load-percent");
+    const loaded = evt.loaded;
+    const total = evt.total;
+    const percent = loaded / total * 100.0;
+
+    barElem.style.width = percent + "%";
+    percentElem.innerHTML = percent.toFixed(2) + "%";
+    percentElem.innerHTML = percent.toFixed(2) + "%";
 }
 
 function fileToTextOnLoad(evt) {
+    document.getElementById("submit-geoJsonFile-load").style.display = "none";
+
     let content = evt.target.result;
     content = encodeURIComponent(content);
     fetchGeoJsonHash(content);

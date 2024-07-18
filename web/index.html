@@ -214,6 +214,13 @@
          <div id="submit-geoJsonFile" class="submit-tab_content">
             <p>GeoJSON-File</p>
             <input class="submit-file_input" id="submit-geoJsonFile-file" type="file" accept=".geojson,.json">
+
+            <div id="submit-geoJsonFile-load">
+               <div id="submit-geoJSonFile-load-status">
+                  <div id="submit-geoJSonFile-load-bar"></div>
+                  <div id="submit-geoJsonFile-load-percent"></div>
+               </div>
+            </div>
          </div>
          <!---------------->
 
@@ -236,12 +243,12 @@
          </div>
          <div id='msg-error'></div>
 
-         <div id="load">
-            <div id="load-stage"></div>
-            <div id="load-status">
-               <div id="load-bar"></div>
-               <div id="load-percent">0.00%</div>
-               <div id="load-spinner"></div>
+         <div id="msg-load">
+            <div id="msg-load-stage"></div>
+            <div id="msg-load-status">
+               <div id="msg-load-bar"></div>
+               <div id="msg-load-percent">0.00%</div>
+               <div id="msg-load-spinner"></div>
             </div>
          </div>
       </div>
