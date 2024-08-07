@@ -26,6 +26,12 @@ using util::geo::DPoint;
 using util::geo::FPoint;
 using util::geo::latLngToWebMerc;
 
+// Different SPAQRL queries to obtain the WKT geometries from an endpoint.
+// It depends on the endpoint which query is used, see `getQuery`.
+//
+// NOTE: It is important that the order of the geometries is deterministic.
+// We use `INTERNAL SORT BY` instead of `ORDER BY` because the former is
+// more efficient (and the actual order does not matter).
 const static std::string QUERY_ASGEOMETRY =
     "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
     "SELECT ?geometry WHERE {"
@@ -87,15 +93,6 @@ std::string GeomCache::getCountQuery(const std::string &backendUrl) const {
     return "SELECT ?count WHERE { VALUES ?count { 0 } }";
   }
   query.insert(pos, "SELECT (COUNT(?geometry) AS ?count) WHERE { ");
-  // INTERNAL SORT BY ?subject instead of INTERNAL SORT BY ?geometry
-  // for the COUNT query (because the former query is cached).
-  // auto sortPos = query.find("INTERNAL SORT BY ?geometry");
-  // if (sortPos == std::string::npos) {
-  //   LOG(ERROR) << "Could not find INTERNAL SORT BY ?geometry in query: "
-  //              << query;
-  //   return "SELECT ?count WHERE { VALUES ?count { 0 } }";
-  // }
-  // query.replace(sortPos, std::string::npos, "INTERNAL SORT BY ?subject }");
   query.append(" }");
   return query;
 }
