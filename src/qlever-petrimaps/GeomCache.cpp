@@ -833,12 +833,13 @@ util::geo::DLine GeomCache::parseLineString(const std::string &a,
   assert(end);
 
   while (true) {
+    auto next =
+        static_cast<const char *>(memchr(a.c_str() + p, ' ', a.size() - p));
+
+    if (!next) break;
+
     auto point = latLngToWebMerc(
-        DPoint(util::atof(a.c_str() + p, 10),
-               util::atof(static_cast<const char *>(
-                              memchr(a.c_str() + p, ' ', a.size() - p)) +
-                              1,
-                          10)));
+        DPoint(util::atof(a.c_str() + p, 10), util::atof(next + 1, 10)));
 
     if (pointValid(point)) line.push_back(point);
 
@@ -854,12 +855,15 @@ util::geo::DLine GeomCache::parseLineString(const std::string &a,
 
 // _____________________________________________________________________________
 util::geo::FPoint GeomCache::parsePoint(const std::string &a, size_t p) const {
-  auto point = latLngToWebMerc(FPoint(
-      util::atof(a.c_str() + p, 10),
-      util::atof(
-          static_cast<const char *>(memchr(a.c_str() + p, ' ', a.size() - p)) +
-              1,
-          10)));
+  auto next =
+      static_cast<const char *>(memchr(a.c_str() + p, ' ', a.size() - p));
+
+  if (!next)
+    return {std::numeric_limits<float>::infinity(),
+            std::numeric_limits<float>::infinity()};
+
+  auto point = latLngToWebMerc(
+      FPoint(util::atof(a.c_str() + p, 10), util::atof(next + 1, 10)));
 
   return point;
 }
