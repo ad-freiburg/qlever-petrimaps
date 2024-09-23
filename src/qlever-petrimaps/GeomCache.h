@@ -7,13 +7,13 @@
 
 #include <curl/curl.h>
 
+#include <atomic>
 #include <fstream>
 #include <map>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <atomic>
 
 #include "qlever-petrimaps/Misc.h"
 #include "util/geo/Geo.h"
@@ -24,8 +24,7 @@ class GeomCache {
  public:
   GeomCache() : _backendUrl(""), _curl(0) {}
   explicit GeomCache(const std::string& backendUrl)
-      : _backendUrl(backendUrl),
-        _curl(curl_easy_init()) {}
+      : _backendUrl(backendUrl), _curl(curl_easy_init()) {}
 
   GeomCache& operator=(GeomCache&& o) {
     _backendUrl = o._backendUrl;
@@ -106,13 +105,16 @@ class GeomCache {
   std::atomic<size_t> _curRow;
   size_t _curUniqueGeom;
 
-  enum _LoadStatusStages {Parse = 1, ParseIds, FromFile};
+  enum _LoadStatusStages { Parse = 1, ParseIds, FromFile };
   _LoadStatusStages _loadStatusStage = Parse;
 
   static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
-  static size_t writeCbIds(void* contents, size_t size, size_t nmemb, void* userp);
-  static size_t writeCbCount(void* contents, size_t size, size_t nmemb, void* userp);
-  static size_t writeCbString(void* contents, size_t size, size_t nmemb, void* userp);
+  static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
+                           void* userp);
+  static size_t writeCbCount(void* contents, size_t size, size_t nmemb,
+                             void* userp);
+  static size_t writeCbString(void* contents, size_t size, size_t nmemb,
+                              void* userp);
 
   // Get the right SPARQL query for the given backend.
   const std::string& getQuery(const std::string& backendUrl) const;
@@ -122,11 +124,12 @@ class GeomCache {
 
   std::string queryUrl(std::string query, size_t offset, size_t limit) const;
 
-  util::geo::DLine parseLineString(const std::string& a, size_t p) const;
   util::geo::FPoint parsePoint(const std::string& a, size_t p) const;
 
   static bool pointValid(const util::geo::FPoint& p);
   static bool pointValid(const util::geo::DPoint& p);
+
+  static util::geo::DLine parseLineString(const std::string& a, size_t p);
 
   void insertLine(const util::geo::DLine& l, bool isArea);
 

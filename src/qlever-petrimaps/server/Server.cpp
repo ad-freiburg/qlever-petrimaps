@@ -113,13 +113,17 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
     }
   } catch (const std::runtime_error& e) {
     a = util::http::Answer("400 Bad Request", e.what());
+    LOG(ERROR) << e.what();
   } catch (const std::invalid_argument& e) {
     a = util::http::Answer("400 Bad Request", e.what());
+    LOG(ERROR) << e.what();
   } catch (const std::exception& e) {
     a = util::http::Answer("500 Internal Server Error", e.what());
+    LOG(ERROR) << e.what();
   } catch (...) {
     a = util::http::Answer("500 Internal Server Error",
                            "Internal Server Error.");
+    LOG(ERROR) << "Unknown failure occured.";
   }
 
   a.params["Access-Control-Allow-Origin"] = "*";
@@ -368,7 +372,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
         // the factor depends on the render thickness of the line, make
         // this configurable!
-        const auto& denseLine = densify(r->extractLineGeom(lid - I_OFFSET), res);
+        const auto& denseLine =
+            densify(r->extractLineGeom(lid - I_OFFSET), res);
 
         for (const auto& p : denseLine) {
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
@@ -844,7 +849,8 @@ std::string Server::parseUrl(std::string u, std::string pl,
   return util::urlDecode(parts.front());
 }
 
-void Server::pngWriteRowCb(png_structp png_ptr, png_uint_32 row, int pass) {
+// _____________________________________________________________________________
+void Server::pngWriteRowCb(png_structp, png_uint_32 row, int) {
   _curRow = row;
 }
 
@@ -876,7 +882,8 @@ inline void pngErrorCb(png_structp, png_const_charp error_msg) {
 }
 
 // _____________________________________________________________________________
-void Server::writePNG(const unsigned char* data, size_t w, size_t h, int sock) const {
+void Server::writePNG(const unsigned char* data, size_t w, size_t h,
+                      int sock) const {
   png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr,
                                                 pngErrorCb, pngWarnCb);
   if (!png_ptr) return;
@@ -907,7 +914,8 @@ void Server::writePNG(const unsigned char* data, size_t w, size_t h, int sock) c
   png_set_IHDR(png_ptr, info_ptr, w, h, bit_depth, color_type, interlace_type,
                PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
 
-  png_bytep* row_pointers = (png_byte**)png_malloc(png_ptr, h * sizeof(png_bytep));
+  png_bytep* row_pointers =
+      (png_byte**)png_malloc(png_ptr, h * sizeof(png_bytep));
 
   for (size_t y = 0; y < h; ++y) {
     row_pointers[y] = const_cast<png_bytep>(data + y * w * 4);
@@ -1143,15 +1151,15 @@ util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
   double serverPercent = 0.05;
   double geomCacheLoadStatusPercent = cache->getLoadStatusPercent(true);
   double serverLoadStatusPercent = getLoadStatusPercent();
-  double totalPercent = geomCachePercent * geomCacheLoadStatusPercent + serverPercent * serverLoadStatusPercent;
+  double totalPercent = geomCachePercent * geomCacheLoadStatusPercent +
+                        serverPercent * serverLoadStatusPercent;
 
   int loadStatusStage = cache->getLoadStatusStage();
   size_t totalProgress = cache->getTotalProgress();
   size_t currentProgress = cache->getCurrentProgress();
 
   std::stringstream json;
-  json << "{\"percent\": " << totalPercent
-       << ", \"stage\": " << loadStatusStage
+  json << "{\"percent\": " << totalPercent << ", \"stage\": " << loadStatusStage
        << ", \"totalProgress\": " << totalProgress
        << ", \"currentProgress\": " << currentProgress << "}";
   util::http::Answer ans = util::http::Answer("200 OK", json.str());
@@ -1191,6 +1199,7 @@ std::string Server::getSessionId() const {
   return std::to_string(d(rng));
 }
 
+// _____________________________________________________________________________
 double Server::getLoadStatusPercent() const {
   if (_totalSize == 0) {
     return 0.0;
@@ -1202,6 +1211,7 @@ double Server::getLoadStatusPercent() const {
   return percent;
 }
 
+// _____________________________________________________________________________
 void Server::createCache(const std::string& backend) const {
   std::shared_ptr<GeomCache> cache;
 
@@ -1218,7 +1228,6 @@ void Server::createCache(const std::string& backend) const {
 
 // _____________________________________________________________________________
 std::string Server::loadCache(const std::string& backend) const {
-  // std::shared_ptr<Requestor> reqor;
   std::shared_ptr<GeomCache> cache = _caches[backend];
 
   try {
