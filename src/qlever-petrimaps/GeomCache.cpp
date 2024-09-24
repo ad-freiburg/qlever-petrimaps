@@ -217,10 +217,6 @@ void GeomCache::parse(const char *c, size_t size) {
               _linesFSize++;
               insertLine(line, false);
 
-              if (line.size() > 10000) {
-                std::cout << _dangling << std::endl;
-              }
-
               IdMapping idm{0, I_OFFSET + _linesFSize - 1};
               _lastQidToId = idm;
               _qidToIdF.write(reinterpret_cast<const char *>(&idm),
