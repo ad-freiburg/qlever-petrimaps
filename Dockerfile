@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM ubuntu:24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -22,6 +22,19 @@ ADD web /web
 
 RUN mkdir build && cd build && cmake .. && make -j8
 
-WORKDIR /
+FROM ubuntu:24.04 AS runtime
 
-ENTRYPOINT ["./build/petrimaps"]
+ENV DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /
+RUN apt update &&\
+    apt install -y --no-install-recommends \
+      ca-certificates \
+      xxd \
+      libgomp1 \
+      libpng-dev \
+      libcurl4-gnutls-dev &&\
+    rm -rf /var/lib/apt/lists/*
+COPY --from=builder /build/petrimaps /petrimaps
+
+ENTRYPOINT ["/petrimaps"]
