@@ -26,75 +26,67 @@ using util::geo::DPoint;
 using util::geo::FPoint;
 using util::geo::latLngToWebMerc;
 
-const static std::string QUERY =
-    "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
-    "SELECT ?geometry WHERE {"
-    " ?osm_id geo:hasGeometry ?geometry "
-    "} INTERNAL SORT BY ?geometry";
-
-const static std::string COUNT_QUERY =
-    "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
-    "SELECT (COUNT(?geometry) as ?count) WHERE { "
-    " ?osm_id geo:hasGeometry ?geometry "
-    "}";
-
+// Different SPAQRL queries to obtain the WKT geometries from an endpoint.
+// It depends on the endpoint which query is used, see `getQuery`.
+//
+// NOTE: It is important that the order of the geometries is deterministic.
+// We use `INTERNAL SORT BY` instead of `ORDER BY` because the former is
+// more efficient (and the actual order does not matter).
 const static std::string QUERY_ASWKT =
     "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
     "SELECT ?geometry WHERE {"
-    " ?osm_id geo:hasGeometry ?m . ?m geo:asWKT ?geometry "
+    " ?subject geo:asWKT ?geometry "
     "} INTERNAL SORT BY ?geometry";
 
-const static std::string COUNT_QUERY_ASWKT =
-    "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
-    "SELECT (COUNT(?geometry) AS ?count) WHERE {"
-    " ?osm_id geo:hasGeometry ?m . ?m geo:asWKT ?geometry "
+const static std::string QUERY_WDTP625 =
+    "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
+    "SELECT ?geometry WHERE {"
+    "  ?subject wdt:P625 ?geometry"
+    "} INTERNAL SORT BY ?geometry";
+
+const static std::string QUERY_WDTP625_SERVICE =
+    "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
+    "SELECT ?geometry WHERE {"
+    "  SERVICE <https://qlever.cs.uni-freiburg.de/api/wikidata> {"
+    "    SELECT ?geometry WHERE {"
+    "      ?subject wdt:P625 ?geometry"
+    "    } INTERNAL SORT BY ?geometry"
+    "  }"
     "}";
 
-const static std::string QUERY_WD =
-    "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
-    "SELECT ?coord WHERE {"
-    "  ?ob wdt:P625 ?coord"
-    "} INTERNAL SORT BY ?coord";
-
-const static std::string COUNT_QUERY_WD =
-    "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
-    "SELECT (COUNT(?coord) as ?count) WHERE { "
-    "  ?ob wdt:P625 ?coord"
-    "}";
-
-// Helper function that returns one of the given three query strings based on
-// the `backendUrl`. Used for `getQuery` and `getCountQuery` below.
 // _____________________________________________________________________________
-static const std::string &selectQueryBasedOnUrl(const std::string &backendUrl,
-                                                const std::string &query1,
-                                                const std::string &query2,
-                                                const std::string &query3) {
-  // Helper lambda that returns true if the backend (part after the final
-  // slash) starts with the given prefix.
-  size_t pos = backendUrl.find_last_of('/');
-  pos = pos != std::string::npos ? pos + 1 : 0;
-  auto backendStartsWith = [&pos, &backendUrl](const std::string &prefix) {
-    return backendUrl.find(prefix, pos) == pos;
+const std::string &GeomCache::getQuery(const std::string &backendUrl) const {
+  // Helper lambda that returns true if the backend name (the part after the
+  // final slash) starts with the given prefix.
+  size_t backendPos = backendUrl.find_last_of('/');
+  backendPos = backendPos != std::string::npos ? backendPos + 1 : 0;
+  auto backendStartsWith = [&backendPos,
+                            &backendUrl](const std::string &prefix) {
+    return backendUrl.find(prefix, backendPos) == backendPos;
   };
-  if (backendStartsWith("osm")) {
-    return query1;
-  } else if (backendStartsWith("wikidata") || backendStartsWith("dblp")) {
-    return query2;
+
+  // Return query depending on the backend name.
+  if (backendStartsWith("wikidata") || backendStartsWith("dblp-plus")) {
+    return QUERY_WDTP625;
+  } else if (backendStartsWith("dblp")) {
+    return QUERY_WDTP625_SERVICE;
   } else {
-    return query3;
+    return QUERY_ASWKT;
   }
 }
 
 // _____________________________________________________________________________
-const std::string &GeomCache::getQuery(const std::string &backendUrl) const {
-  return selectQueryBasedOnUrl(backendUrl, QUERY_ASWKT, QUERY_WD, QUERY);
-}
-
-// _____________________________________________________________________________
-const std::string &GeomCache::getCountQuery(
-    const std::string &backendUrl) const {
-  return selectQueryBasedOnUrl(backendUrl, COUNT_QUERY_ASWKT, COUNT_QUERY_WD,
-                               COUNT_QUERY);
+std::string GeomCache::getCountQuery(const std::string &backendUrl) const {
+  // Modify the query from `getQuery` to count the number of geometries.
+  std::string query = getQuery(backendUrl);
+  auto pos = query.find("SELECT");
+  if (pos == std::string::npos) {
+    LOG(ERROR) << "Could not find SELECT in query: " << query;
+    return "SELECT ?count WHERE { VALUES ?count { 0 } }";
+  }
+  query.insert(pos, "SELECT (COUNT(?geometry) AS ?count) WHERE { ");
+  query.append(" }");
+  return query;
 }
 
 // _____________________________________________________________________________
