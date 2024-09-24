@@ -679,13 +679,15 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
     }
 
     auto ll =
-        webMercToLatLng<float>(res.pos.front().getX(), res.pos.front().getY());
+        webMercToLatLng<float>(res.pos.getX(), res.pos.getY());
 
     json << "]";
     json << std::setprecision(10) << ",\"ll\":{\"lat\" : " << ll.getY()
          << ",\"lng\":" << ll.getX() << "}";
 
-    if (res.poly.size()) {
+		if (res.poly.size() + res.point.size() + res.line.size() > 1) {
+			// TODO: handle multigeometry case
+		} else  if (res.poly.size()) {
       json << ",\"geom\":";
       GeoJsonOutput out(json);
       out.printLatLng(res.poly, {});
@@ -696,7 +698,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
     } else {
       json << ",\"geom\":";
       GeoJsonOutput out(json);
-      out.printLatLng(res.pos, {});
+      out.printLatLng(res.point, {});
     }
 
     json << "}";

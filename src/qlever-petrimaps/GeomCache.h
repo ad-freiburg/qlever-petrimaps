@@ -124,14 +124,22 @@ class GeomCache {
 
   std::string queryUrl(std::string query, size_t offset, size_t limit) const;
 
-  util::geo::FPoint parsePoint(const std::string& a, size_t p) const;
+  util::geo::FPoint createPoint(const std::string& a, size_t p) const;
 
   static bool pointValid(const util::geo::FPoint& p);
   static bool pointValid(const util::geo::DPoint& p);
 
-  static util::geo::DLine parseLineString(const std::string& a, size_t p);
+  static util::geo::DLine createLineString(const std::string& a, size_t p);
+
+	size_t parsePolygon(const std::string& str, size_t p, size_t end, size_t* i);
+
+	size_t parseMultiPoint(const std::string &str, size_t p, size_t end, size_t* i);
+	size_t parseMultiLineString(const std::string &str, size_t p, size_t end, size_t* i);
+  size_t parseMultiPolygon(const std::string &str, size_t p, size_t end, size_t* i);
 
   void insertLine(const util::geo::DLine& l, bool isArea);
+
+	static std::vector<size_t> getGeomStarts(const std::string &str, size_t a);
 
   std::string indexHashFromDisk(const std::string& fname);
 
