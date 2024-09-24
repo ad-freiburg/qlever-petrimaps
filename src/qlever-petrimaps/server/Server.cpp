@@ -569,7 +569,17 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
 
   std::stringstream json;
 
-  if (res.poly.size()) {
+  if ((res.poly.size() != 0) + (res.point.size() != 0) +
+          (res.line.size() != 0) >
+      1) {
+    util::geo::Collection<double> col;
+    col.push_back(res.poly);
+    col.push_back(res.line);
+    col.push_back(res.point);
+
+    GeoJsonOutput out(json);
+    out.printLatLng(col, dict);
+  } else if (res.poly.size()) {
     GeoJsonOutput out(json);
     out.printLatLng(res.poly, dict);
   } else if (res.line.size()) {
@@ -577,7 +587,7 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
     out.printLatLng(res.line, dict);
   } else {
     GeoJsonOutput out(json);
-    out.printLatLng(res.pos, dict);
+    out.printLatLng(res.point, dict);
   }
 
   auto answ = util::http::Answer("200 OK", json.str());
@@ -678,16 +688,24 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
       first = false;
     }
 
-    auto ll =
-        webMercToLatLng<float>(res.pos.getX(), res.pos.getY());
+    auto ll = webMercToLatLng<float>(res.pos.getX(), res.pos.getY());
 
     json << "]";
     json << std::setprecision(10) << ",\"ll\":{\"lat\" : " << ll.getY()
          << ",\"lng\":" << ll.getX() << "}";
 
-		if (res.poly.size() + res.point.size() + res.line.size() > 1) {
-			// TODO: handle multigeometry case
-		} else  if (res.poly.size()) {
+    if ((res.poly.size() != 0) + (res.point.size() != 0) +
+            (res.line.size() != 0) >
+        1) {
+      util::geo::Collection<double> col;
+      col.push_back(res.poly);
+      col.push_back(res.line);
+      col.push_back(res.point);
+
+      json << ",\"geom\":";
+      GeoJsonOutput out(json);
+      out.printLatLng(col, {});
+    } else if (res.poly.size()) {
       json << ",\"geom\":";
       GeoJsonOutput out(json);
       out.printLatLng(res.poly, {});
@@ -852,9 +870,7 @@ std::string Server::parseUrl(std::string u, std::string pl,
 }
 
 // _____________________________________________________________________________
-void Server::pngWriteRowCb(png_structp, png_uint_32 row, int) {
-  _curRow = row;
-}
+void Server::pngWriteRowCb(png_structp, png_uint_32 row, int) { _curRow = row; }
 
 // _____________________________________________________________________________
 inline void pngWriteCb(png_structp png_ptr, png_bytep data, png_size_t length) {

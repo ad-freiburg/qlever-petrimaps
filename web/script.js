@@ -142,7 +142,7 @@ function loadMap(id, bounds, numObjects) {
     map.fitBounds(boundsLatLng);
     sessionId = id;
 
-    document.getElementById("stats").innerHTML = "<span>Showing " + numObjects + " objects</span>";
+    document.getElementById("stats").innerHTML = "<span>Showing " + numObjects + (numObjects > 1 ? " objects" : " object") + "</span>";
 
 	const heatmapLayer = L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
