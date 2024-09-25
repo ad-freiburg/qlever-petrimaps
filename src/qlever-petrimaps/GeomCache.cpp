@@ -26,6 +26,9 @@ using util::geo::DPoint;
 using util::geo::FPoint;
 using util::geo::latLngToWebMerc;
 
+// change on each index-breaking change to the code base
+const static std::string INDEX_HASH_PREFIX = "_1_";
+
 // Different SPAQRL queries to obtain the WKT geometries from an endpoint.
 // It depends on the endpoint which query is used, see `getQuery`.
 //
@@ -1313,7 +1316,7 @@ std::string GeomCache::requestIndexHash() {
       return "";
     }
 
-    return response;
+    return INDEX_HASH_PREFIX + response;
   } else {
     LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request for index hash.";
     return "";
