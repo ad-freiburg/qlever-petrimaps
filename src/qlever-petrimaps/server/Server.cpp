@@ -651,7 +651,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   // res of -1 means dont render clusters
   if (style == HEATMAP || reso >= THRESHOLD) reso = -1;
 
-  LOG(INFO) << "[SERVER] Click at " << x << ", " << y;
+  LOG(DEBUG) << "[SERVER] Click at " << x << ", " << y;
 
   std::shared_ptr<Requestor> reqor;
   {
