@@ -159,6 +159,7 @@ function loadMap(id, bounds, numObjects, autoThreshold) {
 	const objectsLayer = L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
         maxZoom: 19,
+        opacity: 0.9,
         layers: id,
         styles: ["objects"],
         format: 'image/png'
@@ -167,7 +168,7 @@ function loadMap(id, bounds, numObjects, autoThreshold) {
     const autoHeatmapLayer = L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
         maxZoom: 15,
-        opacity: 0.8,
+        opacity: numObjects > autoThreshold ? 0.8 : 0.9,
         layers: id,
         styles: numObjects > autoThreshold ? ["heatmap"] : ["objects"],
         format: 'image/png',
@@ -177,6 +178,7 @@ function loadMap(id, bounds, numObjects, autoThreshold) {
     const autoObjectLayer = L.nonTiledLayer.wms('heatmap', {
         minZoom: 16,
         maxZoom: 19,
+        opacity: 0.9,
         layers: id,
         styles: ["objects"],
         format: 'image/png'
