@@ -51,10 +51,12 @@ const static double THRESHOLD = 200;
 static std::atomic<size_t> _curRow;
 
 // _____________________________________________________________________________
-Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime)
+Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime,
+               size_t autoThreshold)
     : _maxMemory(maxMemory),
       _cacheDir(cacheDir),
-      _cacheLifetime(cacheLifetime) {
+      _cacheLifetime(cacheLifetime),
+      _autoThreshold(autoThreshold) {
   std::thread t(&Server::clearOldSessions, this);
   t.detach();
 }
@@ -834,7 +836,8 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   std::stringstream json;
   json << std::fixed << "{\"qid\" : \"" << sessionId << "\",\"bounds\":[["
        << llX << "," << llY << "],[" << urX << "," << urY << "]]"
-       << ",\"numobjects\":" << numObjs << "}";
+       << ",\"numobjects\":" << numObjs
+       << ",\"autothreshold\":" << _autoThreshold << "}";
 
   auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";

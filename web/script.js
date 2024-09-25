@@ -123,19 +123,21 @@ function getGeoJsonLayer(geom) {
             });
 }
 
-function showError(error) {
-    error = error.toString();
+function showError(msg) {
+    msg = msg.toString();
     document.getElementById("msg").style.display = "block";
     document.getElementById("msg-info").style.display = "none";
     document.getElementById("load").style.display = "none";
-    document.getElementById("msg-heading").style.color = "red";
-    document.getElementById("msg-heading").style.fontSize = "20px";
-    document.getElementById("msg-heading").innerHTML = error.split("\n")[0];
-    if (error.search("\n") > 0) document.getElementById("msg-error").innerHTML = "<pre>" + error.substring(error.search("\n")) + "</pre>";
-    else document.getElementById("msg-error").innerHTML = "";
+    const heading = document.getElementById("msg-heading");
+    const error = document.getElementById("msg-error");
+    heading.style.color = "red";
+    heading.style.fontSize = "20px";
+    heading.innerHTML = msg.split("\n")[0];
+    if (msg.search("\n") > 0) error.innerHTML = "<pre>" + msg.substring(msg.search("\n")) + "</pre>";
+    else error.innerHTML = "";
 }
 
-function loadMap(id, bounds, numObjects) {
+function loadMap(id, bounds, numObjects, autoThreshold) {
     const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
     const ur =  L.Projection.SphericalMercator.unproject({"x": bounds[1][0], "y":bounds[1][1]});
     const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
@@ -167,7 +169,7 @@ function loadMap(id, bounds, numObjects) {
         maxZoom: 15,
         opacity: 0.8,
         layers: id,
-        styles: ["heatmap"],
+        styles: numObjects > autoThreshold ? ["heatmap"] : ["objects"],
         format: 'image/png',
         transparent: true,
     });
@@ -199,8 +201,7 @@ function loadMap(id, bounds, numObjects) {
     }
 
     map.on('click', function(e) {
-        const ll = e.latlng;
-        const pos = L.Projection.SphericalMercator.project(ll);
+        const pos = L.Projection.SphericalMercator.project(e.latlng);
 
         const w = map.getPixelBounds().max.x - map.getPixelBounds().min.x;
         const h = map.getPixelBounds().max.y - map.getPixelBounds().min.y;
@@ -267,8 +268,6 @@ function updateLoad(stage, percent, totalProgress, currentProgress) {
 }
 
 function fetchResults() {
-    console.log("Fetching results...");
-
     fetch('query' + window.location.search)
     .then(response => {
         if (!response.ok) return response.text().then(text => {throw new Error(text)});
@@ -276,7 +275,7 @@ function fetchResults() {
         })
     .then(response => response.json())
     .then(data => {
-        loadMap(data["qid"], data["bounds"], data["numobjects"]);
+        loadMap(data["qid"], data["bounds"], data["numobjects"], data["autothreshold"]);
     })
     .catch(error => showError(error));
 }
@@ -287,8 +286,6 @@ function fetchLoadStatusInterval(interval) {
 }
 
 async function fetchLoadStatus() {
-    console.log("Fetching load status...");
-
     fetch('loadstatus?backend=' + qleverBackend)
     .then(response => {
         if (!response.ok) return response.text().then(text => {throw new Error(text)});
@@ -312,9 +309,7 @@ fetchResults();
 fetchLoadStatusInterval(333);
 
 function _onLayerLoad(e) {
-    console.log("Map finished loading.");
     clearInterval(loadStatusIntervalId);
-    
     document.getElementById("msg").style.display = "none";
 }
 
