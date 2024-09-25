@@ -1116,6 +1116,13 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
             first = true;
           } catch (std::runtime_error& e) {
           }
+          try {
+            auto geom = util::geo::collectionFromWKT<double>(wkt);
+            if (first) ss << ",";
+            geoJsonOut.print(geom, dict);
+            first = true;
+          } catch (std::runtime_error& e) {
+          }
           ss << "\n";
         }
 

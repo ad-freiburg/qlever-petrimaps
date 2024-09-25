@@ -831,14 +831,6 @@ std::vector<size_t> GeomCache::getGeomStarts(const std::string &str, size_t p) {
     a++;
   }
 
-  a = p;
-  while (1) {
-    a = str.find("GEOMETRYCOLLECTION(", a);
-    if (a == std::string::npos) break;
-    starts.push_back(a);
-    a++;
-  }
-
   starts.push_back(std::string::npos);
 
   std::sort(starts.begin(), starts.end());
