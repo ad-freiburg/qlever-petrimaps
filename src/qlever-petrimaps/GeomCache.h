@@ -118,7 +118,7 @@ class GeomCache {
 
   // Get the right SPARQL query for the given backend.
   const std::string& getQuery(const std::string& backendUrl) const;
-  const std::string& getCountQuery(const std::string& backendUrl) const;
+  std::string getCountQuery(const std::string& backendUrl) const;
 
   std::string requestIndexHash();
 
