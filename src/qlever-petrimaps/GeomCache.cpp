@@ -364,6 +364,10 @@ double GeomCache::getLoadStatusPercent(bool total) {
     case _LoadStatusStages::FromFile:
       totalPercent = _curRow / static_cast<double>(_totalSize) * 100.0;
       break;
+
+    case _LoadStatusStages::Finished:
+      totalPercent = 0;
+      break;
   }
 
   return std::min(100.0, totalPercent);
@@ -1411,5 +1415,7 @@ std::string GeomCache::load(const std::string &cacheDir) {
   }
 
   _ready = true;
+  _loadStatusStage = Finished;
+
   return _indexHash;
 }

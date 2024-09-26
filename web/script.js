@@ -252,16 +252,25 @@ function updateLoad(stage, percent, totalProgress, currentProgress) {
             infoHeadingElem.innerHTML = "Filling the geometry cache";
             infoDescElem.innerHTML = "This needs to be done only once for each new version of the dataset and does not have to be repeated for subsequent queries.";
             stageElem.innerHTML = `Parsing ${currentProgress}/${totalProgress} geometries... (1/2)`;
+            document.getElementById("load-status").style.display = "grid";
             break;
         case 2:
             infoHeadingElem.innerHTML = "Filling the geometry cache";
             infoDescElem.innerHTML = "This needs to be done only once for each new version of the dataset and does not have to be repeated for subsequent queries.";
             stageElem.innerHTML = `Fetching ${currentProgress}/${totalProgress} geometries... (2/2)`;
+            document.getElementById("load-status").style.display = "grid";
             break;
         case 3:
             infoHeadingElem.innerHTML = "Reading cached geometries from disk";
             infoDescElem.innerHTML = "This needs to be done only once after the server has been started and does not have to be repeated for subsequent queries.";
             stageElem.innerHTML = `Reading ${currentProgress}/${totalProgress} geometries from disk... (1/1)`;
+            document.getElementById("load-status").style.display = "grid";
+            break;
+        case 4:
+            infoHeadingElem.innerHTML = "Fetching query result...";
+            infoDescElem.innerHTML = "";
+            stageElem.innerHTML = "";
+            document.getElementById("load-status").style.display = "none";
             break;
     }
     barElem.style.width = percent + "%";
