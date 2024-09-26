@@ -55,6 +55,7 @@ class GeomCache {
   void requestPart(size_t offset);
 
   void requestIds();
+  void requestIdPart(size_t offset);
 
   void parse(const char*, size_t size);
   void parseIds(const char*, size_t size);
@@ -103,6 +104,7 @@ class GeomCache {
   QLEVER_ID_TYPE _maxQid;
   size_t _totalSize = 0;
   std::atomic<size_t> _curRow;
+  std::atomic<size_t> _curIdRow;
   size_t _curUniqueGeom;
 
   enum _LoadStatusStages { Parse = 1, ParseIds, FromFile };
@@ -158,6 +160,8 @@ class GeomCache {
   std::fstream _qidToIdF;
 
   size_t _geometryDuplicates = 0;
+
+  size_t _lastQid = -1;
 
   IdMapping _lastQidToId;
 

@@ -380,22 +380,21 @@ size_t GeomCache::getCurrentProgress() { return _curRow; }
 
 // _____________________________________________________________________________
 void GeomCache::parseIds(const char *c, size_t size) {
-  _loadStatusStage = _LoadStatusStages::ParseIds;
-
-  size_t lastQid = -1;
   for (size_t i = 0; i < size; i++) {
     if (_raw.size() < 10000) _raw.push_back(c[i]);
     _curId.bytes[_curByte] = c[i];
     _curByte = (_curByte + 1) % 8;
 
     if (_curByte == 0) {
-      if (_curRow % 1000000 == 0) {
+      if (_curIdRow % 1000000 == 0) {
         LOG(INFO) << "[GEOMCACHE] "
-                  << "@ row " << _curRow << " (" << std::fixed
+                  << "@ row " << _curIdRow << " (" << std::fixed
                   << std::setprecision(2) << getLoadStatusPercent() << "%, "
                   << _pointsFSize << " points, " << _linesFSize
                   << " (open) polygons)";
       }
+
+      _curIdRow++;
 
       if (_curRow < _qidToId.size() && _qidToId[_curRow].qid == 0) {
         // if we have two consecutive and equivalent QLever ids, the geometry
@@ -404,7 +403,7 @@ void GeomCache::parseIds(const char *c, size_t size) {
         // in qlever using the same internal qlever ID. To avoid a false multi-
         // plication of results (all geoms of matching qlever ID are joined), we
         // set such repeated qlever IDs to an unnsed dummy value.
-        if (lastQid == _curId.val) {
+        if (_lastQid == _curId.val) {
           LOG(DEBUG) << "Found duplicate internal qlever ID " << _curId.val
                      << " for row " << _curRow
                      << ", ignoring this geometry duplicate!";
@@ -413,7 +412,7 @@ void GeomCache::parseIds(const char *c, size_t size) {
         } else {
           _qidToId[_curRow].qid = _curId.val;
         }
-        lastQid = _curId.val;
+        _lastQid = _curId.val;
         if (_curId.val > _maxQid) _maxQid = _curId.val;
       } else {
         LOG(WARN) << "The results for the binary IDs are out of sync.";
@@ -648,6 +647,12 @@ void GeomCache::request() {
     lastNum = _curRow - offset;
   }
 
+  if (_curRow != _totalSize) {
+    LOG(WARN) << "Last received row was " << _curRow << ", but expected "
+      << _totalSize << " rows (determined via count query)";
+    LOG(WARN) << "Last answer from QLever began with " << _raw;
+  }
+
   if (i == -1) throw std::runtime_error("Could not create temporary file");
 
   LOG(INFO) << "[GEOMCACHE] Building vectors...";
@@ -685,20 +690,53 @@ void GeomCache::request() {
 
 // _____________________________________________________________________________
 void GeomCache::requestIds() {
+  _loadStatusStage = _LoadStatusStages::ParseIds;
+
   _curByte = 0;
   _curRow = 0;
+  _curIdRow = 0;
   _curUniqueGeom = 0;
   _maxQid = 0;
+  _lastQid = -1;
   _exceptionPtr = 0;
 
   LOG(INFO) << "[GEOMCACHE] Query is " << getQuery(_backendUrl);
 
+  size_t lastNum = -1;
+
+  while (lastNum != 0) {
+    size_t offset = _curIdRow;
+    requestIdPart(offset);
+    lastNum = _curIdRow - offset;
+  }
+
+  if (_curIdRow != _totalSize) {
+    LOG(WARN) << "Last received row was " << _curIdRow << ", but expected "
+      << _totalSize << " rows (determined via count query)";
+    LOG(WARN) << "Last answer from QLever began with " << _raw;
+  }
+
+  LOG(INFO) << "[GEOMCACHE] Received " << _curIdRow << " rows";
+  LOG(INFO) << "[GEOMCACHE] Max QLever id was " << _maxQid;
+  LOG(INFO) << "[GEOMCACHE] Done";
+
+  // sorting by qlever id
+  LOG(INFO) << "[GEOMCACHE] Sorting results by qlever ID...";
+  std::stable_sort(_qidToId.begin(), _qidToId.end());
+  LOG(INFO) << "[GEOMCACHE] ... done";
+}
+
+// _____________________________________________________________________________
+void GeomCache::requestIdPart(size_t offset) {
+  CURLcode res;
+  char errbuf[CURL_ERROR_SIZE];
+
   if (_curl) {
-    auto qUrl = queryUrl(getQuery(_backendUrl), 0, MAXROWS);
-    LOG(INFO) << "[GEOMCACHE] Binary ID query URL is " << qUrl;
+    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 100000000);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbIds);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
+    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
     curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
@@ -710,7 +748,7 @@ void GeomCache::requestIds() {
 
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
-    curl_easy_perform(_curl);
+    res = curl_easy_perform(_curl);
 
     long httpCode = 0;
     curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
@@ -728,16 +766,18 @@ void GeomCache::requestIds() {
     if (_exceptionPtr) std::rethrow_exception(_exceptionPtr);
   } else {
     LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request.";
+    return;
   }
 
-  LOG(INFO) << "[GEOMCACHE] Received " << _curRow << " rows";
-  LOG(INFO) << "[GEOMCACHE] Max QLever id was " << _maxQid;
-  LOG(INFO) << "[GEOMCACHE] Done";
-
-  // sorting by qlever id
-  LOG(INFO) << "[GEOMCACHE] Sorting results by qlever ID...";
-  std::stable_sort(_qidToId.begin(), _qidToId.end());
-  LOG(INFO) << "[GEOMCACHE] ... done";
+  // check if there was an error
+  if (res != CURLE_OK) {
+    size_t len = strlen(errbuf);
+    if (len > 0) {
+      LOG(ERROR) << "[GEOMCACHE] " << errbuf;
+    } else {
+      LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
+    }
+  }
 }
 
 // _____________________________________________________________________________
