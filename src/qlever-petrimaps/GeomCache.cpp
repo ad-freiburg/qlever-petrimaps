@@ -301,7 +301,7 @@ void GeomCache::parse(const char *c, size_t size) {
             _curRow++;
             if (_curRow % 1000000 == 0) {
               LOG(INFO) << "[GEOMCACHE] "
-                        << "@ row " << _curRow << " (" << std::fixed
+                        << "@ " << _curRow << " (" << std::fixed
                         << std::setprecision(2) << getLoadStatusPercent()
                         << "%, " << _pointsFSize << " points, " << _linesFSize
                         << " (open) polygons (with " << _linePointsFSize
@@ -386,17 +386,19 @@ void GeomCache::parseIds(const char *c, size_t size) {
     _curByte = (_curByte + 1) % 8;
 
     if (_curByte == 0) {
-      if (_curIdRow % 1000000 == 0) {
+      _curRow++;
+
+      if (_curRow % 1000000 == 0) {
         LOG(INFO) << "[GEOMCACHE] "
-                  << "@ row " << _curIdRow << " (" << std::fixed
-                  << std::setprecision(2) << getLoadStatusPercent() << "%, "
-                  << _pointsFSize << " points, " << _linesFSize
-                  << " (open) polygons)";
+                  << "@ " << _curRow << " (" << std::fixed
+                  << std::setprecision(2) << getLoadStatusPercent()
+                  << "%, " << _pointsFSize << " points, " << _linesFSize
+                  << " (open) polygons (with " << _linePointsFSize
+                  << " points), " << _geometryDuplicates
+                  << " duplicates)";
       }
 
-      _curIdRow++;
-
-      if (_curRow < _qidToId.size() && _qidToId[_curRow].qid == 0) {
+      if (_curIdRow < _qidToId.size() && _qidToId[_curIdRow].qid == 0) {
         // if we have two consecutive and equivalent QLever ids, the geometry
         // was returned multiple times in the fill query. This can happen if the
         // same WKT string is used in multiple distinct objects, but then stored
@@ -407,10 +409,10 @@ void GeomCache::parseIds(const char *c, size_t size) {
           LOG(DEBUG) << "Found duplicate internal qlever ID " << _curId.val
                      << " for row " << _curRow
                      << ", ignoring this geometry duplicate!";
-          _qidToId[_curRow].qid = -1;
+          _qidToId[_curIdRow].qid = -1;
           _geometryDuplicates++;
         } else {
-          _qidToId[_curRow].qid = _curId.val;
+          _qidToId[_curIdRow].qid = _curId.val;
         }
         _lastQid = _curId.val;
         if (_curId.val > _maxQid) _maxQid = _curId.val;
@@ -418,7 +420,7 @@ void GeomCache::parseIds(const char *c, size_t size) {
         LOG(WARN) << "The results for the binary IDs are out of sync.";
         LOG(WARN) << "_curRow: " << _curRow
                   << " _qleverIdInt.size: " << _qidToId.size()
-                  << " cur val: " << _qidToId[_curRow].qid;
+                  << " cur val: " << _qidToId[_curIdRow].qid;
       }
 
       // if a qlever entity contained multiple geometries (MULTILINESTRING,
@@ -426,11 +428,11 @@ void GeomCache::parseIds(const char *c, size_t size) {
       // _qidToId; continuation geometries are marked by a
       // preliminary qlever ID of 1, while the first geometry always has a
       // preliminary id of 0
-      while (_curRow < _qidToId.size() - 1 && _qidToId[_curRow + 1].qid == 1) {
-        _qidToId[++_curRow].qid = _curId.val;
+      while (_curIdRow < _qidToId.size() - 1 && _qidToId[_curIdRow + 1].qid == 1) {
+        _qidToId[++_curIdRow].qid = _curId.val;
       }
 
-      _curRow++;
+      _curIdRow++;
     }
   }
 }
@@ -647,6 +649,8 @@ void GeomCache::request() {
     lastNum = _curRow - offset;
   }
 
+  LOG(INFO) << "Received " << _curRow << " rows";
+
   if (_curRow != _totalSize) {
     LOG(WARN) << "Last received row was " << _curRow << ", but expected "
       << _totalSize << " rows (determined via count query)";
@@ -705,18 +709,18 @@ void GeomCache::requestIds() {
   size_t lastNum = -1;
 
   while (lastNum != 0) {
-    size_t offset = _curIdRow;
+    size_t offset = _curRow;
     requestIdPart(offset);
-    lastNum = _curIdRow - offset;
+    lastNum = _curRow - offset;
   }
 
-  if (_curIdRow != _totalSize) {
-    LOG(WARN) << "Last received row was " << _curIdRow << ", but expected "
+  if (_curRow != _totalSize) {
+    LOG(WARN) << "Last received row was " << _curRow << ", but expected "
       << _totalSize << " rows (determined via count query)";
     LOG(WARN) << "Last answer from QLever began with " << _raw;
   }
 
-  LOG(INFO) << "[GEOMCACHE] Received " << _curIdRow << " rows";
+  LOG(INFO) << "[GEOMCACHE] Received " << _curRow << " rows";
   LOG(INFO) << "[GEOMCACHE] Max QLever id was " << _maxQid;
   LOG(INFO) << "[GEOMCACHE] Done";
 
@@ -732,7 +736,7 @@ void GeomCache::requestIdPart(size_t offset) {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 100000000);
+    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 1000000);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbIds);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
