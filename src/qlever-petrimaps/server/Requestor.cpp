@@ -449,7 +449,8 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
         util::geo::FPoint p;
         if (i >= _objects.size()) {
           size_t cid = i - _objects.size();
-          p = clusterGeom(cid, res);
+          auto dp = clusterGeom(cid, res);
+          p = {dp.getX(), dp.getY()};
         } else {
           p = _cache->getPoints()[_objects[i].first];
         }
@@ -573,12 +574,14 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
     else
       row = _objects[nearest].second;
 
+    auto points = geomPointGeoms(nearest, res);
+
     return {true,
             nearest >= _objects.size() ? nearest - _objects.size() : nearest,
-            geomPointGeoms(nearest, res),
+            points.size() == 1 ? points[0] : util::geo::centroid(points),
             requestRow(row),
-            {},
-            {}};
+            points,
+            geomLineGeoms(nearest, rad / 10), geomPolyGeoms(nearest, rad / 10)};
   }
 
   if (dBestL < rad && dBestL <= dBest) {
@@ -590,29 +593,33 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
 
     if (isArea && util::geo::contains(rp, util::geo::DPolygon(dline))) {
       return {true,  nearestL,
-              {frp}, requestRow(_objects[nearestL].second),
-              {},    geomPolyGeoms(nearestL, rad / 10)};
+              {frp.getX(), frp.getY()}, requestRow(_objects[nearestL].second),
+                geomPointGeoms(nearestL, res),
+              geomLineGeoms(nearestL, rad / 10), geomPolyGeoms(nearestL, rad / 10)};
     } else {
       if (isArea) {
         auto p = util::geo::PolyLine<double>(dline).projectOn(rp).p;
-        auto fp = util::geo::FPoint(p.getX(), p.getY());
+        auto fp = util::geo::DPoint(p.getX(), p.getY());
         return {true, nearestL,
-                {fp}, requestRow(_objects[nearestL].second),
-                {},   geomPolyGeoms(nearestL, rad / 10)};
+                fp, requestRow(_objects[nearestL].second),
+                geomPointGeoms(nearestL, res),
+                geomLineGeoms(nearestL, rad / 10), geomPolyGeoms(nearestL, rad / 10)};
       } else {
         auto p = util::geo::PolyLine<double>(dline).projectOn(rp).p;
-        auto fp = util::geo::FPoint(p.getX(), p.getY());
+        auto fp = util::geo::DPoint(p.getX(), p.getY());
+
         return {true,
                 nearestL,
-                {fp},
+                fp,
                 requestRow(_objects[nearestL].second),
+                geomPointGeoms(nearestL, res),
                 geomLineGeoms(nearestL, rad / 10),
-                {}};
+                geomPolyGeoms(nearestL, rad / 10)};
       }
     }
   }
 
-  return {false, 0, {{0, 0}}, {}, {}, {}};
+  return {false, 0, {0, 0}, {}, {}, {}, {}};
 }
 
 // _____________________________________________________________________________
@@ -628,12 +635,12 @@ const ResObj Requestor::getGeom(size_t id, double rad) const {
     bool isArea = Requestor::isArea(lineId);
 
     if (isArea) {
-      return {true, id, {{0, 0}}, {}, {}, geomPolyGeoms(id, rad / 10)};
+      return {true, id, {0, 0}, {}, geomPointGeoms(id, rad / 10), geomLineGeoms(id, rad / 10), geomPolyGeoms(id, rad / 10)};
     } else {
-      return {true, id, {{0, 0}}, {}, geomLineGeoms(id, rad / 10), {}};
+      return {true, id, {0, 0}, {}, geomPointGeoms(id, rad / 10), geomLineGeoms(id, rad / 10), geomPolyGeoms(id, rad / 10)};
     }
   } else {
-    return {true, id, geomPointGeoms(id), {}, {}, {}};
+    return {true, id, {0, 0}, {}, geomPointGeoms(id, rad / 10), geomLineGeoms(id, rad / 10), geomPolyGeoms(id, rad / 10)};
   }
 }
 
@@ -686,30 +693,32 @@ util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t oid,
   // catch multigeometries
   for (size_t i = oid;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
-    if (_objects[oid].first < I_OFFSET) continue;
+    if (_objects[i].first < I_OFFSET || Requestor::isArea(_objects[i].first - I_OFFSET)) continue;
     const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
     polys.push_back(util::geo::simplify(fline, eps));
   }
 
+if (oid > 0) {
   for (size_t i = oid - 1;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
-    if (_objects[oid].first < I_OFFSET) continue;
+    if (_objects[i].first < I_OFFSET || Requestor::isArea(_objects[i].first - I_OFFSET)) continue;
     const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
     polys.push_back(util::geo::simplify(fline, eps));
   }
+}
 
   return polys;
 }
 
 // _____________________________________________________________________________
-util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid) const {
+util::geo::MultiPoint<double> Requestor::geomPointGeoms(size_t oid) const {
   return geomPointGeoms(oid, -1);
 }
 
 // _____________________________________________________________________________
-util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid,
+util::geo::MultiPoint<double> Requestor::geomPointGeoms(size_t oid,
                                                        double res) const {
-  std::vector<util::geo::FPoint> points;
+  std::vector<util::geo::DPoint> points;
 
   if (!(res < 0) && oid >= _objects.size()) {
     return {clusterGeom(oid - _objects.size(), res)};
@@ -722,14 +731,18 @@ util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid,
   // catch multigeometries
   for (size_t i = oid;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
-    if (_objects[oid].first >= I_OFFSET) continue;
-    points.push_back(_cache->getPoints()[_objects[i].first]);
+    if (_objects[i].first >= I_OFFSET) continue;
+    auto p = _cache->getPoints()[_objects[i].first];
+    points.push_back({p.getX(), p.getY()});
   }
 
-  for (size_t i = oid - 1;
-       i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
-    if (_objects[oid].first >= I_OFFSET) continue;
-    points.push_back(_cache->getPoints()[_objects[i].first]);
+  if (oid > 0) {
+    for (size_t i = oid - 1;
+         i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
+      if (_objects[i].first >= I_OFFSET) continue;
+      auto p = _cache->getPoints()[_objects[i].first];
+      points.push_back({p.getX(), p.getY()});
+    }
   }
 
   return points;
@@ -743,27 +756,29 @@ util::geo::MultiPolygon<double> Requestor::geomPolyGeoms(size_t oid,
   // catch multigeometries
   for (size_t i = oid;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
-    if (_objects[oid].first < I_OFFSET) continue;
+    if (_objects[i].first < I_OFFSET || !Requestor::isArea(_objects[i].first - I_OFFSET)) continue;
     const auto& dline = extractLineGeom(_objects[i].first - I_OFFSET);
     polys.push_back(util::geo::DPolygon(util::geo::simplify(dline, eps)));
   }
 
+  if (oid > 0) {
   for (size_t i = oid - 1;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
-    if (_objects[oid].first < I_OFFSET) continue;
+    if (_objects[i].first < I_OFFSET || !Requestor::isArea(_objects[i].first - I_OFFSET)) continue;
     const auto& dline = extractLineGeom(_objects[i].first - I_OFFSET);
     polys.push_back(util::geo::DPolygon(util::geo::simplify(dline, eps)));
   }
+}
 
   return polys;
 }
 
 // _____________________________________________________________________________
-util::geo::FPoint Requestor::clusterGeom(size_t cid, double res) const {
+util::geo::DPoint Requestor::clusterGeom(size_t cid, double res) const {
   size_t oid = _clusterObjects[cid].first;
   const auto& pp = _cache->getPoints()[_objects[oid].first];
 
-  if (res < 0) return {pp};
+  if (res < 0) return {pp.getX(), pp.getY()};
 
   size_t num = _clusterObjects[cid].second.first;
   size_t tot = _clusterObjects[cid].second.second;
@@ -788,13 +803,13 @@ util::geo::FPoint Requestor::clusterGeom(size_t cid, double res) const {
     double y = pp.getY() + (rad + row * 13.0) * res *
                                cos(relpos * (2.0 * 3.14159265359 / tot));
 
-    return util::geo::FPoint{x, y};
+    return util::geo::DPoint{x, y};
   } else {
     float rad = 2 * tot;
 
     float x = pp.getX() + rad * res * sin(num * (2 * 3.14159265359 / tot));
     float y = pp.getY() + rad * res * cos(num * (2 * 3.14159265359 / tot));
 
-    return util::geo::FPoint{x, y};
+    return util::geo::DPoint{x, y};
   }
 }

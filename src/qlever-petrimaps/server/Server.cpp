@@ -51,10 +51,12 @@ const static double THRESHOLD = 200;
 static std::atomic<size_t> _curRow;
 
 // _____________________________________________________________________________
-Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime)
+Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime,
+               size_t autoThreshold)
     : _maxMemory(maxMemory),
       _cacheDir(cacheDir),
-      _cacheLifetime(cacheLifetime) {
+      _cacheLifetime(cacheLifetime),
+      _autoThreshold(autoThreshold) {
   std::thread t(&Server::clearOldSessions, this);
   t.detach();
 }
@@ -569,7 +571,17 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
 
   std::stringstream json;
 
-  if (res.poly.size()) {
+  if ((res.poly.size() != 0) + (res.point.size() != 0) +
+          (res.line.size() != 0) >
+      1) {
+    util::geo::Collection<double> col;
+    col.push_back(res.poly);
+    col.push_back(res.line);
+    col.push_back(res.point);
+
+    GeoJsonOutput out(json);
+    out.printLatLng(col, dict);
+  } else if (res.poly.size()) {
     GeoJsonOutput out(json);
     out.printLatLng(res.poly, dict);
   } else if (res.line.size()) {
@@ -577,7 +589,7 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
     out.printLatLng(res.line, dict);
   } else {
     GeoJsonOutput out(json);
-    out.printLatLng(res.pos, dict);
+    out.printLatLng(res.point, dict);
   }
 
   auto answ = util::http::Answer("200 OK", json.str());
@@ -639,7 +651,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   // res of -1 means dont render clusters
   if (style == HEATMAP || reso >= THRESHOLD) reso = -1;
 
-  LOG(INFO) << "[SERVER] Click at " << x << ", " << y;
+  LOG(DEBUG) << "[SERVER] Click at " << x << ", " << y;
 
   std::shared_ptr<Requestor> reqor;
   {
@@ -678,14 +690,24 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
       first = false;
     }
 
-    auto ll =
-        webMercToLatLng<float>(res.pos.front().getX(), res.pos.front().getY());
+    auto ll = webMercToLatLng<float>(res.pos.getX(), res.pos.getY());
 
     json << "]";
     json << std::setprecision(10) << ",\"ll\":{\"lat\" : " << ll.getY()
          << ",\"lng\":" << ll.getX() << "}";
 
-    if (res.poly.size()) {
+    if ((res.poly.size() != 0) + (res.point.size() != 0) +
+            (res.line.size() != 0) >
+        1) {
+      util::geo::Collection<double> col;
+      col.push_back(res.poly);
+      col.push_back(res.line);
+      col.push_back(res.point);
+
+      json << ",\"geom\":";
+      GeoJsonOutput out(json);
+      out.printLatLng(col, {});
+    } else if (res.poly.size()) {
       json << ",\"geom\":";
       GeoJsonOutput out(json);
       out.printLatLng(res.poly, {});
@@ -696,7 +718,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
     } else {
       json << ",\"geom\":";
       GeoJsonOutput out(json);
-      out.printLatLng(res.pos, {});
+      out.printLatLng(res.point, {});
     }
 
     json << "}";
@@ -814,7 +836,8 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   std::stringstream json;
   json << std::fixed << "{\"qid\" : \"" << sessionId << "\",\"bounds\":[["
        << llX << "," << llY << "],[" << urX << "," << urY << "]]"
-       << ",\"numobjects\":" << numObjs << "}";
+       << ",\"numobjects\":" << numObjs
+       << ",\"autothreshold\":" << _autoThreshold << "}";
 
   auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";
@@ -850,9 +873,7 @@ std::string Server::parseUrl(std::string u, std::string pl,
 }
 
 // _____________________________________________________________________________
-void Server::pngWriteRowCb(png_structp, png_uint_32 row, int) {
-  _curRow = row;
-}
+void Server::pngWriteRowCb(png_structp, png_uint_32 row, int) { _curRow = row; }
 
 // _____________________________________________________________________________
 inline void pngWriteCb(png_structp png_ptr, png_bytep data, png_size_t length) {
@@ -1090,6 +1111,13 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
           }
           try {
             auto geom = util::geo::multiLineFromWKT<double>(wkt);
+            if (first) ss << ",";
+            geoJsonOut.print(geom, dict);
+            first = true;
+          } catch (std::runtime_error& e) {
+          }
+          try {
+            auto geom = util::geo::collectionFromWKT<double>(wkt);
             if (first) ss << ",";
             geoJsonOut.print(geom, dict);
             first = true;

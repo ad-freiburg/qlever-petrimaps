@@ -25,7 +25,7 @@ enum MapStyle { HEATMAP, OBJECTS };
 class Server : public util::http::Handler {
  public:
   explicit Server(size_t maxMemory, const std::string& cacheDir,
-                  int cacheLifetime);
+                  int cacheLifetime, size_t autoThreshold);
 
   virtual util::http::Answer handle(const util::http::Req& request,
                                     int connection) const;
@@ -68,6 +68,7 @@ class Server : public util::http::Handler {
   std::string _cacheDir;
 
   int _cacheLifetime;
+  size_t _autoThreshold;
 
   // Load Status
   mutable size_t _totalSize = 0;

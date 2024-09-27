@@ -16,8 +16,7 @@
 #define PETRIMAPS_MISC_H_
 
 #define ID_TYPE uint32_t
-// #define QLEVER_ID_TYPE size_t
-#define QLEVER_ID_TYPE uint32_t
+#define QLEVER_ID_TYPE size_t
 
 const static ID_TYPE I_OFFSET = 500000000;
 const static size_t MAXROWS = 18446744073709551615u;
