@@ -170,11 +170,11 @@ void GeomCache::parse(const char *c, size_t size) {
             _qidToIdF.write(reinterpret_cast<const char *>(&idm),
                             sizeof(IdMapping));
             _qidToIdFSize++;
-          } else if ((p = _dangling.rfind("\"POINT(", 0)) !=
+          } else if ((p = _dangling.rfind("POINT(", 1)) !=
                      std::string::npos) {
             _curUniqueGeom++;
             size_t i = 0;
-            p = parseMultiPoint(_dangling, p + 5, std::string::npos, &i);
+            p = parseMultiPoint(_dangling, p + 4, std::string::npos, &i);
 
             // dummy element to keep sync
             if (i == 0) {
@@ -184,11 +184,11 @@ void GeomCache::parse(const char *c, size_t size) {
                               sizeof(IdMapping));
               _qidToIdFSize++;
             }
-          } else if ((p = _dangling.rfind("\"MULTIPOINT(", 0)) !=
+          } else if ((p = _dangling.rfind("MULTIPOINT(", 1)) !=
                      std::string::npos) {
             _curUniqueGeom++;
             size_t i = 0;
-            p = parseMultiPoint(_dangling, p + 11, std::string::npos, &i);
+            p = parseMultiPoint(_dangling, p + 10, std::string::npos, &i);
 
             // dummy element to keep sync
             if (i == 0) {
@@ -198,11 +198,11 @@ void GeomCache::parse(const char *c, size_t size) {
                               sizeof(IdMapping));
               _qidToIdFSize++;
             }
-          } else if ((p = _dangling.rfind("\"LINESTRING(", 0)) !=
+          } else if ((p = _dangling.rfind("LINESTRING(", 1)) !=
                      std::string::npos) {
             _curUniqueGeom++;
             size_t i = 0;
-            p = parseMultiLineString(_dangling, p + 10, std::string::npos, &i);
+            p = parseMultiLineString(_dangling, p + 9, std::string::npos, &i);
 
             // dummy element to keep sync
             if (i == 0) {
@@ -212,11 +212,11 @@ void GeomCache::parse(const char *c, size_t size) {
                               sizeof(IdMapping));
               _qidToIdFSize++;
             }
-          } else if ((p = _dangling.rfind("\"MULTILINESTRING(", 0)) !=
+          } else if ((p = _dangling.rfind("MULTILINESTRING(", 1)) !=
                      std::string::npos) {
             _curUniqueGeom++;
             size_t i = 0;
-            p = parseMultiLineString(_dangling, p + 16, std::string::npos, &i);
+            p = parseMultiLineString(_dangling, p + 15, std::string::npos, &i);
 
             // dummy element to keep sync
             if (i == 0) {
@@ -226,11 +226,11 @@ void GeomCache::parse(const char *c, size_t size) {
                               sizeof(IdMapping));
               _qidToIdFSize++;
             }
-          } else if ((p = _dangling.rfind("\"POLYGON(", 0)) !=
+          } else if ((p = _dangling.rfind("POLYGON(", 1)) !=
                      std::string::npos) {
             _curUniqueGeom++;
             size_t i = 0;
-            p = parsePolygon(_dangling, p + 8, std::string::npos, &i);
+            p = parsePolygon(_dangling, p + 7, std::string::npos, &i);
 
             // dummy element to keep sync
             if (i == 0) {
@@ -240,11 +240,11 @@ void GeomCache::parse(const char *c, size_t size) {
                               sizeof(IdMapping));
               _qidToIdFSize++;
             }
-          } else if ((p = _dangling.rfind("\"MULTIPOLYGON(", 0)) !=
+          } else if ((p = _dangling.rfind("MULTIPOLYGON(", 1)) !=
                      std::string::npos) {
             _curUniqueGeom++;
             size_t i = 0;
-            p = parseMultiPolygon(_dangling, p + 13, std::string::npos, &i);
+            p = parseMultiPolygon(_dangling, p + 12, std::string::npos, &i);
 
             // dummy element to keep sync
             if (i == 0) {
@@ -254,10 +254,10 @@ void GeomCache::parse(const char *c, size_t size) {
                               sizeof(IdMapping));
               _qidToIdFSize++;
             }
-          } else if ((p = _dangling.rfind("\"GEOMETRYCOLLECTION(", 0)) !=
+          } else if ((p = _dangling.rfind("GEOMETRYCOLLECTION(", 1)) !=
                      std::string::npos) {
             _curUniqueGeom++;
-            p += 19;
+            p += 18;
 
             std::vector<size_t> starts = getGeomStarts(_dangling, p);
 
