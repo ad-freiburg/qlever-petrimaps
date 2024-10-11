@@ -14,6 +14,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <chrono>
 
 #include "qlever-petrimaps/Misc.h"
 #include "util/geo/Geo.h"
@@ -153,6 +154,9 @@ class GeomCache {
   size_t _linePointsFSize;
   size_t _linesFSize;
   size_t _qidToIdFSize;
+
+  size_t _lastBytesReceived;
+  std::chrono::time_point<std::chrono::high_resolution_clock> _lastReceivedTime;
 
   std::fstream _pointsF;
   std::fstream _linePointsF;
