@@ -542,7 +542,7 @@ void GeomCache::requestPart(size_t offset) {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 100000000);
+    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 1000000);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
@@ -908,6 +908,11 @@ size_t GeomCache::parseMultiPoint(const std::string &str, size_t p, size_t end,
       _pointsF.write(reinterpret_cast<const char *>(&point),
                      sizeof(util::geo::FPoint));
       _pointsFSize++;
+      if (_pointsFSize >= I_OFFSET) {
+        std::stringstream ss;
+        ss << "Maximum number of points (" << I_OFFSET << ") exceeded.";
+        throw std::runtime_error(ss.str());
+      }
       IdMapping idm{*i == 0 ? 0 : 1, _pointsFSize - 1};
       _lastQidToId = idm;
       _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
@@ -931,6 +936,13 @@ size_t GeomCache::parseMultiPolygon(const std::string &str, size_t p,
       _linesFSize++;
       insertLine(line, true);
 
+      if (_linesFSize - 1 >= std::numeric_limits<ID_TYPE>::max() - I_OFFSET) {
+        std::stringstream ss;
+        ss << "Maximum number of non-point objects ("
+           << std::numeric_limits<ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+        throw std::runtime_error(ss.str());
+      }
+
       IdMapping idm{*i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
       _lastQidToId = idm;
       _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
@@ -953,6 +965,13 @@ size_t GeomCache::parseMultiLineString(const std::string &str, size_t p,
       _linesFSize++;
       insertLine(line, false);
 
+      if (_linesFSize - 1 >= std::numeric_limits<ID_TYPE>::max() - I_OFFSET) {
+        std::stringstream ss;
+        ss << "Maximum number of non-point objects ("
+           << std::numeric_limits<ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+        throw std::runtime_error(ss.str());
+      }
+
       IdMapping idm{*i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
       _lastQidToId = idm;
       _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
@@ -974,6 +993,13 @@ size_t GeomCache::parsePolygon(const std::string &str, size_t p, size_t end,
                     sizeof(size_t));
       _linesFSize++;
       insertLine(line, true);
+
+      if (_linesFSize - 1 >= std::numeric_limits<ID_TYPE>::max() - I_OFFSET) {
+        std::stringstream ss;
+        ss << "Maximum number of non-point objects ("
+           << std::numeric_limits<ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+        throw std::runtime_error(ss.str());
+      }
 
       IdMapping idm{*i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
       _lastQidToId = idm;
