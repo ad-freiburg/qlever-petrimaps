@@ -14,6 +14,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <chrono>
 
 #include "qlever-petrimaps/Misc.h"
 #include "util/geo/Geo.h"
@@ -55,6 +56,7 @@ class GeomCache {
   void requestPart(size_t offset);
 
   void requestIds();
+  void requestIdPart(size_t offset);
 
   void parse(const char*, size_t size);
   void parseIds(const char*, size_t size);
@@ -103,9 +105,10 @@ class GeomCache {
   QLEVER_ID_TYPE _maxQid;
   size_t _totalSize = 0;
   std::atomic<size_t> _curRow;
+  std::atomic<size_t> _curIdRow;
   size_t _curUniqueGeom;
 
-  enum _LoadStatusStages { Parse = 1, ParseIds, FromFile };
+  enum _LoadStatusStages { Parse = 1, ParseIds, FromFile, Finished };
   _LoadStatusStages _loadStatusStage = Parse;
 
   static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
@@ -124,14 +127,22 @@ class GeomCache {
 
   std::string queryUrl(std::string query, size_t offset, size_t limit) const;
 
-  util::geo::FPoint parsePoint(const std::string& a, size_t p) const;
+  util::geo::FPoint createPoint(const std::string& a, size_t p) const;
 
   static bool pointValid(const util::geo::FPoint& p);
   static bool pointValid(const util::geo::DPoint& p);
 
-  static util::geo::DLine parseLineString(const std::string& a, size_t p);
+  static util::geo::DLine createLineString(const std::string& a, size_t p);
+
+	size_t parsePolygon(const std::string& str, size_t p, size_t end, size_t* i);
+
+	size_t parseMultiPoint(const std::string &str, size_t p, size_t end, size_t* i);
+	size_t parseMultiLineString(const std::string &str, size_t p, size_t end, size_t* i);
+  size_t parseMultiPolygon(const std::string &str, size_t p, size_t end, size_t* i);
 
   void insertLine(const util::geo::DLine& l, bool isArea);
+
+	static std::vector<size_t> getGeomStarts(const std::string &str, size_t a);
 
   std::string indexHashFromDisk(const std::string& fname);
 
@@ -144,12 +155,17 @@ class GeomCache {
   size_t _linesFSize;
   size_t _qidToIdFSize;
 
+  size_t _lastBytesReceived;
+  std::chrono::time_point<std::chrono::high_resolution_clock> _lastReceivedTime;
+
   std::fstream _pointsF;
   std::fstream _linePointsF;
   std::fstream _linesF;
   std::fstream _qidToIdF;
 
   size_t _geometryDuplicates = 0;
+
+  size_t _lastQid = -1;
 
   IdMapping _lastQidToId;
 

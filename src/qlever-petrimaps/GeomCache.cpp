@@ -26,6 +26,9 @@ using util::geo::DPoint;
 using util::geo::FPoint;
 using util::geo::latLngToWebMerc;
 
+// change on each index-breaking change to the code base
+const static std::string INDEX_HASH_PREFIX = "_1_";
+
 // Different SPAQRL queries to obtain the WKT geometries from an endpoint.
 // It depends on the endpoint which query is used, see `getQuery`.
 //
@@ -100,6 +103,7 @@ size_t GeomCache::writeCbString(void *contents, size_t size, size_t nmemb,
 size_t GeomCache::writeCb(void *contents, size_t size, size_t nmemb,
                           void *userp) {
   size_t realsize = size * nmemb;
+
   try {
     static_cast<GeomCache *>(userp)->parse(static_cast<const char *>(contents),
                                            realsize);
@@ -142,9 +146,11 @@ size_t GeomCache::writeCbCount(void *contents, size_t size, size_t nmemb,
 void GeomCache::parse(const char *c, size_t size) {
   _loadStatusStage = _LoadStatusStages::Parse;
 
+  _lastBytesReceived += size;
+
   const char *start = c;
   while (c < start + size) {
-    if (_raw.size() < 10000) _raw.push_back(*c);
+    if (_raw.size() < 1000) _raw.push_back(*c);
     switch (_state) {
       case IN_HEADER:
         if (*c == '\n') {
@@ -157,93 +163,22 @@ void GeomCache::parse(const char *c, size_t size) {
         }
       case IN_ROW:
         if (*c == '\t' || *c == '\n') {
-          // bool isGeom = util::endsWith(
-          // _dangling, "^^<http://www.opengis.net/ont/geosparql#wktLiteral>");
-
-          bool isGeom = true;
-
-          auto p = _dangling.rfind("\"POINT(", 0);
+          size_t p = std::string::npos;
 
           // if the previous was not a multi geometry, and if the strings
           // match exactly, re-use the geometry
-          if (isGeom && _prev == _dangling && _lastQidToId.qid == 0) {
+          if (_prev == _dangling && _lastQidToId.qid == 0) {
             IdMapping idm{0, _lastQidToId.id};
             _lastQidToId = idm;
             _qidToIdF.write(reinterpret_cast<const char *>(&idm),
                             sizeof(IdMapping));
             _qidToIdFSize++;
-          } else if (isGeom && p != std::string::npos) {
+          } else if ((p = _dangling.rfind("POINT(", 1)) != std::string::npos) {
             _curUniqueGeom++;
-            p += 7;
-            auto point = parsePoint(_dangling, p);
-            if (pointValid(point)) {
-              _pointsF.write(reinterpret_cast<const char *>(&point),
-                             sizeof(util::geo::FPoint));
-              _pointsFSize++;
-              IdMapping idm{0, _pointsFSize - 1};
-              _lastQidToId = idm;
-              _qidToIdF.write(reinterpret_cast<const char *>(&idm),
-                              sizeof(IdMapping));
-              _qidToIdFSize++;
-            } else {
-              IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
-              _lastQidToId = idm;
-              _qidToIdF.write(reinterpret_cast<const char *>(&idm),
-                              sizeof(IdMapping));
-              _qidToIdFSize++;
-            }
-          } else if (isGeom && (p = _dangling.rfind("\"LINESTRING(", 0)) !=
-                                   std::string::npos) {
-            _curUniqueGeom++;
-            p += 12;
-            const auto &line = parseLineString(_dangling, p);
-            if (line.size() == 0) {
-              IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
-              _lastQidToId = idm;
-              _qidToIdF.write(reinterpret_cast<const char *>(&idm),
-                              sizeof(IdMapping));
-              _qidToIdFSize++;
-            } else {
-              _linesF.write(reinterpret_cast<const char *>(&_linePointsFSize),
-                            sizeof(size_t));
-              _linesFSize++;
-              insertLine(line, false);
-
-              IdMapping idm{0, I_OFFSET + _linesFSize - 1};
-              _lastQidToId = idm;
-              _qidToIdF.write(reinterpret_cast<const char *>(&idm),
-                              sizeof(IdMapping));
-              _qidToIdFSize++;
-            }
-          } else if (isGeom && (p = _dangling.rfind("\"MULTILINESTRING(", 0)) !=
-                                   std::string::npos) {
-            _curUniqueGeom++;
-            p += 17;
             size_t i = 0;
-            while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
-              const auto &line = parseLineString(_dangling, p + 1);
-              if (line.size() == 0) {
-                if (i == 0) {
-                  IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
-                  _lastQidToId = idm;
-                  _qidToIdF.write(reinterpret_cast<const char *>(&idm),
-                                  sizeof(IdMapping));
-                  _qidToIdFSize++;
-                }
-              } else {
-                _linesF.write(reinterpret_cast<const char *>(&_linePointsFSize),
-                              sizeof(size_t));
-                _linesFSize++;
-                insertLine(line, false);
+            p = parseMultiPoint(_dangling, p + 4, std::string::npos, &i);
 
-                IdMapping idm{i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
-                _lastQidToId = idm;
-                _qidToIdF.write(reinterpret_cast<const char *>(&idm),
-                                sizeof(IdMapping));
-                _qidToIdFSize++;
-              }
-              i++;
-            }
+            // dummy element to keep sync
             if (i == 0) {
               IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
               _lastQidToId = idm;
@@ -251,35 +186,13 @@ void GeomCache::parse(const char *c, size_t size) {
                               sizeof(IdMapping));
               _qidToIdFSize++;
             }
-          } else if (isGeom && (p = _dangling.rfind("\"POLYGON(", 0)) !=
-                                   std::string::npos) {
+          } else if ((p = _dangling.rfind("MULTIPOINT(", 1)) !=
+                     std::string::npos) {
             _curUniqueGeom++;
-            p += 9;
             size_t i = 0;
-            while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
-              const auto &line = parseLineString(_dangling, p + 1);
-              if (line.size() == 0) {
-                if (i == 0) {
-                  IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
-                  _lastQidToId = idm;
-                  _qidToIdF.write(reinterpret_cast<const char *>(&idm),
-                                  sizeof(IdMapping));
-                  _qidToIdFSize++;
-                }
-              } else {
-                _linesF.write(reinterpret_cast<const char *>(&_linePointsFSize),
-                              sizeof(size_t));
-                _linesFSize++;
-                insertLine(line, true);
+            p = parseMultiPoint(_dangling, p + 10, std::string::npos, &i);
 
-                IdMapping idm{i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
-                _lastQidToId = idm;
-                _qidToIdF.write(reinterpret_cast<const char *>(&idm),
-                                sizeof(IdMapping));
-                _qidToIdFSize++;
-              }
-              i++;
-            }
+            // dummy element to keep sync
             if (i == 0) {
               IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
               _lastQidToId = idm;
@@ -287,37 +200,90 @@ void GeomCache::parse(const char *c, size_t size) {
                               sizeof(IdMapping));
               _qidToIdFSize++;
             }
-          } else if (isGeom && (p = _dangling.rfind("\"MULTIPOLYGON(", 0)) !=
-                                   std::string::npos) {
+          } else if ((p = _dangling.rfind("LINESTRING(", 1)) !=
+                     std::string::npos) {
             _curUniqueGeom++;
-            p += 13;
             size_t i = 0;
-            while ((p = _dangling.find("(", p + 1)) != std::string::npos) {
-              if (_dangling[p + 1] == '(') p++;
-              const auto &line = parseLineString(_dangling, p + 1);
-              if (line.size() == 0) {
-                if (i == 0) {
-                  IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
-                  _lastQidToId = idm;
-                  _qidToIdF.write(reinterpret_cast<const char *>(&idm),
-                                  sizeof(IdMapping));
-                  _qidToIdFSize++;
-                }
-              } else {
-                _linesF.write(reinterpret_cast<const char *>(&_linePointsFSize),
-                              sizeof(size_t));
-                _linesFSize++;
-                insertLine(line, true);
+            p = parseMultiLineString(_dangling, p + 9, std::string::npos, &i);
 
-                IdMapping idm{i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
-                _lastQidToId = idm;
-                _qidToIdF.write(reinterpret_cast<const char *>(&idm),
-                                sizeof(IdMapping));
-                _qidToIdFSize++;
-              }
-              i++;
-            }
+            // dummy element to keep sync
             if (i == 0) {
+              IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
+              _lastQidToId = idm;
+              _qidToIdF.write(reinterpret_cast<const char *>(&idm),
+                              sizeof(IdMapping));
+              _qidToIdFSize++;
+            }
+          } else if ((p = _dangling.rfind("MULTILINESTRING(", 1)) !=
+                     std::string::npos) {
+            _curUniqueGeom++;
+            size_t i = 0;
+            p = parseMultiLineString(_dangling, p + 15, std::string::npos, &i);
+
+            // dummy element to keep sync
+            if (i == 0) {
+              IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
+              _lastQidToId = idm;
+              _qidToIdF.write(reinterpret_cast<const char *>(&idm),
+                              sizeof(IdMapping));
+              _qidToIdFSize++;
+            }
+          } else if ((p = _dangling.rfind("POLYGON(", 1)) !=
+                     std::string::npos) {
+            _curUniqueGeom++;
+            size_t i = 0;
+            p = parsePolygon(_dangling, p + 7, std::string::npos, &i);
+
+            // dummy element to keep sync
+            if (i == 0) {
+              IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
+              _lastQidToId = idm;
+              _qidToIdF.write(reinterpret_cast<const char *>(&idm),
+                              sizeof(IdMapping));
+              _qidToIdFSize++;
+            }
+          } else if ((p = _dangling.rfind("MULTIPOLYGON(", 1)) !=
+                     std::string::npos) {
+            _curUniqueGeom++;
+            size_t i = 0;
+            p = parseMultiPolygon(_dangling, p + 12, std::string::npos, &i);
+
+            // dummy element to keep sync
+            if (i == 0) {
+              IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
+              _lastQidToId = idm;
+              _qidToIdF.write(reinterpret_cast<const char *>(&idm),
+                              sizeof(IdMapping));
+              _qidToIdFSize++;
+            }
+          } else if ((p = _dangling.rfind("GEOMETRYCOLLECTION(", 1)) !=
+                     std::string::npos) {
+            _curUniqueGeom++;
+            p += 18;
+
+            std::vector<size_t> starts = getGeomStarts(_dangling, p);
+
+            size_t j = 0;
+
+            for (size_t i = 0; i < starts.size() - 1; i++) {
+              if (memcmp(_dangling.c_str() + starts[i], "POINT(", 6) == 0) {
+                p = parseMultiPoint(_dangling, starts[i] + 4, starts[i + 1],
+                                    &j);
+              }
+
+              if (memcmp(_dangling.c_str() + starts[i], "POLYGON(", 8) == 0) {
+                p = parsePolygon(_dangling, starts[i] + 7, starts[i + 1], &j);
+              }
+
+              if (memcmp(_dangling.c_str() + starts[i], "LINESTRING(", 11) ==
+                  0) {
+                p = parseMultiLineString(_dangling, starts[i] + 9,
+                                         starts[i + 1], &j);
+              }
+            }
+
+            // dummy element to keep sync
+            if (j == 0) {
               IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
               _lastQidToId = idm;
               _qidToIdF.write(reinterpret_cast<const char *>(&idm),
@@ -325,6 +291,7 @@ void GeomCache::parse(const char *c, size_t size) {
               _qidToIdFSize++;
             }
           } else {
+            // dummy element to keep sync
             IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
             _lastQidToId = idm;
             _qidToIdF.write(reinterpret_cast<const char *>(&idm),
@@ -336,19 +303,25 @@ void GeomCache::parse(const char *c, size_t size) {
             _curRow++;
             if (_curRow % 1000000 == 0) {
               LOG(INFO) << "[GEOMCACHE] "
-                        << "@ row " << _curRow << " (" << std::fixed
+                        << "@ " << _curRow << " (" << std::fixed
                         << std::setprecision(2) << getLoadStatusPercent()
                         << "%, " << _pointsFSize << " points, " << _linesFSize
                         << " (open) polygons (with " << _linePointsFSize
                         << " points), " << _geometryDuplicates
-                        << " duplicates)";
+                        << " duplicates, "
+                        << ((_lastBytesReceived / (1024.0 * 1024.0)) /
+                            (TOOK(_lastReceivedTime) / 1000000000.0))
+                        << " MB/s)";
+
+              _lastReceivedTime = TIME();
+              _lastBytesReceived = 0;
             }
-            _prev = _dangling;
+            _prev = std::move(_dangling);
             _dangling.clear();
             c++;
             continue;
           } else {
-            _prev = _dangling;
+            _prev = std::move(_dangling);
             _dangling.clear();
             c++;
             continue;
@@ -399,6 +372,10 @@ double GeomCache::getLoadStatusPercent(bool total) {
     case _LoadStatusStages::FromFile:
       totalPercent = _curRow / static_cast<double>(_totalSize) * 100.0;
       break;
+
+    case _LoadStatusStages::Finished:
+      totalPercent = 0;
+      break;
   }
 
   return std::min(100.0, totalPercent);
@@ -415,46 +392,46 @@ size_t GeomCache::getCurrentProgress() { return _curRow; }
 
 // _____________________________________________________________________________
 void GeomCache::parseIds(const char *c, size_t size) {
-  _loadStatusStage = _LoadStatusStages::ParseIds;
-
-  size_t lastQid = -1;
   for (size_t i = 0; i < size; i++) {
-    if (_raw.size() < 10000) _raw.push_back(c[i]);
+    if (_raw.size() < 1000) _raw.push_back(c[i]);
     _curId.bytes[_curByte] = c[i];
     _curByte = (_curByte + 1) % 8;
 
     if (_curByte == 0) {
+      _curRow++;
+
       if (_curRow % 1000000 == 0) {
         LOG(INFO) << "[GEOMCACHE] "
-                  << "@ row " << _curRow << " (" << std::fixed
+                  << "@ " << _curRow << " (" << std::fixed
                   << std::setprecision(2) << getLoadStatusPercent() << "%, "
                   << _pointsFSize << " points, " << _linesFSize
-                  << " (open) polygons)";
+                  << " (open) polygons (with " << _linePointsFSize
+                  << " points), " << _geometryDuplicates << " duplicates)";
       }
 
-      if (_curRow < _qidToId.size() && _qidToId[_curRow].qid == 0) {
+      if (_curIdRow < _qidToId.size() && _qidToId[_curIdRow].qid == 0) {
         // if we have two consecutive and equivalent QLever ids, the geometry
         // was returned multiple times in the fill query. This can happen if the
         // same WKT string is used in multiple distinct objects, but then stored
         // in qlever using the same internal qlever ID. To avoid a false multi-
         // plication of results (all geoms of matching qlever ID are joined), we
         // set such repeated qlever IDs to an unnsed dummy value.
-        if (lastQid == _curId.val) {
+        if (_lastQid == _curId.val) {
           LOG(DEBUG) << "Found duplicate internal qlever ID " << _curId.val
                      << " for row " << _curRow
                      << ", ignoring this geometry duplicate!";
-          _qidToId[_curRow].qid = -1;
+          _qidToId[_curIdRow].qid = -1;
           _geometryDuplicates++;
         } else {
-          _qidToId[_curRow].qid = _curId.val;
+          _qidToId[_curIdRow].qid = _curId.val;
         }
-        lastQid = _curId.val;
+        _lastQid = _curId.val;
         if (_curId.val > _maxQid) _maxQid = _curId.val;
       } else {
         LOG(WARN) << "The results for the binary IDs are out of sync.";
         LOG(WARN) << "_curRow: " << _curRow
                   << " _qleverIdInt.size: " << _qidToId.size()
-                  << " cur val: " << _qidToId[_curRow].qid;
+                  << " cur val: " << _qidToId[_curIdRow].qid;
       }
 
       // if a qlever entity contained multiple geometries (MULTILINESTRING,
@@ -462,11 +439,12 @@ void GeomCache::parseIds(const char *c, size_t size) {
       // _qidToId; continuation geometries are marked by a
       // preliminary qlever ID of 1, while the first geometry always has a
       // preliminary id of 0
-      while (_curRow < _qidToId.size() - 1 && _qidToId[_curRow + 1].qid == 1) {
-        _qidToId[++_curRow].qid = _curId.val;
+      while (_curIdRow < _qidToId.size() - 1 &&
+             _qidToId[_curIdRow + 1].qid == 1) {
+        _qidToId[++_curIdRow].qid = _curId.val;
       }
 
-      _curRow++;
+      _curIdRow++;
     }
   }
 }
@@ -474,7 +452,7 @@ void GeomCache::parseIds(const char *c, size_t size) {
 // _____________________________________________________________________________
 void GeomCache::parseCount(const char *c, size_t size) {
   for (size_t i = 0; i < size; i++) {
-    if (_raw.size() < 10000) _raw.push_back(c[i]);
+    if (_raw.size() < 1000) _raw.push_back(c[i]);
     if (c[i] == '\n') _state = IN_ROW;
     if (_state == IN_ROW) _dangling += c[i];
   }
@@ -486,7 +464,7 @@ size_t GeomCache::requestSize() {
   _dangling.clear();
   _dangling.reserve(10000);
   _raw.clear();
-  _raw.reserve(10000);
+  _raw.reserve(1000);
 
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
@@ -556,13 +534,15 @@ void GeomCache::requestPart(size_t offset) {
   _dangling.clear();
   _dangling.reserve(10000);
   _raw.clear();
-  _raw.reserve(10000);
+  _raw.reserve(1000);
+  _lastReceivedTime = TIME();
+  _lastBytesReceived = 0;
 
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 1000000);
+    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 10000000);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
@@ -630,7 +610,7 @@ void GeomCache::request() {
   _lastQidToId = {-1, -1};
 
   _raw.clear();
-  _raw.reserve(100000);
+  _raw.reserve(1000);
 
   char *pointsFName = strdup("pointsXXXXXX");
   int i = mkstemp(pointsFName);
@@ -683,6 +663,14 @@ void GeomCache::request() {
     lastNum = _curRow - offset;
   }
 
+  LOG(INFO) << "Received " << _curRow << " rows";
+
+  if (_curRow != _totalSize) {
+    LOG(WARN) << "Last received row was " << _curRow << ", but expected "
+              << _totalSize << " rows (determined via count query)";
+    LOG(WARN) << "Last answer from QLever began with " << _raw;
+  }
+
   if (i == -1) throw std::runtime_error("Could not create temporary file");
 
   LOG(INFO) << "[GEOMCACHE] Building vectors...";
@@ -720,20 +708,53 @@ void GeomCache::request() {
 
 // _____________________________________________________________________________
 void GeomCache::requestIds() {
+  _loadStatusStage = _LoadStatusStages::ParseIds;
+
   _curByte = 0;
   _curRow = 0;
+  _curIdRow = 0;
   _curUniqueGeom = 0;
   _maxQid = 0;
+  _lastQid = -1;
   _exceptionPtr = 0;
 
   LOG(INFO) << "[GEOMCACHE] Query is " << getQuery(_backendUrl);
 
+  size_t lastNum = -1;
+
+  while (lastNum != 0) {
+    size_t offset = _curRow;
+    requestIdPart(offset);
+    lastNum = _curRow - offset;
+  }
+
+  if (_curRow != _totalSize) {
+    LOG(WARN) << "Last received row was " << _curRow << ", but expected "
+              << _totalSize << " rows (determined via count query)";
+    LOG(WARN) << "Last answer from QLever began with " << _raw;
+  }
+
+  LOG(INFO) << "[GEOMCACHE] Received " << _curRow << " rows";
+  LOG(INFO) << "[GEOMCACHE] Max QLever id was " << _maxQid;
+  LOG(INFO) << "[GEOMCACHE] Done";
+
+  // sorting by qlever id
+  LOG(INFO) << "[GEOMCACHE] Sorting results by qlever ID...";
+  std::stable_sort(_qidToId.begin(), _qidToId.end());
+  LOG(INFO) << "[GEOMCACHE] ... done";
+}
+
+// _____________________________________________________________________________
+void GeomCache::requestIdPart(size_t offset) {
+  CURLcode res;
+  char errbuf[CURL_ERROR_SIZE];
+
   if (_curl) {
-    auto qUrl = queryUrl(getQuery(_backendUrl), 0, MAXROWS);
-    LOG(INFO) << "[GEOMCACHE] Binary ID query URL is " << qUrl;
+    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 100000000);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbIds);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
+    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
     curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
@@ -745,7 +766,7 @@ void GeomCache::requestIds() {
 
     // accept any compression supported
     curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
-    curl_easy_perform(_curl);
+    res = curl_easy_perform(_curl);
 
     long httpCode = 0;
     curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
@@ -763,16 +784,18 @@ void GeomCache::requestIds() {
     if (_exceptionPtr) std::rethrow_exception(_exceptionPtr);
   } else {
     LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request.";
+    return;
   }
 
-  LOG(INFO) << "[GEOMCACHE] Received " << _curRow << " rows";
-  LOG(INFO) << "[GEOMCACHE] Max QLever id was " << _maxQid;
-  LOG(INFO) << "[GEOMCACHE] Done";
-
-  // sorting by qlever id
-  LOG(INFO) << "[GEOMCACHE] Sorting results by qlever ID...";
-  std::stable_sort(_qidToId.begin(), _qidToId.end());
-  LOG(INFO) << "[GEOMCACHE] ... done";
+  // check if there was an error
+  if (res != CURLE_OK) {
+    size_t len = strlen(errbuf);
+    if (len > 0) {
+      LOG(ERROR) << "[GEOMCACHE] " << errbuf;
+    } else {
+      LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
+    }
+  }
 }
 
 // _____________________________________________________________________________
@@ -818,7 +841,179 @@ bool GeomCache::pointValid(const DPoint &p) {
 }
 
 // _____________________________________________________________________________
-util::geo::DLine GeomCache::parseLineString(const std::string &a, size_t p) {
+std::vector<size_t> GeomCache::getGeomStarts(const std::string &str, size_t p) {
+  std::vector<size_t> starts;
+
+  size_t a = p;
+  while (1) {
+    a = str.find("POINT(", a);
+    if (a == std::string::npos) break;
+    starts.push_back(a);
+    a++;
+  }
+
+  a = p;
+  while (1) {
+    a = str.find("MULTIPOINT(", a);
+    if (a == std::string::npos) break;
+    starts.push_back(a);
+    a++;
+  }
+
+  a = p;
+  while (1) {
+    a = str.find("LINESTRING(", a);
+    if (a == std::string::npos) break;
+    starts.push_back(a);
+    a++;
+  }
+
+  a = p;
+  while (1) {
+    a = str.find("POLYGON(", a);
+    if (a == std::string::npos) break;
+    starts.push_back(a);
+    a++;
+  }
+
+  a = p;
+  while (1) {
+    a = str.find("MULTIPOLYGON(", a);
+    if (a == std::string::npos) break;
+    starts.push_back(a);
+    a++;
+  }
+
+  a = p;
+  while (1) {
+    a = str.find("MULTILINESTRING(", a);
+    if (a == std::string::npos) break;
+    starts.push_back(a);
+    a++;
+  }
+
+  starts.push_back(std::string::npos);
+
+  std::sort(starts.begin(), starts.end());
+
+  return starts;
+}
+
+// _____________________________________________________________________________
+size_t GeomCache::parseMultiPoint(const std::string &str, size_t p, size_t end,
+                                  size_t *i) {
+  while ((p = str.find("(", p + 1)) < end) {
+    auto point = createPoint(str, p + 1);
+    if (pointValid(point)) {
+      _pointsF.write(reinterpret_cast<const char *>(&point),
+                     sizeof(util::geo::FPoint));
+      _pointsFSize++;
+      if (_pointsFSize >= I_OFFSET) {
+        std::stringstream ss;
+        ss << "Maximum number of points (" << I_OFFSET << ") exceeded.";
+        throw std::runtime_error(ss.str());
+      }
+      IdMapping idm{*i == 0 ? 0 : 1, _pointsFSize - 1};
+      _lastQidToId = idm;
+      _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
+      _qidToIdFSize++;
+      (*i)++;
+    }
+  }
+
+  return p;
+}
+
+// _____________________________________________________________________________
+size_t GeomCache::parseMultiPolygon(const std::string &str, size_t p,
+                                    size_t end, size_t *i) {
+  while ((p = str.find("(", p + 1)) < end) {
+    if (str[p + 1] == '(') p++;
+    const auto &line = createLineString(str, p + 1);
+    if (line.size() != 0) {
+      _linesF.write(reinterpret_cast<const char *>(&_linePointsFSize),
+                    sizeof(size_t));
+      _linesFSize++;
+      insertLine(line, true);
+
+      if (_linesFSize - 1 >= std::numeric_limits<ID_TYPE>::max() - I_OFFSET) {
+        std::stringstream ss;
+        ss << "Maximum number of non-point objects ("
+           << std::numeric_limits<ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+        throw std::runtime_error(ss.str());
+      }
+
+      IdMapping idm{*i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
+      _lastQidToId = idm;
+      _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
+      _qidToIdFSize++;
+      (*i)++;
+    }
+  }
+
+  return p;
+}
+
+// _____________________________________________________________________________
+size_t GeomCache::parseMultiLineString(const std::string &str, size_t p,
+                                       size_t end, size_t *i) {
+  while ((p = str.find("(", p + 1)) < end) {
+    const auto &line = createLineString(str, p + 1);
+    if (line.size() != 0) {
+      _linesF.write(reinterpret_cast<const char *>(&_linePointsFSize),
+                    sizeof(size_t));
+      _linesFSize++;
+      insertLine(line, false);
+
+      if (_linesFSize - 1 >= std::numeric_limits<ID_TYPE>::max() - I_OFFSET) {
+        std::stringstream ss;
+        ss << "Maximum number of non-point objects ("
+           << std::numeric_limits<ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+        throw std::runtime_error(ss.str());
+      }
+
+      IdMapping idm{*i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
+      _lastQidToId = idm;
+      _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
+      _qidToIdFSize++;
+      (*i)++;
+    }
+  }
+
+  return p;
+}
+
+// _____________________________________________________________________________
+size_t GeomCache::parsePolygon(const std::string &str, size_t p, size_t end,
+                               size_t *i) {
+  while ((p = str.find("(", p + 1)) < end) {
+    const auto &line = createLineString(str, p + 1);
+    if (line.size() != 0) {
+      _linesF.write(reinterpret_cast<const char *>(&_linePointsFSize),
+                    sizeof(size_t));
+      _linesFSize++;
+      insertLine(line, true);
+
+      if (_linesFSize - 1 >= std::numeric_limits<ID_TYPE>::max() - I_OFFSET) {
+        std::stringstream ss;
+        ss << "Maximum number of non-point objects ("
+           << std::numeric_limits<ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+        throw std::runtime_error(ss.str());
+      }
+
+      IdMapping idm{*i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
+      _lastQidToId = idm;
+      _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
+      _qidToIdFSize++;
+      (*i)++;
+    }
+  }
+
+  return p;
+}
+
+// _____________________________________________________________________________
+util::geo::DLine GeomCache::createLineString(const std::string &a, size_t p) {
   util::geo::DLine line;
   line.reserve(2);
   auto end = memchr(a.c_str() + p, ')', a.size() - p);
@@ -850,7 +1045,7 @@ util::geo::DLine GeomCache::parseLineString(const std::string &a, size_t p) {
 }
 
 // _____________________________________________________________________________
-util::geo::FPoint GeomCache::parsePoint(const std::string &a, size_t p) const {
+util::geo::FPoint GeomCache::createPoint(const std::string &a, size_t p) const {
   auto next =
       static_cast<const char *>(memchr(a.c_str() + p, ' ', a.size() - p));
 
@@ -1205,7 +1400,7 @@ std::string GeomCache::requestIndexHash() {
       return "";
     }
 
-    return response;
+    return INDEX_HASH_PREFIX + response;
   } else {
     LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request for index hash.";
     return "";
@@ -1256,5 +1451,7 @@ std::string GeomCache::load(const std::string &cacheDir) {
   }
 
   _ready = true;
+  _loadStatusStage = Finished;
+
   return _indexHash;
 }

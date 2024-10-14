@@ -16,10 +16,10 @@
 #define PETRIMAPS_MISC_H_
 
 #define ID_TYPE uint32_t
-// #define QLEVER_ID_TYPE size_t
-#define QLEVER_ID_TYPE uint32_t
+#define QLEVER_ID_TYPE size_t
 
-const static ID_TYPE I_OFFSET = 500000000;
+// half of the ID space for points, half for the rest
+const static ID_TYPE I_OFFSET = 2147483648;
 const static size_t MAXROWS = 18446744073709551615u;
 
 // major coordinates will fit into 2^15, as coordinates go from
@@ -43,7 +43,6 @@ union ID {
 
 inline bool operator<(const IdMapping& lh, const IdMapping& rh) {
   if (lh.qid < rh.qid) return true;
-  // if (lh.qid == rh.qid && lh.id < rh.id) return true;
   return false;
 }
 
