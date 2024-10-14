@@ -542,7 +542,7 @@ void GeomCache::requestPart(size_t offset) {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 1000000);
+    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 10000000);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
