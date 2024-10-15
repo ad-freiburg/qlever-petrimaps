@@ -70,12 +70,21 @@ class Requestor {
     return _objects;
   }
 
-  const std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>& getClusters() const {
+  const std::vector<std::pair<util::geo::FPoint, ID_TYPE>>& getDynamicPoints() const {
+    return _dynamicPoints;
+  }
+
+  const std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>&
+  getClusters() const {
     return _clusterObjects;
   }
 
   const util::geo::FPoint& getPoint(ID_TYPE id) const {
     return _cache->getPoints()[id];
+  }
+
+  const util::geo::FPoint& getDPoint(ID_TYPE id) const {
+    return _dynamicPoints[id].first;
   }
 
   size_t getLine(ID_TYPE id) const { return _cache->getLine(id); }
@@ -90,7 +99,8 @@ class Requestor {
     return _cache->getLineBBox(id);
   }
 
-  const ResObj getNearest(util::geo::DPoint p, double rad, double res, util::geo::FBox box) const;
+  const ResObj getNearest(util::geo::DPoint p, double rad, double res,
+                          util::geo::FBox box) const;
 
   const ResObj getGeom(size_t id, double rad) const;
 
@@ -126,11 +136,15 @@ class Requestor {
   std::string prepQuery(std::string query) const;
   std::string prepQueryRow(std::string query, uint64_t row) const;
 
+  std::vector<std::pair<util::geo::FPoint, ID_TYPE>> getDynamicPoints(
+      const std::vector<IdMapping>& ids) const;
+
   std::string _query;
 
   mutable std::mutex _m;
 
   std::vector<std::pair<ID_TYPE, ID_TYPE>> _objects;
+  std::vector<std::pair<util::geo::FPoint, ID_TYPE>> _dynamicPoints;
   std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>> _clusterObjects;
   size_t _numObjects = 0;
 
