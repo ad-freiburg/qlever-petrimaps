@@ -174,18 +174,18 @@ void GeomCache::parse(const char *c, size_t size) {
                             sizeof(IdMapping));
             _qidToIdFSize++;
           } else if ((p = _dangling.rfind("POINT(", 1)) != std::string::npos) {
-            _curUniqueGeom++;
-            size_t i = 0;
-            p = parseMultiPoint(_dangling, p + 4, std::string::npos, &i);
+            // _curUniqueGeom++;
+            // size_t i = 0;
+            // p = parseMultiPoint(_dangling, p + 4, std::string::npos, &i);
 
-            // dummy element to keep sync
-            if (i == 0) {
-              IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
-              _lastQidToId = idm;
-              _qidToIdF.write(reinterpret_cast<const char *>(&idm),
-                              sizeof(IdMapping));
-              _qidToIdFSize++;
-            }
+            // // dummy element to keep sync
+            // if (i == 0) {
+              // IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
+              // _lastQidToId = idm;
+              // _qidToIdF.write(reinterpret_cast<const char *>(&idm),
+                              // sizeof(IdMapping));
+              // _qidToIdFSize++;
+            // }
           } else if ((p = _dangling.rfind("MULTIPOINT(", 1)) !=
                      std::string::npos) {
             _curUniqueGeom++;
@@ -408,6 +408,10 @@ void GeomCache::parseIds(const char *c, size_t size) {
                   << " (open) polygons (with " << _linePointsFSize
                   << " points), " << _geometryDuplicates << " duplicates)";
       }
+
+      uint8_t type = (_curId.val & (uint64_t(15) << 60)) >> 60;
+
+      if (type == 8) continue;
 
       if (_curIdRow < _qidToId.size() && _qidToId[_curIdRow].qid == 0) {
         // if we have two consecutive and equivalent QLever ids, the geometry

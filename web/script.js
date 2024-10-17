@@ -263,7 +263,7 @@ function updateLoad(stage, percent, totalProgress, currentProgress) {
         case 3:
             infoHeadingElem.innerHTML = "Reading cached geometries from disk";
             infoDescElem.innerHTML = "This needs to be done only once after the server has been started and does not have to be repeated for subsequent queries.";
-            stageElem.innerHTML = `Reading ${currentProgress}/${totalProgress} geometries from disk... (1/1)`;
+            stageElem.innerHTML = `Reading ${currentProgress}/${totalProgress} objects from disk... (1/1)`;
             document.getElementById("load-status").style.display = "grid";
             break;
         case 4:

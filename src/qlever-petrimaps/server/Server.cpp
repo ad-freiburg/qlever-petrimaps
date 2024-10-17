@@ -209,6 +209,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   // initialize vectors to 0
   for (size_t i = 0; i < NUM_THREADS; i++) points2[i].resize(w * h, 0);
 
+  // POINTS
   if (intersects(r->getPointGrid().getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display points...";
     if (res < THRESHOLD) {
@@ -221,10 +222,17 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         size_t i = ret[j];
 
         const auto& objs = r->getObjects();
+        const auto& dynPoints = r->getDynamicPoints();
 
-        if (i >= objs.size() && style == OBJECTS) {
-          size_t cid = i - objs.size();
-          const auto& p = r->getPoint(objs[r->getClusters()[cid].first].first);
+        if (i >= objs.size() + dynPoints.size() && style == OBJECTS) {
+          size_t cid = i - objs.size() - dynPoints.size();
+          FPoint p;
+          size_t oid = r->getClusters()[cid].first;
+
+          if (oid >= objs.size())
+            p = dynPoints[oid - objs.size()].first;
+          else
+            p = r->getPoint(objs[oid].first);
 
           if (!contains(p, fbbox)) continue;
 
@@ -239,8 +247,15 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           drawPoint(points[0], points2[0], px, py, w, h, style, 1);
           drawLine(image.data(), ppx, ppy, px, py, w, h);
         } else {
-          if (i >= objs.size()) i = r->getClusters()[i - objs.size()].first;
-          const auto& p = r->getPoint(objs[i].first);
+          if (i >= objs.size() + dynPoints.size())
+            i = r->getClusters()[i - objs.size() - dynPoints.size()].first;
+
+          FPoint p;
+          if (i < objs.size())
+            p = r->getPoint(objs[i].first);
+          else
+            p = r->getDPoint(i - objs.size());
+
           if (!contains(p, fbbox)) continue;
 
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
@@ -283,12 +298,17 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                       cell->size());
           } else {
             for (auto i : *cell) {
-              if (i >= r->getObjects().size()) {
-                assert(i - r->getObjects().size() < r->getClusters().size());
-                i = r->getClusters()[i - r->getObjects().size()].first;
+              if (i >= r->getObjects().size() + r->getDynamicPoints().size()) {
+                i = r->getClusters()[i - r->getObjects().size() -
+                                     r->getDynamicPoints().size()]
+                        .first;
               }
-              assert(i < r->getObjects().size());
-              const auto& p = r->getPoint(r->getObjects()[i].first);
+
+              FPoint p;
+              if (i < r->getObjects().size())
+                p = r->getPoint(r->getObjects()[i].first);
+              else
+                p = r->getDPoint(i - r->getObjects().size());
 
               int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
               int py =
@@ -535,7 +555,7 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
 
   if (pars.count("gid") == 0 || pars.find("gid")->second.empty())
     throw std::invalid_argument("No geom id (?gid=) specified.");
-  auto gid = std::atoi(pars.find("gid")->second.c_str());
+  size_t gid = std::atoi(pars.find("gid")->second.c_str());
 
   bool noExport = pars.count("export") == 0 ||
                   pars.find("export")->second.empty() ||
@@ -564,7 +584,13 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
   util::json::Val dict;
 
   if (!noExport) {
-    for (auto col : reqor->requestRow(reqor->getObjects()[gid].second)) {
+    size_t row;
+    if (gid < reqor->getObjects().size())
+      row = reqor->getObjects()[gid].second;
+    else
+      row = reqor->getDynamicPoints()[gid].second;
+
+    for (auto col : reqor->requestRow(row)) {
       dict.dict[col.first] = col.second;
     }
   }
@@ -800,7 +826,8 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
       sessionId = getSessionId();
 
       _rs[sessionId] = reqor;
-      _queryCache[queryId] = sessionId;
+      if (util::toLower(query).find("rand()") == std::string::npos)
+        _queryCache[queryId] = sessionId;
     }
   }
 
