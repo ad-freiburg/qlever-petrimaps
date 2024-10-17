@@ -816,8 +816,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
 
   {
     std::lock_guard<std::mutex> guard(_m);
-    if (util::toLower(query).find("rand()") == std::string::npos &&
-        _queryCache.count(queryId)) {
+    if (_queryCache.count(queryId)) {
       sessionId = _queryCache[queryId];
       reqor = _rs[sessionId];
     } else {
@@ -827,7 +826,8 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
       sessionId = getSessionId();
 
       _rs[sessionId] = reqor;
-      _queryCache[queryId] = sessionId;
+      if (util::toLower(query).find("rand()") == std::string::npos)
+        _queryCache[queryId] = sessionId;
     }
   }
 

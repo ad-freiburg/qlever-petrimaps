@@ -66,12 +66,17 @@ void Requestor::request(const std::string& qry) {
   _objects = ret.first;
   _numObjects = ret.second;
 
+  LOG(INFO) << "[REQUESTOR] ... done, got "
+            << _objects.size() << " objects.";
+
+  LOG(INFO) << "[REQUESTOR] Retrieving points dynamically from query...";
+
   // dynamic points present in query
   _dynamicPoints = getDynamicPoints(reader._ids);
   _numObjects += _dynamicPoints.size();
 
   LOG(INFO) << "[REQUESTOR] ... done, got "
-            << _objects.size() + _dynamicPoints.size() << " objects.";
+            << _dynamicPoints.size() << " points.";
 
   LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";
 
