@@ -68,6 +68,7 @@ void Requestor::request(const std::string& qry) {
 
   // dynamic points present in query
   _dynamicPoints = getDynamicPoints(reader._ids);
+  _numObjects += _dynamicPoints.size();
 
   LOG(INFO) << "[REQUESTOR] ... done, got "
             << _objects.size() + _dynamicPoints.size() << " objects.";
