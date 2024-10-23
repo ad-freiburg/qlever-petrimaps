@@ -735,7 +735,6 @@ void GeomCache::requestIds() {
   }
 
   LOG(INFO) << "[GEOMCACHE] Received " << _curRow << " rows";
-  LOG(INFO) << "[GEOMCACHE] Max QLever id was " << _maxQid;
   LOG(INFO) << "[GEOMCACHE] Done";
 
   // sorting by qlever id
