@@ -409,8 +409,6 @@ void GeomCache::parseIds(const char *c, size_t size) {
                   << " points), " << _geometryDuplicates << " duplicates)";
       }
 
-      uint8_t type = (_curId.val & (uint64_t(15) << 60)) >> 60;
-
       if (_curIdRow < _qidToId.size() && _qidToId[_curIdRow].qid == 0) {
         // if we have two consecutive and equivalent QLever ids, the geometry
         // was returned multiple times in the fill query. This can happen if the
