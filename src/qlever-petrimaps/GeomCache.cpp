@@ -29,6 +29,9 @@ using util::geo::latLngToWebMerc;
 // change on each index-breaking change to the code base
 const static std::string INDEX_HASH_PREFIX = "_1_";
 
+const static std::string WKT_ENDING =
+    "\"^^<HTTP://WWW.OPENGIS.NET/ONT/GEOSPARQL#WKTLITERAL>";
+
 // Different SPAQRL queries to obtain the WKT geometries from an endpoint.
 // It depends on the endpoint which query is used, see `getQuery`.
 //
@@ -165,29 +168,34 @@ void GeomCache::parse(const char *c, size_t size) {
         if (*c == '\t' || *c == '\n') {
           size_t p = std::string::npos;
 
+          bool isGeom = _dangling.size() >= WKT_ENDING.size() &&
+                        std::equal(WKT_ENDING.crbegin(), WKT_ENDING.crend(),
+                                   _dangling.crbegin());
+
           // if the previous was not a multi geometry, and if the strings
           // match exactly, re-use the geometry
-          if (_prev == _dangling && _lastQidToId.qid == 0) {
+          if (isGeom && _prev == _dangling && _lastQidToId.qid == 0) {
             IdMapping idm{0, _lastQidToId.id};
             _lastQidToId = idm;
             _qidToIdF.write(reinterpret_cast<const char *>(&idm),
                             sizeof(IdMapping));
             _qidToIdFSize++;
-          } else if ((p = _dangling.rfind("POINT(", 1)) != std::string::npos) {
+          } else if (isGeom && (p = _dangling.rfind("\"POINT(", 0)) !=
+                                   std::string::npos) {
             // _curUniqueGeom++;
             // size_t i = 0;
             // p = parseMultiPoint(_dangling, p + 4, std::string::npos, &i);
 
             // // dummy element to keep sync
             // if (i == 0) {
-              // IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
-              // _lastQidToId = idm;
-              // _qidToIdF.write(reinterpret_cast<const char *>(&idm),
-                              // sizeof(IdMapping));
-              // _qidToIdFSize++;
+            //   IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
+            //   _lastQidToId = idm;
+            //   _qidToIdF.write(reinterpret_cast<const char *>(&idm),
+            //   sizeof(IdMapping));
+            //   _qidToIdFSize++;
             // }
-          } else if ((p = _dangling.rfind("MULTIPOINT(", 1)) !=
-                     std::string::npos) {
+          } else if (isGeom && (p = _dangling.rfind("\"MULTIPOINT(", 0)) !=
+                                   std::string::npos) {
             _curUniqueGeom++;
             size_t i = 0;
             p = parseMultiPoint(_dangling, p + 10, std::string::npos, &i);
@@ -200,8 +208,8 @@ void GeomCache::parse(const char *c, size_t size) {
                               sizeof(IdMapping));
               _qidToIdFSize++;
             }
-          } else if ((p = _dangling.rfind("LINESTRING(", 1)) !=
-                     std::string::npos) {
+          } else if (isGeom && (p = _dangling.rfind("\"LINESTRING(", 0)) !=
+                                   std::string::npos) {
             _curUniqueGeom++;
             size_t i = 0;
             p = parseMultiLineString(_dangling, p + 9, std::string::npos, &i);
@@ -214,8 +222,8 @@ void GeomCache::parse(const char *c, size_t size) {
                               sizeof(IdMapping));
               _qidToIdFSize++;
             }
-          } else if ((p = _dangling.rfind("MULTILINESTRING(", 1)) !=
-                     std::string::npos) {
+          } else if (isGeom && (p = _dangling.rfind("\"MULTILINESTRING(", 0)) !=
+                                   std::string::npos) {
             _curUniqueGeom++;
             size_t i = 0;
             p = parseMultiLineString(_dangling, p + 15, std::string::npos, &i);
@@ -228,8 +236,8 @@ void GeomCache::parse(const char *c, size_t size) {
                               sizeof(IdMapping));
               _qidToIdFSize++;
             }
-          } else if ((p = _dangling.rfind("POLYGON(", 1)) !=
-                     std::string::npos) {
+          } else if (isGeom && (p = _dangling.rfind("\"POLYGON(", 0)) !=
+                                   std::string::npos) {
             _curUniqueGeom++;
             size_t i = 0;
             p = parsePolygon(_dangling, p + 7, std::string::npos, &i);
@@ -242,8 +250,8 @@ void GeomCache::parse(const char *c, size_t size) {
                               sizeof(IdMapping));
               _qidToIdFSize++;
             }
-          } else if ((p = _dangling.rfind("MULTIPOLYGON(", 1)) !=
-                     std::string::npos) {
+          } else if (isGeom && (p = _dangling.rfind("\"MULTIPOLYGON(", 0)) !=
+                                   std::string::npos) {
             _curUniqueGeom++;
             size_t i = 0;
             p = parseMultiPolygon(_dangling, p + 12, std::string::npos, &i);
@@ -256,8 +264,8 @@ void GeomCache::parse(const char *c, size_t size) {
                               sizeof(IdMapping));
               _qidToIdFSize++;
             }
-          } else if ((p = _dangling.rfind("GEOMETRYCOLLECTION(", 1)) !=
-                     std::string::npos) {
+          } else if (isGeom && (p = _dangling.rfind("\"GEOMETRYCOLLECTION(",
+                                                    0)) != std::string::npos) {
             _curUniqueGeom++;
             p += 18;
 
