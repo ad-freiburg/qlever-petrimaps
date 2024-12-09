@@ -83,8 +83,8 @@ jobs:
         run: mkdir build && cd build && cmake ..
       - name: make
         run: cd build && make
-  macos-12-build:
-    runs-on: macOS-12
+  macos-13-build:
+    runs-on: macOS-13
     steps:
       - name: Checkout repository code
         uses: actions/checkout@v2
