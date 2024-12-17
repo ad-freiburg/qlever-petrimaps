@@ -24,7 +24,9 @@ void printHelp(int argc, char** argv) {
          "(default: 9090)"
       << "\n    -m <memory>  Max memory in GB (default: 90% of system RAM)"
       << "\n    -c <dir>     cache dir (default: none)"
-      << "\n    -t <minutes> request cache lifetime (default: 360)\n";
+      << "\n    -t <minutes> request cache lifetime (default: 360)"
+      << "\n    -a <numobjects> threshold for auto layer selection (default: "
+         "1000)\n";
 }
 
 // _____________________________________________________________________________
@@ -41,6 +43,7 @@ int main(int argc, char** argv) {
   // default port
   int port = 9090;
   int cacheLifetime = 6 * 60;
+  size_t autoThreshold = 1000;
   double maxMemoryGB =
       (sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE) * 0.9) / 1000000000;
   std::string cacheDir;
@@ -74,6 +77,12 @@ int main(int argc, char** argv) {
         exit(1);
       }
       cacheLifetime = atof(argv[i]);
+    } else if (cur == "-a") {
+      if (++i >= argc) {
+        LOG(ERROR) << "Missing argument for auto threshold (-a).";
+        exit(1);
+      }
+      autoThreshold = atoi(argv[i]);
     }
   }
 
@@ -85,7 +94,7 @@ int main(int argc, char** argv) {
 
   LOG(INFO) << "Starting server...";
   LOG(INFO) << "Max memory is " << maxMemoryGB << " GB...";
-  Server serv(maxMemoryGB * 1000000000, cacheDir, cacheLifetime);
+  Server serv(maxMemoryGB * 1000000000, cacheDir, cacheLifetime, autoThreshold);
 
   LOG(INFO) << "Listening on port " << port;
   util::http::HttpServer(port, &serv, std::thread::hardware_concurrency())

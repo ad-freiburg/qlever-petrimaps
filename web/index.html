@@ -9,28 +9,27 @@
       <meta name="contact" content="brosi[at]cs.uni-freiburg.de">
       <meta name="viewport" content="initial-scale=1">
       <meta name="theme-color" content="#EEE">
-      <meta property="og:title" content="mapui testing">
-      <meta property="og:description" content="mapui testing">
+      <meta property="og:title" content="QLever MapUI">
+      <meta property="og:description" content="QLever MapUI">
 	  <link rel="stylesheet" href="build.css">
    </head>
    <body>
       <main>
          <div id='m'></div>
-		   <div id='ex'>
-			   <button id='ex-csv'>Export as CSV</button>
-			   <button id='ex-tsv'>Export as TSV</button>
-			   <button id='ex-geojson'>Export as GeoJSON</button>
-		   </div>
-		   <div id='stats'></div>
+		 <div id='ex'>
+		   <button id='ex-csv'>Export as CSV</button>
+		   <button id='ex-tsv'>Export as TSV</button>
+		   <button id='ex-geojson'>Export as GeoJSON</button>
+		 </div>
+		 <div id='stats'></div>
       </main>
 	   <div id='msg'>
-		   <div id='msg-heading'>Loading results from QLever</div>
+		   <div id='msg-heading'>Loading results...</div>
          <div id='msg-info'>
-            <div id='msg-info-heading'>Filling the geometry cache</div>
-            <div id='msg-info-desc'>This needs to be done only once after the server has been started and does not have to be repeated for subsequent queries.</div>
+            <div id='msg-info-heading'></div>
+            <div id='msg-info-desc'></div>
          </div>
          <div id='msg-error'></div>
-
          <div id="load">
             <div id="load-stage"></div>
             <div id="load-status">
@@ -40,8 +39,6 @@
             </div>
          </div>
       </div>
-        
-	   </div>
       <script src='build.js' defer></script>
    </body>
 </html>

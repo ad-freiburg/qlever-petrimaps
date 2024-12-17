@@ -51,10 +51,12 @@ const static double THRESHOLD = 200;
 static std::atomic<size_t> _curRow;
 
 // _____________________________________________________________________________
-Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime)
+Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime,
+               size_t autoThreshold)
     : _maxMemory(maxMemory),
       _cacheDir(cacheDir),
-      _cacheLifetime(cacheLifetime) {
+      _cacheLifetime(cacheLifetime),
+      _autoThreshold(autoThreshold) {
   std::thread t(&Server::clearOldSessions, this);
   t.detach();
 }
@@ -207,6 +209,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   // initialize vectors to 0
   for (size_t i = 0; i < NUM_THREADS; i++) points2[i].resize(w * h, 0);
 
+  // POINTS
   if (intersects(r->getPointGrid().getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display points...";
     if (res < THRESHOLD) {
@@ -219,10 +222,17 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         size_t i = ret[j];
 
         const auto& objs = r->getObjects();
+        const auto& dynPoints = r->getDynamicPoints();
 
-        if (i >= objs.size() && style == OBJECTS) {
-          size_t cid = i - objs.size();
-          const auto& p = r->getPoint(objs[r->getClusters()[cid].first].first);
+        if (i >= objs.size() + dynPoints.size() && style == OBJECTS) {
+          size_t cid = i - objs.size() - dynPoints.size();
+          FPoint p;
+          size_t oid = r->getClusters()[cid].first;
+
+          if (oid >= objs.size())
+            p = dynPoints[oid - objs.size()].first;
+          else
+            p = r->getPoint(objs[oid].first);
 
           if (!contains(p, fbbox)) continue;
 
@@ -237,8 +247,15 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           drawPoint(points[0], points2[0], px, py, w, h, style, 1);
           drawLine(image.data(), ppx, ppy, px, py, w, h);
         } else {
-          if (i >= objs.size()) i = r->getClusters()[i - objs.size()].first;
-          const auto& p = r->getPoint(objs[i].first);
+          if (i >= objs.size() + dynPoints.size())
+            i = r->getClusters()[i - objs.size() - dynPoints.size()].first;
+
+          FPoint p;
+          if (i < objs.size())
+            p = r->getPoint(objs[i].first);
+          else
+            p = r->getDPoint(i - objs.size());
+
           if (!contains(p, fbbox)) continue;
 
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
@@ -281,12 +298,17 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                       cell->size());
           } else {
             for (auto i : *cell) {
-              if (i >= r->getObjects().size()) {
-                assert(i - r->getObjects().size() < r->getClusters().size());
-                i = r->getClusters()[i - r->getObjects().size()].first;
+              if (i >= r->getObjects().size() + r->getDynamicPoints().size()) {
+                i = r->getClusters()[i - r->getObjects().size() -
+                                     r->getDynamicPoints().size()]
+                        .first;
               }
-              assert(i < r->getObjects().size());
-              const auto& p = r->getPoint(r->getObjects()[i].first);
+
+              FPoint p;
+              if (i < r->getObjects().size())
+                p = r->getPoint(r->getObjects()[i].first);
+              else
+                p = r->getDPoint(i - r->getObjects().size());
 
               int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
               int py =
@@ -533,7 +555,7 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
 
   if (pars.count("gid") == 0 || pars.find("gid")->second.empty())
     throw std::invalid_argument("No geom id (?gid=) specified.");
-  auto gid = std::atoi(pars.find("gid")->second.c_str());
+  size_t gid = std::atoi(pars.find("gid")->second.c_str());
 
   bool noExport = pars.count("export") == 0 ||
                   pars.find("export")->second.empty() ||
@@ -562,14 +584,30 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
   util::json::Val dict;
 
   if (!noExport) {
-    for (auto col : reqor->requestRow(reqor->getObjects()[gid].second)) {
+    size_t row;
+    if (gid < reqor->getObjects().size())
+      row = reqor->getObjects()[gid].second;
+    else
+      row = reqor->getDynamicPoints()[gid].second;
+
+    for (auto col : reqor->requestRow(row)) {
       dict.dict[col.first] = col.second;
     }
   }
 
   std::stringstream json;
 
-  if (res.poly.size()) {
+  if ((res.poly.size() != 0) + (res.point.size() != 0) +
+          (res.line.size() != 0) >
+      1) {
+    util::geo::Collection<double> col;
+    col.push_back(res.poly);
+    col.push_back(res.line);
+    col.push_back(res.point);
+
+    GeoJsonOutput out(json);
+    out.printLatLng(col, dict);
+  } else if (res.poly.size()) {
     GeoJsonOutput out(json);
     out.printLatLng(res.poly, dict);
   } else if (res.line.size()) {
@@ -577,7 +615,7 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
     out.printLatLng(res.line, dict);
   } else {
     GeoJsonOutput out(json);
-    out.printLatLng(res.pos, dict);
+    out.printLatLng(res.point, dict);
   }
 
   auto answ = util::http::Answer("200 OK", json.str());
@@ -639,7 +677,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   // res of -1 means dont render clusters
   if (style == HEATMAP || reso >= THRESHOLD) reso = -1;
 
-  LOG(INFO) << "[SERVER] Click at " << x << ", " << y;
+  LOG(DEBUG) << "[SERVER] Click at " << x << ", " << y;
 
   std::shared_ptr<Requestor> reqor;
   {
@@ -678,14 +716,24 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
       first = false;
     }
 
-    auto ll =
-        webMercToLatLng<float>(res.pos.front().getX(), res.pos.front().getY());
+    auto ll = webMercToLatLng<float>(res.pos.getX(), res.pos.getY());
 
     json << "]";
     json << std::setprecision(10) << ",\"ll\":{\"lat\" : " << ll.getY()
          << ",\"lng\":" << ll.getX() << "}";
 
-    if (res.poly.size()) {
+    if ((res.poly.size() != 0) + (res.point.size() != 0) +
+            (res.line.size() != 0) >
+        1) {
+      util::geo::Collection<double> col;
+      col.push_back(res.poly);
+      col.push_back(res.line);
+      col.push_back(res.point);
+
+      json << ",\"geom\":";
+      GeoJsonOutput out(json);
+      out.printLatLng(col, {});
+    } else if (res.poly.size()) {
       json << ",\"geom\":";
       GeoJsonOutput out(json);
       out.printLatLng(res.poly, {});
@@ -696,7 +744,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
     } else {
       json << ",\"geom\":";
       GeoJsonOutput out(json);
-      out.printLatLng(res.pos, {});
+      out.printLatLng(res.point, {});
     }
 
     json << "}";
@@ -778,7 +826,8 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
       sessionId = getSessionId();
 
       _rs[sessionId] = reqor;
-      _queryCache[queryId] = sessionId;
+      if (util::toLower(query).find("rand()") == std::string::npos)
+        _queryCache[queryId] = sessionId;
     }
   }
 
@@ -814,7 +863,8 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   std::stringstream json;
   json << std::fixed << "{\"qid\" : \"" << sessionId << "\",\"bounds\":[["
        << llX << "," << llY << "],[" << urX << "," << urY << "]]"
-       << ",\"numobjects\":" << numObjs << "}";
+       << ",\"numobjects\":" << numObjs
+       << ",\"autothreshold\":" << _autoThreshold << "}";
 
   auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";
@@ -850,9 +900,7 @@ std::string Server::parseUrl(std::string u, std::string pl,
 }
 
 // _____________________________________________________________________________
-void Server::pngWriteRowCb(png_structp, png_uint_32 row, int) {
-  _curRow = row;
-}
+void Server::pngWriteRowCb(png_structp, png_uint_32 row, int) { _curRow = row; }
 
 // _____________________________________________________________________________
 inline void pngWriteCb(png_structp png_ptr, png_bytep data, png_size_t length) {
@@ -1090,6 +1138,13 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
           }
           try {
             auto geom = util::geo::multiLineFromWKT<double>(wkt);
+            if (first) ss << ",";
+            geoJsonOut.print(geom, dict);
+            first = true;
+          } catch (std::runtime_error& e) {
+          }
+          try {
+            auto geom = util::geo::collectionFromWKT<double>(wkt);
             if (first) ss << ",";
             geoJsonOut.print(geom, dict);
             first = true;

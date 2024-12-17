@@ -707,7 +707,7 @@ h1, #msg-heading {
 }
 
 #load-status {
-    display: grid;
+    display: none;
     width: 100%;
     background-color: white;
 

@@ -23,12 +23,13 @@ namespace petrimaps {
 struct ResObj {
   bool has;
   size_t id;
-  std::vector<util::geo::FPoint> pos;
+  util::geo::DPoint pos;
   std::vector<std::pair<std::string, std::string>> cols;
 
   // the geometry
-  std::vector<util::geo::DLine> line;
-  std::vector<util::geo::DPolygon> poly;
+  util::geo::MultiPoint<double> point;
+  util::geo::MultiLine<double> line;
+  util::geo::MultiPolygon<double> poly;
 };
 
 struct ReaderCbPair {
@@ -69,12 +70,21 @@ class Requestor {
     return _objects;
   }
 
-  const std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>& getClusters() const {
+  const std::vector<std::pair<util::geo::FPoint, ID_TYPE>>& getDynamicPoints() const {
+    return _dynamicPoints;
+  }
+
+  const std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>&
+  getClusters() const {
     return _clusterObjects;
   }
 
   const util::geo::FPoint& getPoint(ID_TYPE id) const {
     return _cache->getPoints()[id];
+  }
+
+  const util::geo::FPoint& getDPoint(ID_TYPE id) const {
+    return _dynamicPoints[id].first;
   }
 
   size_t getLine(ID_TYPE id) const { return _cache->getLine(id); }
@@ -89,20 +99,21 @@ class Requestor {
     return _cache->getLineBBox(id);
   }
 
-  const ResObj getNearest(util::geo::DPoint p, double rad, double res, util::geo::FBox box) const;
+  const ResObj getNearest(util::geo::DPoint p, double rad, double res,
+                          util::geo::FBox box) const;
 
   const ResObj getGeom(size_t id, double rad) const;
 
   util::geo::MultiPolygon<double> geomPolyGeoms(size_t oid, double eps) const;
   util::geo::MultiLine<double> geomLineGeoms(size_t oid, double eps) const;
-  util::geo::MultiPoint<float> geomPointGeoms(size_t oid, double res) const;
-  util::geo::MultiPoint<float> geomPointGeoms(size_t oid) const;
+  util::geo::MultiPoint<double> geomPointGeoms(size_t oid, double res) const;
+  util::geo::MultiPoint<double> geomPointGeoms(size_t oid) const;
 
   util::geo::DLine extractLineGeom(size_t lineId) const;
   bool isArea(size_t lineId) const;
 
   size_t getNumObjects() const { return _numObjects; }
-  util::geo::FPoint clusterGeom(size_t cid, double res) const;
+  util::geo::DPoint clusterGeom(size_t cid, double res) const;
 
   std::chrono::time_point<std::chrono::system_clock> createdAt() const {
     return _createdAt;
@@ -125,11 +136,15 @@ class Requestor {
   std::string prepQuery(std::string query) const;
   std::string prepQueryRow(std::string query, uint64_t row) const;
 
+  std::vector<std::pair<util::geo::FPoint, ID_TYPE>> getDynamicPoints(
+      const std::vector<IdMapping>& ids) const;
+
   std::string _query;
 
   mutable std::mutex _m;
 
   std::vector<std::pair<ID_TYPE, ID_TYPE>> _objects;
+  std::vector<std::pair<util::geo::FPoint, ID_TYPE>> _dynamicPoints;
   std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>> _clusterObjects;
   size_t _numObjects = 0;
 

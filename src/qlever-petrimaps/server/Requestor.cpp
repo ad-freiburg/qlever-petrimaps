@@ -2,9 +2,9 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
+#include <algorithm>
 #include <cstring>
 #include <iostream>
-#include <algorithm>
 #include <regex>
 #include <sstream>
 
@@ -65,7 +65,18 @@ void Requestor::request(const std::string& qry) {
   const auto& ret = _cache->getRelObjects(reader._ids);
   _objects = ret.first;
   _numObjects = ret.second;
-  LOG(INFO) << "[REQUESTOR] ... done, got " << _objects.size() << " objects.";
+
+  LOG(INFO) << "[REQUESTOR] ... done, got "
+            << _objects.size() << " objects.";
+
+  LOG(INFO) << "[REQUESTOR] Retrieving points dynamically from query...";
+
+  // dynamic points present in query
+  _dynamicPoints = getDynamicPoints(reader._ids);
+  _numObjects += _dynamicPoints.size();
+
+  LOG(INFO) << "[REQUESTOR] ... done, got "
+            << _dynamicPoints.size() << " points.";
 
   LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";
 
@@ -95,6 +106,18 @@ void Requestor::request(const std::string& qry) {
             util::geo::extendBox(_cache->getLineBBox(lId), lineBoxes[t]);
         numLines[t]++;
       }
+    }
+  }
+
+  batch = ceil(static_cast<double>(_dynamicPoints.size()) / NUM_THREADS);
+
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
+  for (size_t t = 0; t < NUM_THREADS; t++) {
+    for (size_t i = batch * t; i < batch * (t + 1) && i < _dynamicPoints.size();
+         i++) {
+      auto geom = _dynamicPoints[i].first;
+
+      pointBoxes[t] = util::geo::extendBox(geom, pointBoxes[t]);
     }
   }
 
@@ -166,7 +189,7 @@ void Requestor::request(const std::string& qry) {
   {
 #pragma omp section
     {
-      size_t j = _objects.size();
+      size_t j = _objects.size() + _dynamicPoints.size();
 
       for (size_t i = 0; i < _objects.size(); i++) {
         const auto& p = _objects[i];
@@ -175,8 +198,7 @@ void Requestor::request(const std::string& qry) {
 
         size_t clusterI = 0;
         // cluster if they have same geometry, don't do for multigeoms
-        while (i < _objects.size() - 1 && geomId == _objects[i + 1].first &&
-               p.second != _objects[i + 1].second) {
+        while (i < _objects.size() - 1 && geomId == _objects[i + 1].first) {
           clusterI++;
           i++;
         }
@@ -184,13 +206,48 @@ void Requestor::request(const std::string& qry) {
         if (clusterI > 0) {
           for (size_t m = 0; m < clusterI; m++) {
             const auto& p = _objects[i - m];
-            auto geomId = p.first;
-            _pgrid.add(_cache->getPoints()[geomId], j);
+            _pgrid.add(_cache->getPoints()[p.first], j);
             _clusterObjects.push_back({i - m, {m, clusterI}});
             j++;
           }
         } else {
           _pgrid.add(_cache->getPoints()[geomId], i);
+        }
+
+        // every 100000 objects, check memory...
+        if (i % 100000 == 0) {
+          try {
+            checkMem(1, _maxMemory);
+          } catch (...) {
+#pragma omp critical
+            { ePtr = std::current_exception(); }
+            break;
+          }
+        }
+      }
+
+      for (size_t i = 0; i < _dynamicPoints.size(); i++) {
+        const auto& p = _dynamicPoints[i];
+        auto geom = p.first;
+
+        size_t clusterI = 0;
+        // cluster if they have same geometry, don't do for multigeoms
+        while (i < _dynamicPoints.size() - 1 &&
+               geom == _dynamicPoints[i + 1].first) {
+          clusterI++;
+          i++;
+        }
+
+        if (clusterI > 0) {
+          for (size_t m = 0; m < clusterI; m++) {
+            const auto& p = _dynamicPoints[i - m];
+            auto geom = p.first;
+            _pgrid.add(geom, j);
+            _clusterObjects.push_back({i - m + _objects.size(), {m, clusterI}});
+            j++;
+          }
+        } else {
+          _pgrid.add(geom, i + _objects.size());
         }
 
         // every 100000 objects, check memory...
@@ -388,7 +445,8 @@ std::string Requestor::prepQuery(std::string query) const {
   }
 
   query = std::regex_replace(query, expr, "SELECT " + var + " WHERE {$&",
-                             std::regex_constants::format_first_only) + "}";
+                             std::regex_constants::format_first_only) +
+          "}";
 
   query += " LIMIT 18446744073709551615";
 
@@ -402,7 +460,8 @@ std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
                   std::regex_constants::icase);
 
   query = std::regex_replace(query, expr, "SELECT * {$&",
-                             std::regex_constants::format_first_only) + "}";
+                             std::regex_constants::format_first_only) +
+          "}";
   query += " OFFSET " + std::to_string(row) + " LIMIT 1";
   return query;
 }
@@ -447,11 +506,15 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
       for (size_t idx = 0; idx < ret.size(); idx++) {
         auto i = ret[idx];
         util::geo::FPoint p;
-        if (i >= _objects.size()) {
-          size_t cid = i - _objects.size();
-          p = clusterGeom(cid, res);
+        if (i >= _objects.size() + _dynamicPoints.size()) {
+          size_t cid = i - _objects.size() - _dynamicPoints.size();
+          auto dp = clusterGeom(cid, res);
+          p = {dp.getX(), dp.getY()};
         } else {
-          p = _cache->getPoints()[_objects[i].first];
+          if (i < _objects.size())
+            p = _cache->getPoints()[_objects[i].first];
+          else
+            p = _dynamicPoints[i - _objects.size()].first;
         }
 
         if (!util::geo::contains(p, fbox)) continue;
@@ -568,17 +631,32 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
 
   if (dBest < rad && dBest <= dBestL) {
     size_t row = 0;
-    if (nearest >= _objects.size())
-      row = _objects[_clusterObjects[nearest - _objects.size()].first].second;
-    else
-      row = _objects[nearest].second;
+    if (nearest >= _objects.size() + _dynamicPoints.size()) {
+      auto id =
+          _clusterObjects[nearest - _objects.size() - _dynamicPoints.size()]
+              .first;
+      if (id >= _objects.size())
+        row = _dynamicPoints[id - _objects.size()].second;
+      else
+        row = _objects[id].second;
+    } else {
+      if (nearest < _objects.size())
+        row = _objects[nearest].second;
+      else
+        row = _dynamicPoints[nearest - _objects.size()].second;
+    }
+
+    auto points = geomPointGeoms(nearest, res);
 
     return {true,
-            nearest >= _objects.size() ? nearest - _objects.size() : nearest,
-            geomPointGeoms(nearest, res),
+            nearest >= _objects.size() + _dynamicPoints.size()
+                ? nearest - _objects.size() - _dynamicPoints.size()
+                : nearest,
+            points.size() == 1 ? points[0] : util::geo::centroid(points),
             requestRow(row),
-            {},
-            {}};
+            points,
+            geomLineGeoms(nearest, rad / 10),
+            geomPolyGeoms(nearest, rad / 10)};
   }
 
   if (dBestL < rad && dBestL <= dBest) {
@@ -589,30 +667,40 @@ const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
     const auto& dline = extractLineGeom(lineId);
 
     if (isArea && util::geo::contains(rp, util::geo::DPolygon(dline))) {
-      return {true,  nearestL,
-              {frp}, requestRow(_objects[nearestL].second),
-              {},    geomPolyGeoms(nearestL, rad / 10)};
+      return {true,
+              nearestL,
+              {frp.getX(), frp.getY()},
+              requestRow(_objects[nearestL].second),
+              geomPointGeoms(nearestL, res),
+              geomLineGeoms(nearestL, rad / 10),
+              geomPolyGeoms(nearestL, rad / 10)};
     } else {
       if (isArea) {
         auto p = util::geo::PolyLine<double>(dline).projectOn(rp).p;
-        auto fp = util::geo::FPoint(p.getX(), p.getY());
-        return {true, nearestL,
-                {fp}, requestRow(_objects[nearestL].second),
-                {},   geomPolyGeoms(nearestL, rad / 10)};
-      } else {
-        auto p = util::geo::PolyLine<double>(dline).projectOn(rp).p;
-        auto fp = util::geo::FPoint(p.getX(), p.getY());
+        auto fp = util::geo::DPoint(p.getX(), p.getY());
         return {true,
                 nearestL,
-                {fp},
+                fp,
                 requestRow(_objects[nearestL].second),
+                geomPointGeoms(nearestL, res),
                 geomLineGeoms(nearestL, rad / 10),
-                {}};
+                geomPolyGeoms(nearestL, rad / 10)};
+      } else {
+        auto p = util::geo::PolyLine<double>(dline).projectOn(rp).p;
+        auto fp = util::geo::DPoint(p.getX(), p.getY());
+
+        return {true,
+                nearestL,
+                fp,
+                requestRow(_objects[nearestL].second),
+                geomPointGeoms(nearestL, res),
+                geomLineGeoms(nearestL, rad / 10),
+                geomPolyGeoms(nearestL, rad / 10)};
       }
     }
   }
 
-  return {false, 0, {{0, 0}}, {}, {}, {}};
+  return {false, 0, {0, 0}, {}, {}, {}, {}};
 }
 
 // _____________________________________________________________________________
@@ -620,6 +708,11 @@ const ResObj Requestor::getGeom(size_t id, double rad) const {
   if (!_cache->ready()) {
     throw std::runtime_error("Geom cache not ready");
   }
+
+  if (id >= _objects.size()) {
+    return {true, id, {0, 0}, {}, geomPointGeoms(id, rad / 10), {}, {}};
+  }
+
   auto obj = _objects[id];
 
   if (obj.first >= I_OFFSET) {
@@ -628,12 +721,30 @@ const ResObj Requestor::getGeom(size_t id, double rad) const {
     bool isArea = Requestor::isArea(lineId);
 
     if (isArea) {
-      return {true, id, {{0, 0}}, {}, {}, geomPolyGeoms(id, rad / 10)};
+      return {true,
+              id,
+              {0, 0},
+              {},
+              geomPointGeoms(id, rad / 10),
+              geomLineGeoms(id, rad / 10),
+              geomPolyGeoms(id, rad / 10)};
     } else {
-      return {true, id, {{0, 0}}, {}, geomLineGeoms(id, rad / 10), {}};
+      return {true,
+              id,
+              {0, 0},
+              {},
+              geomPointGeoms(id, rad / 10),
+              geomLineGeoms(id, rad / 10),
+              geomPolyGeoms(id, rad / 10)};
     }
   } else {
-    return {true, id, geomPointGeoms(id), {}, {}, {}};
+    return {true,
+            id,
+            {0, 0},
+            {},
+            geomPointGeoms(id, rad / 10),
+            geomLineGeoms(id, rad / 10),
+            geomPolyGeoms(id, rad / 10)};
   }
 }
 
@@ -686,50 +797,67 @@ util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t oid,
   // catch multigeometries
   for (size_t i = oid;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
-    if (_objects[oid].first < I_OFFSET) continue;
+    if (_objects[i].first < I_OFFSET ||
+        Requestor::isArea(_objects[i].first - I_OFFSET))
+      continue;
     const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
     polys.push_back(util::geo::simplify(fline, eps));
   }
 
-  for (size_t i = oid - 1;
-       i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
-    if (_objects[oid].first < I_OFFSET) continue;
-    const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
-    polys.push_back(util::geo::simplify(fline, eps));
+  if (oid > 0) {
+    for (size_t i = oid - 1;
+         i < _objects.size() && _objects[i].second == _objects[oid].second;
+         i--) {
+      if (_objects[i].first < I_OFFSET ||
+          Requestor::isArea(_objects[i].first - I_OFFSET))
+        continue;
+      const auto& fline = extractLineGeom(_objects[i].first - I_OFFSET);
+      polys.push_back(util::geo::simplify(fline, eps));
+    }
   }
 
   return polys;
 }
 
 // _____________________________________________________________________________
-util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid) const {
+util::geo::MultiPoint<double> Requestor::geomPointGeoms(size_t oid) const {
   return geomPointGeoms(oid, -1);
 }
 
 // _____________________________________________________________________________
-util::geo::MultiPoint<float> Requestor::geomPointGeoms(size_t oid,
-                                                       double res) const {
-  std::vector<util::geo::FPoint> points;
+util::geo::MultiPoint<double> Requestor::geomPointGeoms(size_t oid,
+                                                        double res) const {
+  std::vector<util::geo::DPoint> points;
 
-  if (!(res < 0) && oid >= _objects.size()) {
-    return {clusterGeom(oid - _objects.size(), res)};
+  if (!(res < 0) && oid >= _objects.size() + _dynamicPoints.size()) {
+    return {clusterGeom(oid - _objects.size() - _dynamicPoints.size(), res)};
+  }
+
+  if (oid >= _objects.size() + _dynamicPoints.size()) {
+    oid = _clusterObjects[oid - _objects.size() - _dynamicPoints.size()].first;
   }
 
   if (oid >= _objects.size()) {
-    oid = _clusterObjects[oid - _objects.size()].first;
+    points.push_back({_dynamicPoints[oid - _objects.size()].first.getX(),
+                      _dynamicPoints[oid - _objects.size()].first.getY()});
   }
 
   // catch multigeometries
   for (size_t i = oid;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
-    if (_objects[oid].first >= I_OFFSET) continue;
-    points.push_back(_cache->getPoints()[_objects[i].first]);
+    if (_objects[i].first >= I_OFFSET) continue;
+    auto p = _cache->getPoints()[_objects[i].first];
+    points.push_back({p.getX(), p.getY()});
   }
 
-  for (size_t i = oid - 1;
-       i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
-    if (_objects[oid].first >= I_OFFSET) continue;
-    points.push_back(_cache->getPoints()[_objects[i].first]);
+  if (oid > 0) {
+    for (size_t i = oid - 1;
+         i < _objects.size() && _objects[i].second == _objects[oid].second;
+         i--) {
+      if (_objects[i].first >= I_OFFSET) continue;
+      auto p = _cache->getPoints()[_objects[i].first];
+      points.push_back({p.getX(), p.getY()});
+    }
   }
 
   return points;
@@ -743,27 +871,65 @@ util::geo::MultiPolygon<double> Requestor::geomPolyGeoms(size_t oid,
   // catch multigeometries
   for (size_t i = oid;
        i < _objects.size() && _objects[i].second == _objects[oid].second; i++) {
-    if (_objects[oid].first < I_OFFSET) continue;
+    if (_objects[i].first < I_OFFSET ||
+        !Requestor::isArea(_objects[i].first - I_OFFSET))
+      continue;
     const auto& dline = extractLineGeom(_objects[i].first - I_OFFSET);
     polys.push_back(util::geo::DPolygon(util::geo::simplify(dline, eps)));
   }
 
-  for (size_t i = oid - 1;
-       i < _objects.size() && _objects[i].second == _objects[oid].second; i--) {
-    if (_objects[oid].first < I_OFFSET) continue;
-    const auto& dline = extractLineGeom(_objects[i].first - I_OFFSET);
-    polys.push_back(util::geo::DPolygon(util::geo::simplify(dline, eps)));
+  if (oid > 0) {
+    for (size_t i = oid - 1;
+         i < _objects.size() && _objects[i].second == _objects[oid].second;
+         i--) {
+      if (_objects[i].first < I_OFFSET ||
+          !Requestor::isArea(_objects[i].first - I_OFFSET))
+        continue;
+      const auto& dline = extractLineGeom(_objects[i].first - I_OFFSET);
+      polys.push_back(util::geo::DPolygon(util::geo::simplify(dline, eps)));
+    }
   }
 
   return polys;
 }
 
 // _____________________________________________________________________________
-util::geo::FPoint Requestor::clusterGeom(size_t cid, double res) const {
-  size_t oid = _clusterObjects[cid].first;
-  const auto& pp = _cache->getPoints()[_objects[oid].first];
+std::vector<std::pair<util::geo::FPoint, ID_TYPE>> Requestor::getDynamicPoints(
+    const std::vector<IdMapping>& ids) const {
+  std::vector<std::pair<util::geo::FPoint, ID_TYPE>> ret;
 
-  if (res < 0) return {pp};
+  for (const auto& p : ids) {
+    uint8_t type = (p.qid & (uint64_t(15) << 60)) >> 60;
+    if (type != 8) continue;  // 8 = Geopoint in Qlever
+
+    uint64_t maskLat = 1073741823;
+    uint64_t maskLng = static_cast<uint64_t>(1073741823) << 30;
+
+    auto lat =
+        ((static_cast<double>((p.qid & maskLat)) / maskLat) * 2 * 180.0) -
+        180.0;
+    auto lng =
+        ((static_cast<double>((p.qid & maskLng) >> 30) / maskLat) * 2 * 90.0) -
+        90.0;
+
+    ret.push_back(
+        {util::geo::latLngToWebMerc(util::geo::FPoint{lat, lng}), p.id});
+  }
+
+  return ret;
+}
+
+// _____________________________________________________________________________
+util::geo::DPoint Requestor::clusterGeom(size_t cid, double res) const {
+  size_t oid = _clusterObjects[cid].first;
+
+  util::geo::FPoint pp;
+  if (oid > _objects.size())
+    pp = _dynamicPoints[oid - _objects.size()].first;
+  else
+    pp = getPoint(_objects[oid].first);
+
+  if (res < 0) return {pp.getX(), pp.getY()};
 
   size_t num = _clusterObjects[cid].second.first;
   size_t tot = _clusterObjects[cid].second.second;
@@ -788,13 +954,13 @@ util::geo::FPoint Requestor::clusterGeom(size_t cid, double res) const {
     double y = pp.getY() + (rad + row * 13.0) * res *
                                cos(relpos * (2.0 * 3.14159265359 / tot));
 
-    return util::geo::FPoint{x, y};
+    return util::geo::DPoint{x, y};
   } else {
     float rad = 2 * tot;
 
     float x = pp.getX() + rad * res * sin(num * (2 * 3.14159265359 / tot));
     float y = pp.getY() + rad * res * cos(num * (2 * 3.14159265359 / tot));
 
-    return util::geo::FPoint{x, y};
+    return util::geo::DPoint{x, y};
   }
 }
