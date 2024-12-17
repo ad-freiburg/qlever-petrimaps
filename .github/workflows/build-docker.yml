@@ -27,7 +27,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Get short sha
+      - name: Get short SHA
         id: sha
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
       - name: Generate image metadata
@@ -53,7 +53,7 @@ jobs:
             adfreiburg/qlever-petrimaps:${{ github.ref_name }},
             adfreiburg/qlever-petrimaps:commit-${{ steps.sha.outputs.sha_short }},
 
-          # Set Annotations and Labels that conform to the OpenContainers
+          # Set annotations and labels that conform to the OpenContainers
           # Annotations Spec
           annotations: ${{ steps.meta.outputs.annotations }}
           labels: ${{ steps.meta.outputs.labels }}
