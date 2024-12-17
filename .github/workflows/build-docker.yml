@@ -46,7 +46,7 @@ jobs:
           target: runtime
           platforms: linux/amd64,linux/arm64
           push: true
-          # We have to explicitly add the "qlever:latest" tag for it to work correctly,
+          # We have to explicitly add the "qlever-petrimaps:latest" tag for it to work correctly,
           # see e.g. https://stackoverflow.com/questions/27643017/do-i-need-to-manually-tag-latest-when-pushing-to-docker-public-repository
           tags: >
             adfreiburg/qlever-petrimaps:latest,
