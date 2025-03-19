@@ -134,17 +134,21 @@ class GeomCache {
 
   static util::geo::DLine createLineString(const std::string& a, size_t p);
 
-	size_t parsePolygon(const std::string& str, size_t p, size_t end, size_t* i);
-
-	size_t parseMultiPoint(const std::string &str, size_t p, size_t end, size_t* i);
-	size_t parseMultiLineString(const std::string &str, size_t p, size_t end, size_t* i);
-  size_t parseMultiPolygon(const std::string &str, size_t p, size_t end, size_t* i);
+	void addPolygon(const util::geo::Polygon<double>& p, size_t* i);
+	void addMultiPoint(const util::geo::MultiPoint<double>& mp, size_t *i);
+	void addMultiLineString(const util::geo::MultiLine<double>& ml, size_t* i);
+	void addLineString(const util::geo::Line<double>& l, size_t* i);
+  void addMultiPolygon(const util::geo::MultiPolygon<double>& mp, size_t* i);
 
   void insertLine(const util::geo::DLine& l, bool isArea);
 
 	static std::vector<size_t> getGeomStarts(const std::string &str, size_t a);
 
   std::string indexHashFromDisk(const std::string& fname);
+
+  static util::geo::DPoint projD(const util::geo::DPoint& p) {
+    return util::geo::latLngToWebMerc<double>(p);
+  }
 
   std::vector<util::geo::FPoint> _points;
   std::vector<util::geo::Point<int16_t>> _linePoints;
