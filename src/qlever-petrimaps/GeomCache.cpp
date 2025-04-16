@@ -37,7 +37,7 @@ using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
 // change on each index-breaking change to the code base
-const static std::string INDEX_HASH_PREFIX = "_2_";
+const static std::string INDEX_HASH_PREFIX = "_3_";
 
 // Different SPAQRL queries to obtain the WKT geometries from an endpoint.
 // It depends on the endpoint which query is used, see `getQuery`.
@@ -240,7 +240,7 @@ void GeomCache::parse(const char *c, size_t size) {
             LOG(INFO) << "[GEOMCACHE] "
                       << "@ " << _curRow << " (" << std::fixed
                       << std::setprecision(2) << getLoadStatusPercent() << "%, "
-                      << _pointsFSize << " points, " << _linesFSize
+                      << _pointsFSize << " (multi-)points, " << _linesFSize
                       << " (open) polygons (with " << _linePointsFSize
                       << " points), " << _geometryDuplicates << " duplicates, "
                       << ((_lastBytesReceived / (1024.0 * 1024.0)) /
@@ -339,7 +339,7 @@ void GeomCache::parseIds(const char *c, size_t size) {
         LOG(INFO) << "[GEOMCACHE] "
                   << "@ " << _curRow << " (" << std::fixed
                   << std::setprecision(2) << getLoadStatusPercent() << "%, "
-                  << _pointsFSize << " points, " << _linesFSize
+                  << _pointsFSize << " (multi-)points, " << _linesFSize
                   << " (open) polygons (with " << _linePointsFSize
                   << " points), " << _geometryDuplicates << " duplicates)";
       }
@@ -350,7 +350,7 @@ void GeomCache::parseIds(const char *c, size_t size) {
         // same WKT string is used in multiple distinct objects, but then stored
         // in qlever using the same internal qlever ID. To avoid a false multi-
         // plication of results (all geoms of matching qlever ID are joined), we
-        // set such repeated qlever IDs to an unnsed dummy value.
+        // set such repeated qlever IDs to an unused dummy value.
         if (_lastQid == _curId.val) {
           LOG(DEBUG) << "Found duplicate internal qlever ID " << _curId.val
                      << " for row " << _curRow
@@ -598,7 +598,7 @@ void GeomCache::request() {
     lastNum = _curRow - offset;
   }
 
-  LOG(INFO) << "Received " << _curRow << " rows";
+  LOG(INFO) << "[GEOMCACHE] Received " << _curRow << " rows";
 
   if (_curRow != _totalSize) {
     LOG(WARN) << "Last received row was " << _curRow << ", but expected "
@@ -1134,12 +1134,14 @@ void GeomCache::fromDisk(const std::string &fname) {
   std::streampos posLinePoints;
   std::streampos posLines;
   std::streampos posQidToId;
+
   // get total num points
   // points
   f.read(reinterpret_cast<char *>(&numPoints), sizeof(size_t));
+
   _points.resize(numPoints);
   posPoints = f.tellg();
-  f.seekg(sizeof(util::geo::DPoint) * numPoints, f.cur);
+  f.seekg(sizeof(util::geo::FPoint) * numPoints, f.cur);
 
   // linePoints
   f.read(reinterpret_cast<char *>(&numLinePoints), sizeof(size_t));
@@ -1166,7 +1168,7 @@ void GeomCache::fromDisk(const std::string &fname) {
   // points
   f.seekg(posPoints);
   for (size_t i = 0; i < numPoints; i++) {
-    f.read(reinterpret_cast<char *>(&_points[i]), sizeof(util::geo::DPoint));
+    f.read(reinterpret_cast<char *>(&_points[i]), sizeof(util::geo::FPoint));
     _curRow += 1;
   }
 
@@ -1210,7 +1212,7 @@ void GeomCache::serializeToDisk(const std::string &fname) const {
   size_t num = _points.size();
   f.write(reinterpret_cast<const char *>(&num), sizeof(size_t));
   f.write(reinterpret_cast<const char *>(&_points[0]),
-          sizeof(util::geo::DPoint) * num);
+          sizeof(util::geo::FPoint) * num);
 
   num = _linePoints.size();
   f.write(reinterpret_cast<const char *>(&num), sizeof(size_t));
