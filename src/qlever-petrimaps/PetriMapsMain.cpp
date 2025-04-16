@@ -12,6 +12,9 @@
 #include "util/log/Log.h"
 
 using petrimaps::Server;
+using util::LogLevel::INFO;
+using util::LogLevel::ERROR;
+using util::LogLevel::WARN;
 
 // _____________________________________________________________________________
 void printHelp(int argc, char** argv) {

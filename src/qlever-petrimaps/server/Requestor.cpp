@@ -24,6 +24,9 @@ using petrimaps::GeomCache;
 using petrimaps::Requestor;
 using petrimaps::RequestReader;
 using petrimaps::ResObj;
+using util::LogLevel::INFO;
+using util::LogLevel::ERROR;
+using util::LogLevel::WARN;
 
 // _____________________________________________________________________________
 void Requestor::request(const std::string& qry) {
