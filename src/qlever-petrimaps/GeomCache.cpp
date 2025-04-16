@@ -34,27 +34,31 @@ const static std::string INDEX_HASH_PREFIX = "_1_";
 //
 // NOTE: It is important that the order of the geometries is deterministic.
 // We use `INTERNAL SORT BY` instead of `ORDER BY` because the former is
-// more efficient (and the actual order does not matter).
+// more efficient (and the actual order does not matter). We don't need the
+// POINT geometries because we can reconstruct them from the QLever ID.
 const static std::string QUERY_ASWKT =
     "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
     "SELECT ?geometry WHERE {"
     " ?subject geo:asWKT ?geometry "
+    " FILTER (!ql:isGeoPoint(?geometry)) "
     "} INTERNAL SORT BY ?geometry";
 
 const static std::string QUERY_WDTP625 =
     "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
     "SELECT ?geometry WHERE {"
-    "  ?subject wdt:P625 ?geometry"
+    " ?subject wdt:P625 ?geometry"
+    " FILTER (!ql:isGeoPoint(?geometry)) "
     "} INTERNAL SORT BY ?geometry";
 
 const static std::string QUERY_WDTP625_SERVICE =
     "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
     "SELECT ?geometry WHERE {"
-    "  SERVICE <https://qlever.cs.uni-freiburg.de/api/wikidata> {"
-    "    SELECT ?geometry WHERE {"
-    "      ?subject wdt:P625 ?geometry"
-    "    } INTERNAL SORT BY ?geometry"
-    "  }"
+    " SERVICE <https://qlever.cs.uni-freiburg.de/api/wikidata> {"
+    "  SELECT ?geometry WHERE {"
+    "   ?subject wdt:P625 ?geometry"
+    "   FILTER (!ql:isGeoPoint(?geometry)) "
+    " } INTERNAL SORT BY ?geometry"
+    " }"
     "}";
 
 // _____________________________________________________________________________
@@ -87,6 +91,7 @@ std::string GeomCache::getCountQuery(const std::string &backendUrl) const {
     LOG(ERROR) << "Could not find SELECT in query: " << query;
     return "SELECT ?count WHERE { VALUES ?count { 0 } }";
   }
+  util::replaceAll(query, "INTERNAL SORT BY ?geometry", "");
   query.insert(pos, "SELECT (COUNT(?geometry) AS ?count) WHERE { ");
   query.append(" }");
   return query;
