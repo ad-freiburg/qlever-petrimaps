@@ -1098,57 +1098,36 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
 
           GeoJsonOutput geoJsonOut(ss, true);
 
-          std::string wkt = row[row.size() - 1].second;
-          if (wkt.size()) wkt[0] = ' ';  // drop " at beginning
+          const char* s = row[row.size() - 1].second.c_str();
+          if (*s) s++;  // drop " at beginning
 
-          try {
-            auto geom = util::geo::polygonFromWKT<double>(wkt);
+          auto wktType = util::geo::getWKTType(s, &s);
+
+          if (wktType != util::geo::WKTType::NONE) {
             if (first) ss << ",";
-            geoJsonOut.print(geom, dict);
             first = true;
-          } catch (std::runtime_error& e) {
           }
-          try {
-            auto geom = util::geo::multiPolygonFromWKT<double>(wkt);
-            if (first) ss << ",";
-            geoJsonOut.print(geom, dict);
-            first = true;
-          } catch (std::runtime_error& e) {
+
+          if (wktType == util::geo::WKTType::POLYGON) {
+            geoJsonOut.print(util::geo::polygonFromWKT<double>(s, 0), dict);
           }
-          try {
-            auto geom = util::geo::pointFromWKT<double>(wkt);
-            if (first) ss << ",";
-            geoJsonOut.print(geom, dict);
-            first = true;
-          } catch (std::runtime_error& e) {
+          if (wktType == util::geo::WKTType::MULTIPOLYGON) {
+            geoJsonOut.print(util::geo::multiPolygonFromWKT<double>(s, 0), dict);
           }
-          try {
-            auto geom = util::geo::multiPointFromWKT<double>(wkt);
-            if (first) ss << ",";
-            geoJsonOut.print(geom, dict);
-            first = true;
-          } catch (std::runtime_error& e) {
+          if (wktType == util::geo::WKTType::POINT) {
+            geoJsonOut.print(util::geo::pointFromWKT<double>(s, 0), dict);
           }
-          try {
-            auto geom = util::geo::lineFromWKT<double>(wkt);
-            if (first) ss << ",";
-            geoJsonOut.print(geom, dict);
-            first = true;
-          } catch (std::runtime_error& e) {
+          if (wktType == util::geo::WKTType::MULTIPOINT) {
+            geoJsonOut.print(util::geo::multiPointFromWKT<double>(s, 0), dict);
           }
-          try {
-            auto geom = util::geo::multiLineFromWKT<double>(wkt);
-            if (first) ss << ",";
-            geoJsonOut.print(geom, dict);
-            first = true;
-          } catch (std::runtime_error& e) {
+          if (wktType == util::geo::WKTType::LINESTRING) {
+            geoJsonOut.print(util::geo::lineFromWKT<double>(s, 0), dict);
           }
-          try {
-            auto geom = util::geo::collectionFromWKT<double>(wkt);
-            if (first) ss << ",";
-            geoJsonOut.print(geom, dict);
-            first = true;
-          } catch (std::runtime_error& e) {
+          if (wktType == util::geo::WKTType::MULTILINESTRING) {
+            geoJsonOut.print(util::geo::multiLineFromWKT<double>(s, 0), dict);
+          }
+          if (wktType == util::geo::WKTType::COLLECTION) {
+            geoJsonOut.print(util::geo::collectionFromWKT<double>(s, 0), dict);
           }
           ss << "\n";
         }
