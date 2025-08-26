@@ -25,12 +25,12 @@ using petrimaps::GeomCache;
 using util::geo::DPoint;
 using util::geo::FPoint;
 using util::geo::latLngToWebMerc;
-using util::geo::lineFromWKT;
-using util::geo::multiLineFromWKT;
-using util::geo::multiPointFromWKT;
-using util::geo::multiPolygonFromWKT;
-using util::geo::pointFromWKT;
-using util::geo::polygonFromWKT;
+using util::geo::lineFromWKTProj;
+using util::geo::multiLineFromWKTProj;
+using util::geo::multiPointFromWKTProj;
+using util::geo::multiPolygonFromWKTProj;
+using util::geo::pointFromWKTProj;
+using util::geo::polygonFromWKTProj;
 using util::LogLevel::DEBUG;
 using util::LogLevel::ERROR;
 using util::LogLevel::INFO;
@@ -194,7 +194,7 @@ void GeomCache::parse(const char *c, size_t size) {
             if (wktType == util::geo::WKTType::COLLECTION) {
               _curUniqueGeom++;
               const auto &coll =
-                  util::geo::collectionFromWKT<double>(s, 0, &projD);
+                  util::geo::collectionFromWKTProj<double>(s, 0, &projD);
 
               for (const auto &g : coll) {
                 if (g.getType() == 0) addMultiPoint({g.getPoint()}, &i);
@@ -206,27 +206,27 @@ void GeomCache::parse(const char *c, size_t size) {
               }
             } else if (wktType == util::geo::WKTType::MULTIPOINT) {
               _curUniqueGeom++;
-              const auto &mp = multiPointFromWKT<double>(s, 0, &projD);
+              const auto &mp = multiPointFromWKTProj<double>(s, 0, &projD);
               addMultiPoint(mp, &i);
             } else if (wktType == util::geo::WKTType::POINT) {
               _curUniqueGeom++;
-              const auto &mp = multiPointFromWKT<double>(s, 0, &projD);
+              const auto &mp = multiPointFromWKTProj<double>(s, 0, &projD);
               addMultiPoint(mp, &i);
             } else if (wktType == util::geo::WKTType::MULTILINESTRING) {
               _curUniqueGeom++;
-              const auto &ml = multiLineFromWKT<double>(s, 0, &projD);
+              const auto &ml = multiLineFromWKTProj<double>(s, 0, &projD);
               addMultiLineString(ml, &i);
             } else if (wktType == util::geo::WKTType::LINESTRING) {
               _curUniqueGeom++;
-              const auto &l = lineFromWKT<double>(s, 0, &projD);
+              const auto &l = lineFromWKTProj<double>(s, 0, &projD);
               addLineString(l, &i);
             } else if (wktType == util::geo::WKTType::MULTIPOLYGON) {
               _curUniqueGeom++;
-              const auto &mp = multiPolygonFromWKT<double>(s, 0, &projD);
+              const auto &mp = multiPolygonFromWKTProj<double>(s, 0, &projD);
               addMultiPolygon(mp, &i);
             } else if (wktType == util::geo::WKTType::POLYGON) {
               _curUniqueGeom++;
-              const auto &poly = polygonFromWKT<double>(s, 0, &projD);
+              const auto &poly = polygonFromWKTProj<double>(s, 0, &projD);
               addPolygon(poly, &i);
             }
 
@@ -1040,6 +1040,31 @@ void GeomCache::insertLine(const util::geo::DLine &l, bool isArea) {
 
   // add line points
   for (const auto &p : l) {
+    mainXLoc = (p.getX() * 10.0) / M_COORD_GRANULARITY;
+    mainYLoc = (p.getY() * 10.0) / M_COORD_GRANULARITY;
+
+    if (mainXLoc != mainX || mainYLoc != mainY) {
+      mainX = mainXLoc;
+      mainY = mainYLoc;
+
+      util::geo::Point<int16_t> p{mCoord(mainX), mCoord(mainY)};
+      _linePointsF.write(reinterpret_cast<const char *>(&p),
+                         sizeof(util::geo::Point<int16_t>));
+      _linePointsFSize++;
+    }
+
+    int16_t minorXLoc = (p.getX() * 10.0) - mainXLoc * M_COORD_GRANULARITY;
+    int16_t minorYLoc = (p.getY() * 10.0) - mainYLoc * M_COORD_GRANULARITY;
+
+    util::geo::Point<int16_t> pp{minorXLoc, minorYLoc};
+    _linePointsF.write(reinterpret_cast<const char *>(&pp),
+                       sizeof(util::geo::Point<int16_t>));
+    _linePointsFSize++;
+  }
+
+  // add closing point for area
+  if (isArea && l.size()) {
+    const auto& p = l.front();
     mainXLoc = (p.getX() * 10.0) / M_COORD_GRANULARITY;
     mainYLoc = (p.getY() * 10.0) / M_COORD_GRANULARITY;
 

@@ -39,4 +39,4 @@ add_custom_target(htmlfiles DEPENDS index.h build.h style.h)
 
 add_dependencies(qlever_petrimaps_dep htmlfiles)
 
-target_link_libraries(petrimaps qlever_petrimaps_dep 3rdparty_dep pb_util ${PNG_LIBRARIES} -lpthread -lcurl)
+target_link_libraries(petrimaps qlever_petrimaps_dep 3rdparty_dep pb_util pb_util_geo pb_util_json pb_util_http ${PNG_LIBRARIES} -lpthread -lcurl)

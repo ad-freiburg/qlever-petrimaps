@@ -10,6 +10,7 @@
 
 #include "qlever-petrimaps/Misc.h"
 #include "util/log/Log.h"
+#include "util/String.h"
 
 using petrimaps::RequestReader;
 using util::LogLevel::INFO;
