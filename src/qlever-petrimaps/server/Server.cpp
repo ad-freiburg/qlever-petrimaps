@@ -1099,7 +1099,8 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
           GeoJsonOutput geoJsonOut(ss, true);
 
           const char* s = row[row.size() - 1].second.c_str();
-          if (*s) s++;  // drop " at beginning
+
+          if (*s == '"') s++;  // drop " at beginning
 
           auto wktType = util::geo::getWKTType(s, &s);
 
