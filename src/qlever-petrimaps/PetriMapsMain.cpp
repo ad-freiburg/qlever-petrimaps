@@ -12,8 +12,8 @@
 #include "util/log/Log.h"
 
 using petrimaps::Server;
-using util::LogLevel::INFO;
 using util::LogLevel::ERROR;
+using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
 // _____________________________________________________________________________
@@ -89,17 +89,23 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (cacheDir.size() && access(cacheDir.c_str(), W_OK) != 0) {
-    std::stringstream ss;
-    ss << "No write access to cache dir " << cacheDir;
-    throw std::runtime_error(ss.str());
+  try {
+    if (cacheDir.size() && access(cacheDir.c_str(), W_OK) != 0) {
+      std::stringstream ss;
+      ss << "No write access to cache dir '" << cacheDir << "'";
+      throw std::runtime_error(ss.str());
+    }
+
+    LOG(INFO) << "Starting server...";
+    LOG(INFO) << "Max memory is " << maxMemoryGB << " GB...";
+    Server serv(maxMemoryGB * 1000000000, cacheDir, cacheLifetime,
+                autoThreshold);
+
+    LOG(INFO) << "Listening on port " << port;
+    util::http::HttpServer(port, &serv, std::thread::hardware_concurrency())
+        .run();
+  } catch (const std::runtime_error& e) {
+    LOG(ERROR) << e.what();
+    exit(1);
   }
-
-  LOG(INFO) << "Starting server...";
-  LOG(INFO) << "Max memory is " << maxMemoryGB << " GB...";
-  Server serv(maxMemoryGB * 1000000000, cacheDir, cacheLifetime, autoThreshold);
-
-  LOG(INFO) << "Listening on port " << port;
-  util::http::HttpServer(port, &serv, std::thread::hardware_concurrency())
-      .run();
 }
