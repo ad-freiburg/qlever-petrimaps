@@ -417,6 +417,7 @@ size_t GeomCache::requestSize() {
     auto qUrl = queryUrl(countQuery, 0, 1);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
+    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbCount);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
@@ -486,6 +487,7 @@ void GeomCache::requestPart(size_t offset) {
     auto qUrl = queryUrl(getQuery(_backendUrl), offset, 10000000);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
+    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
@@ -694,6 +696,7 @@ void GeomCache::requestIdPart(size_t offset) {
     auto qUrl = queryUrl(getQuery(_backendUrl), offset, 100000000);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
+    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbIds);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
@@ -1274,6 +1277,7 @@ std::string GeomCache::requestIndexHash() {
     std::string url = _backendUrl + "/?cmd=get-index-id";
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
+    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbString);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);

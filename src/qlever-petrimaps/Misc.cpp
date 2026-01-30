@@ -29,6 +29,7 @@ std::vector<std::string> RequestReader::requestColumns(
     auto url = queryUrl(query) + "&action=tsv_export";
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
+    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION,
                      RequestReader::writeStringCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, &resString);
@@ -93,6 +94,7 @@ void RequestReader::requestVals(const std::string& query) {
     auto url = queryUrl(query);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
+    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, RequestReader::writeCbVals);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
@@ -157,6 +159,7 @@ void RequestReader::requestIds(const std::string& query) {
     auto url = queryUrl(query);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
+    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, RequestReader::writeCbIds);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
@@ -228,6 +231,7 @@ void RequestReader::requestRows(const std::string& query,
     auto url = queryUrl(query);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
+    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, ptr);
     curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
