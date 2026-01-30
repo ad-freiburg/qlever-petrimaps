@@ -47,7 +47,8 @@ class Requestor {
         _maxMemory(maxMemory),
         _createdAt(std::chrono::system_clock::now()) {}
 
-  void request(const std::string& query);
+  void request(const std::string& query,
+               const std::vector<std::pair<std::string, std::string>>& fields);
 
   std::vector<std::pair<std::string, std::string>> requestRow(
       uint64_t row) const;
@@ -70,7 +71,8 @@ class Requestor {
     return _objects;
   }
 
-  const std::vector<std::pair<util::geo::FPoint, ID_TYPE>>& getDynamicPoints() const {
+  const std::vector<std::pair<util::geo::FPoint, ID_TYPE>>& getDynamicPoints()
+      const {
     return _dynamicPoints;
   }
 
@@ -115,6 +117,9 @@ class Requestor {
   size_t getNumObjects() const { return _numObjects; }
   util::geo::DPoint clusterGeom(size_t cid, double res) const;
 
+  double getVal(size_t oid) const;
+  std::pair<double, double> getValRange() const;
+
   std::chrono::time_point<std::chrono::system_clock> createdAt() const {
     return _createdAt;
   }
@@ -133,19 +138,23 @@ class Requestor {
 
   size_t _maxMemory;
 
-  std::string prepQuery(std::string query) const;
+  std::string prepQuery(std::string query, std::vector<std::string> columns,
+                        std::string sortBy) const;
+  std::vector<std::string> getColumns(std::string query) const;
   std::string prepQueryRow(std::string query, uint64_t row) const;
 
   std::vector<std::pair<util::geo::FPoint, ID_TYPE>> getDynamicPoints(
       const std::vector<IdMapping>& ids) const;
 
-  std::string _query;
+  std::string _query, _sortColumn;
 
   mutable std::mutex _m;
 
   std::vector<std::pair<ID_TYPE, ID_TYPE>> _objects;
   std::vector<std::pair<util::geo::FPoint, ID_TYPE>> _dynamicPoints;
   std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>> _clusterObjects;
+  std::vector<double> _vals;
+  double _valMax, _valMin;
   size_t _numObjects = 0;
 
   petrimaps::Grid<ID_TYPE, float> _pgrid;

@@ -156,8 +156,50 @@ void heatmap_add_weighted_point_with_stamp(heatmap_t* h, unsigned x, unsigned y,
                 /* TODO: see unweighted function */
                 assert(*stampline >= 0.0f);
 
-                *line += *stampline * w;
-                if(*line > h->max) {h->max = *line;}
+				*line += *stampline * w;
+				if(*line > h->max) {h->max = *line;}
+
+                assert(*line >= 0.0f);
+            }
+        }
+    } /* I hate you very much! */
+}
+
+void heatmap_add_weighted_point_with_stamp_no_aggreg(heatmap_t* h, unsigned x, unsigned y, float w, const heatmap_stamp_t* stamp)
+{
+    /* I'm still unsure whether we want this to be an assert or not... */
+    if(x >= h->w || y >= h->h)
+        return;
+
+    /* Currently, negative weights are not supported as they mess with the max. */
+    assert(w >= 0.0f);
+
+    /* I hate you, C */
+    {
+        /* Note: the order of operations is important, since we're computing with unsigned! */
+
+        /* These are [first, last) pairs in the STAMP's pixels. */
+        const unsigned x0 = x < stamp->w/2 ? (stamp->w/2 - x) : 0;
+        const unsigned y0 = y < stamp->h/2 ? (stamp->h/2 - y) : 0;
+        const unsigned x1 = (x + stamp->w/2) < h->w ? stamp->w : stamp->w/2 + (h->w - x);
+        const unsigned y1 = (y + stamp->h/2) < h->h ? stamp->h : stamp->h/2 + (h->h - y);
+
+        unsigned iy;
+
+        for(iy = y0 ; iy < y1 ; ++iy) {
+            /* TODO: could it be clearer by using separate vars and computing a ystep? */
+            float* line = h->buf + ((y + iy) - stamp->h/2)*h->w + (x + x0) - stamp->w/2;
+            const float* stampline = stamp->buf + iy*stamp->w + x0;
+
+            unsigned ix;
+            for(ix = x0 ; ix < x1 ; ++ix, ++line, ++stampline) {
+                /* TODO: see unweighted function */
+                assert(*stampline >= 0.0f);
+
+				*line = *stampline * w;
+				if(*line > h->max) {
+					h->max = *line;
+				}
 
                 assert(*line >= 0.0f);
             }

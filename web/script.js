@@ -7,6 +7,17 @@ let qleverBackend = urlParams.get("backend");
 let query = urlParams.get("query");
 let mode = urlParams.get("mode");
 
+let rasterWidth = parseFloat(urlParams.get("rasterw"));
+let rasterHeight = parseFloat(urlParams.get("rasterh"));
+let fieldsRaw = (urlParams.get("fields") || "").split(";");
+let fields = [];
+
+for (let fieldRaw of fieldsRaw) {
+	let parts = fieldRaw.split(",");
+	if (parts.length == 0) continue;
+	fields.push({geo : parts[0], value : parts.length > 1 ? parts[1] : null});
+}
+
 // id of SetInterval to stop loadStatus requests on error or load finish
 let loadStatusIntervalId = -1;
 
@@ -16,7 +27,7 @@ let map = L.map('m', {
 }).setView([47.9965, 7.8469], 13);
 map.attributionControl.setPrefix('University of Freiburg');
 
-let layerControl = L.control.layers([], [], {collapsed:true, position: 'topleft'}).addTo(map);
+// let layerControl = L.control.layers([], [], {collapsed:true, position: 'topleft'}).addTo(map);
 
 let osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a rel="noreferrer" target="_blank" href="#">OpenStreetMap</a>',
@@ -146,15 +157,44 @@ function loadMap(id, bounds, numObjects, autoThreshold) {
 
     document.getElementById("stats").innerHTML = "<span>Showing " + numObjects.toLocaleString('en') + (numObjects > 1 ? " objects" : " object") + "</span>";
 
-	const heatmapLayer = L.nonTiledLayer.wms('heatmap', {
-        minZoom: 0,
-        maxZoom: 19,
-        opacity: 0.8,
-        layers: id,
-		styles: ["heatmap"],
-        format: 'image/png',
-        transparent: true,
-    });
+	const heatmapStyles = ["spectralexp", "spectral", "RdYlGn", "RdYlGnexp", "RdYlBu","RdYlBuexp", "w2b", "b2w", "RdGy","RdGyexp","YlOrRd","YlOrRdexp","Blues","Bluesexp","Greens","Greensexp","Greys","Greysexp","Oranges","Orangesexp","Reds", "Redsexp"];
+	let heatmapLayers = [];
+
+	const rasterStyles = ["spectral", "RdYlGn", "RdYlBu","RdGy","YlOrRd","Blues","Greens","Greys","Oranges","Reds"];
+	let rasterLayers = [];
+
+
+    for (const s of heatmapStyles) {
+		heatmapLayers.push({
+			name: s,
+			layer: L.nonTiledLayer.wms('heatmap', {
+				minZoom: 0,
+				maxZoom: 19,
+				opacity: 0.8,
+				layers: id,
+				styles: ["heatmap-" + s],
+				format: 'image/png',
+				transparent: true,
+			})
+		});
+    	heatmapLayers[heatmapLayers.length - 1].layer.on('load', _onLayerLoad);
+	}
+
+    for (const s of rasterStyles) {
+		rasterLayers.push({
+			name: s,
+			layer: L.nonTiledLayer.wms('heatmap', {
+				minZoom: 0,
+				maxZoom: 19,
+				opacity: 0.8,
+				layers: id,
+				styles: ["raster-" + rasterWidth + "x" + rasterHeight + "-" + s],
+				format: 'image/png',
+				transparent: true,
+			})
+		});
+    	rasterLayers[rasterLayers.length - 1].layer.on('load', _onLayerLoad);
+	}
 
 	const objectsLayer = L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
@@ -170,7 +210,7 @@ function loadMap(id, bounds, numObjects, autoThreshold) {
         maxZoom: 15,
         opacity: numObjects > autoThreshold ? 0.8 : 0.9,
         layers: id,
-        styles: numObjects > autoThreshold ? ["heatmap"] : ["objects"],
+        styles: numObjects > autoThreshold ? ["heatmap-spectralexp"] : ["objects"],
         format: 'image/png',
         transparent: true,
     });
@@ -185,22 +225,75 @@ function loadMap(id, bounds, numObjects, autoThreshold) {
     });
 	const autoLayerGroup = L.layerGroup([autoHeatmapLayer, autoObjectLayer]);
 
-    heatmapLayer.on('load', _onLayerLoad);
     objectsLayer.on('load', _onLayerLoad);
     autoHeatmapLayer.on('load', _onLayerLoad);
     autoObjectLayer.on('load', _onLayerLoad);
 
-	layerControl.addBaseLayer(heatmapLayer, "Heatmap");
-	layerControl.addBaseLayer(objectsLayer, "Objects");
-	layerControl.addBaseLayer(autoLayerGroup, "Auto");
+	const themes = {
+	  auto: {
+		name: "Auto",
+		overlays: [
+		  {
+			name: "Style",
+			type: "radio",
+			layers: [
+			  { name: "Default", layer: autoLayerGroup },
+			]
+		  }
+		]
+	  },
 
-    if (mode == "heatmap") {
-        heatmapLayer.addTo(map).on('error', function() {showError(genError);});
-    } else if (mode == "objects") {
-        objectsLayer.addTo(map).on('error', function() {showError(genError);});
-    } else {
-        autoLayerGroup.addTo(map).on('error', function() {showError(genError);});
-    }
+	  heatmap: {
+		name: "Heatmap",
+		overlays: [
+		  {
+			name: "Style",
+			type: "radio",
+			layers: heatmapLayers
+		  }
+		]
+	  },
+
+	  objects: {
+		name: "Objects",
+		overlays: [
+		  {
+			name: "Layers",
+			type: "checkbox",
+			layers: [
+			  { name: "default", layer: objectsLayer },
+			]
+		  }
+		]
+	  }	};
+
+	if (!isNaN(rasterWidth) && !isNaN(rasterHeight)) {
+	  themes["raster"] ={
+		name: "Raster",
+		overlays: [
+		  {
+			name: "Style",
+			type: "radio",
+			layers: rasterLayers
+		  }
+		]
+	  }
+	}
+
+	const themeControl = new L.Control.ThemeLayerSwitcher(themes, {
+	  position: 'topleft',
+	  defaultTheme: 'auto',
+	});
+
+	map.addControl(themeControl);
+
+	if (mode == "heatmap") {
+		themeControl.applyTheme("heatmap");
+	} else if (mode == "objects") {
+		themeControl.applyTheme("objects");
+	} else if (mode == "raster") {
+		themeControl.applyTheme("raster");
+	}
 
     map.on('click', function(e) {
         const pos = L.Projection.SphericalMercator.project(e.latlng);
@@ -214,7 +307,7 @@ function loadMap(id, bounds, numObjects, autoThreshold) {
         const bounds = [sw.x, sw.y, ne.x, ne.y];
 
         let styles = "objects";
-        if (map.hasLayer(heatmapLayer)) styles = "heatmap";
+		for (let layer of heatmapLayers) if (map.hasLayer(layer)) styles = "heatmap";
         if (map.hasLayer(objectsLayer)) styles = "objects";
 
         fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=' + bounds.join(',') + '&styles=' + styles)
@@ -288,7 +381,7 @@ function fetchResults() {
     .then(data => {
         loadMap(data["qid"], data["bounds"], data["numobjects"], data["autothreshold"]);
     })
-    .catch(error => showError(error));
+	.catch(error => showError(error));
 }
 
 function fetchLoadStatusInterval(interval) {

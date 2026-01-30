@@ -17,7 +17,18 @@
 #include <vector>
 
 #include "3rdparty/heatmap.h"
+#include "3rdparty/colorschemes/Blues.h"
+#include "3rdparty/colorschemes/Greens.h"
+#include "3rdparty/colorschemes/Greys.h"
+#include "3rdparty/colorschemes/Oranges.h"
+#include "3rdparty/colorschemes/Purples.h"
+#include "3rdparty/colorschemes/RdGy.h"
+#include "3rdparty/colorschemes/RdYlBu.h"
+#include "3rdparty/colorschemes/RdYlGn.h"
+#include "3rdparty/colorschemes/Reds.h"
 #include "3rdparty/colorschemes/Spectral.h"
+#include "3rdparty/colorschemes/YlOrRd.h"
+#include "3rdparty/colorschemes/gray.h"
 #include "qlever-petrimaps/build.h"
 #include "qlever-petrimaps/index.h"
 #include "qlever-petrimaps/server/Requestor.h"
@@ -150,12 +161,71 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   auto box = util::split(pars.find("bbox")->second, ',');
 
   if (pars.count("layers") == 0 || pars.find("layers")->second.empty())
-    throw std::invalid_argument("No bbox specified.");
+    throw std::invalid_argument("No layer specified.");
   std::string id = pars.find("layers")->second;
 
   MapStyle style = HEATMAP;
+  auto colorScheme = heatmap_cs_Spectral_mixed_exp;
+  double rasterWidth = 10;
+  double rasterHeight = 10;
+
   if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
-    if (pars.find("styles")->second == "objects") style = OBJECTS;
+  }
+
+  if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
+    auto parts = util::split(pars.find("styles")->second, '-');
+
+    if (parts[0] == "objects") style = OBJECTS;
+    if (parts[0] == "raster") style = RASTER;
+
+    if (style == RASTER && parts.size() > 1) {
+      // in web mercator units (pseudometers)!
+      auto xy = util::split(parts[1], 'x');
+      if (xy.size() > 1) {
+        rasterWidth = ::atof(xy[0].c_str());
+        rasterHeight = ::atof(xy[1].c_str());
+      }
+    }
+
+    if (style == HEATMAP && parts.size() > 1) {
+      if (parts[1] == "spectralexp")
+        colorScheme = heatmap_cs_Spectral_mixed_exp;
+      if (parts[1] == "spectral") colorScheme = heatmap_cs_Spectral_mixed;
+      if (parts[1] == "RdYlGn") colorScheme = heatmap_cs_RdYlGn_mixed;
+      if (parts[1] == "RdYlGnexp") colorScheme = heatmap_cs_RdYlGn_mixed_exp;
+      if (parts[1] == "w2b") colorScheme = heatmap_cs_w2b_opaque;
+      if (parts[1] == "b2w") colorScheme = heatmap_cs_b2w_opaque;
+      if (parts[1] == "RdYlBu") colorScheme = heatmap_cs_RdYlBu_mixed;
+      if (parts[1] == "RdGy") colorScheme = heatmap_cs_RdGy_mixed;
+      if (parts[1] == "YlOrRd") colorScheme = heatmap_cs_YlOrRd_mixed;
+      if (parts[1] == "Blues") colorScheme = heatmap_cs_Blues_mixed;
+      if (parts[1] == "Greens") colorScheme = heatmap_cs_Greens_mixed;
+      if (parts[1] == "Greys") colorScheme = heatmap_cs_Greys_mixed;
+      if (parts[1] == "Oranges") colorScheme = heatmap_cs_Oranges_mixed;
+      if (parts[1] == "Reds") colorScheme = heatmap_cs_Reds_mixed;
+
+      if (parts[1] == "RdYlBuexp") colorScheme = heatmap_cs_RdYlBu_mixed_exp;
+      if (parts[1] == "RdGyexp") colorScheme = heatmap_cs_RdGy_mixed_exp;
+      if (parts[1] == "YlOrRdexp") colorScheme = heatmap_cs_YlOrRd_mixed_exp;
+      if (parts[1] == "Bluesexp") colorScheme = heatmap_cs_Blues_mixed_exp;
+      if (parts[1] == "Greensexp") colorScheme = heatmap_cs_Greens_mixed_exp;
+      if (parts[1] == "Greysexp") colorScheme = heatmap_cs_Greys_mixed_exp;
+      if (parts[1] == "Orangesexp") colorScheme = heatmap_cs_Oranges_mixed_exp;
+      if (parts[1] == "Redsexp") colorScheme = heatmap_cs_Reds_mixed_exp;
+    }
+
+    if (style == RASTER && parts.size() > 2) {
+      if (parts[2] == "spectral") colorScheme = heatmap_cs_Spectral_discrete;
+      if (parts[2] == "RdYlGn") colorScheme = heatmap_cs_RdYlGn_discrete;
+      if (parts[2] == "RdYlBu") colorScheme = heatmap_cs_RdYlBu_discrete;
+      if (parts[2] == "RdGy") colorScheme = heatmap_cs_RdGy_discrete;
+      if (parts[2] == "YlOrRd") colorScheme = heatmap_cs_YlOrRd_discrete;
+      if (parts[2] == "Blues") colorScheme = heatmap_cs_Blues_discrete;
+      if (parts[2] == "Greens") colorScheme = heatmap_cs_Greens_discrete;
+      if (parts[2] == "Greys") colorScheme = heatmap_cs_Greys_discrete;
+      if (parts[2] == "Oranges") colorScheme = heatmap_cs_Oranges_discrete;
+      if (parts[2] == "Reds") colorScheme = heatmap_cs_Reds_discrete;
+    }
   }
 
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
@@ -186,9 +256,13 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   int w = atoi(pars.find("width")->second.c_str());
   int h = atoi(pars.find("height")->second.c_str());
 
+  if (w < 0 || w > 20000) throw std::invalid_argument("Invalid request");
+  if (h < 0 || h > 20000) throw std::invalid_argument("Invalid request");
+
   double res = mercH / h;
 
   heatmap_t* hm = heatmap_new(w, h);
+  hm->max = r->getValRange().second;
 
   double realCellSize = r->getPointGrid().getCellWidth();
   double virtCellSize = res * 2.5;
@@ -244,7 +318,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           int ppx = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int ppy = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-          drawPoint(points[0], points2[0], px, py, w, h, style, 1);
+          drawPoint(points[0], points2[0], px, py, w, h, style, r->getVal(i));
           drawLine(image.data(), ppx, ppy, px, py, w, h);
         } else {
           if (i >= objs.size() + dynPoints.size())
@@ -261,7 +335,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-          drawPoint(points[0], points2[0], px, py, w, h, style, 1);
+          drawPoint(points[0], points2[0], px, py, w, h, style, r->getVal(i));
         }
       }
     } else {
@@ -314,7 +388,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
               int py =
                   h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
               drawPoint(points[omp_get_thread_num()],
-                        points2[omp_get_thread_num()], px, py, w, h, style, 1);
+                        points2[omp_get_thread_num()], px, py, w, h, style,
+                        r->getVal(i));
             }
           }
         }
@@ -461,7 +536,19 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   LOG(INFO) << "[SERVER] Adding points to heatmap...";
 
-  if (style == OBJECTS) {
+  if (style == RASTER) {
+    auto stamp = raster_stamp(res, rasterWidth, rasterHeight, w, h);
+    for (size_t i = 0; i < NUM_THREADS; i++) {
+      for (const auto& p : points[i]) {
+        size_t y = p / w;
+        size_t x = p - (y * w);
+        if (points2[i][p] > 0)
+          heatmap_add_weighted_point_with_stamp_no_aggreg(hm, x, y,
+                                                          points2[i][p], stamp);
+      }
+    }
+    heatmap_stamp_free(stamp);
+  } else if (style == OBJECTS) {
     auto stamp = heatmap_stamp_gen(3);
     for (size_t i = 0; i < NUM_THREADS; i++) {
       for (const auto& p : points[i]) {
@@ -486,7 +573,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   LOG(INFO) << "[SERVER] ...done";
   LOG(INFO) << "[SERVER] Rendering heatmap...";
 
-  if (style == OBJECTS) {
+  if (style == RASTER) {
+    heatmap_render_to(hm, colorScheme, &image[0]);
+  } else if (style == OBJECTS) {
     static const unsigned char discrete_data[] = {
         0,   0,   0,   0,   0,   0,   0,   0,   51,  136, 255, 16,  51,  136,
         255, 32,  51,  136, 255, 64,  51,  136, 255, 128, 51,  136, 255, 160,
@@ -496,7 +585,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
     heatmap_render_saturated_to(hm, &discrete, 1, &image[0]);
   } else {
-    heatmap_render_to(hm, heatmap_cs_Spectral_mixed_exp, &image[0]);
+    heatmap_render_to(hm, colorScheme, &image[0]);
   }
 
   heatmap_free(hm);
@@ -658,6 +747,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   MapStyle style = HEATMAP;
   if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
     if (pars.find("styles")->second == "objects") style = OBJECTS;
+    if (pars.find("styles")->second == "raster") style = RASTER;
   }
 
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
@@ -800,6 +890,19 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     throw std::invalid_argument("No query (?q=) specified.");
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
+
+  std::vector<std::pair<std::string, std::string>> fields;
+  std::string fieldsHash = "";
+
+  if (pars.count("fields") != 0) {
+    fieldsHash = pars.find("fields")->second;
+    for (auto raw : util::split(pars.find("fields")->second, ';')) {
+      auto parts = util::split(raw, ',');
+      if (parts.size() == 0) continue;
+      fields.push_back({parts[0], parts.size() > 1 ? parts[1] : ""});
+    }
+  }
+
   auto query = pars.find("query")->second;
   auto backend = pars.find("backend")->second;
 
@@ -809,7 +912,8 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   createCache(backend);
   std::string indexHash = loadCache(backend);
 
-  std::string queryId = backend + "$" + indexHash + "$" + query;
+  std::string queryId =
+      backend + "$" + indexHash + "$" + query + "$" + fieldsHash;
 
   std::shared_ptr<Requestor> reqor;
   std::string sessionId;
@@ -832,7 +936,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   }
 
   try {
-    reqor->request(query);
+    reqor->request(query, fields);
   } catch (OutOfMemoryError& ex) {
     LOG(ERROR) << ex.what() << backend;
 
@@ -1113,7 +1217,8 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
             geoJsonOut.print(util::geo::polygonFromWKT<double>(s, 0), dict);
           }
           if (wktType == util::geo::WKTType::MULTIPOLYGON) {
-            geoJsonOut.print(util::geo::multiPolygonFromWKT<double>(s, 0), dict);
+            geoJsonOut.print(util::geo::multiPolygonFromWKT<double>(s, 0),
+                             dict);
           }
           if (wktType == util::geo::WKTType::POINT) {
             geoJsonOut.print(util::geo::pointFromWKT<double>(s, 0), dict);
@@ -1205,21 +1310,32 @@ util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
 // _____________________________________________________________________________
 void Server::drawPoint(std::vector<uint32_t>& points,
                        std::vector<double>& points2, int px, int py, int w,
-                       int h, MapStyle style, size_t num) const {
-  if (style == OBJECTS) {
+                       int h, MapStyle style, double weight) const {
+  if (style == RASTER) {
+    if (px >= 0 && py >= 0 && px < w && py < h) {
+      if (points2[w * py + px] == 0) {
+        points.push_back(w * py + px);
+        points2[w * py + px] = weight;
+      } else {
+        // not entirely correct, but looks good on very low zoom levels
+        // where many raster cells are rendered onto the same pixel
+        points2[w * py + px] = (points2[w * py + px] + weight) / 2.0;
+      }
+    }
+  } else if (style == OBJECTS) {
     // for the raw style, increase the size of the points a bit
     for (int x = px - 2; x < px + 2; x++) {
       for (int y = py - 2; y < py + 2; y++) {
         if (x >= 0 && y >= 0 && x < w && y < h) {
           if (points2[w * y + x] == 0) points.push_back(w * y + x);
-          points2[w * y + x] += num;
+          points2[w * y + x] += weight;
         }
       }
     }
   } else {
     if (px >= 0 && py >= 0 && px < w && py < h) {
       if (points2[w * py + px] == 0) points.push_back(w * py + px);
-      points2[w * py + px] += num;
+      points2[w * py + px] += weight;
     }
   }
 }
@@ -1309,4 +1425,27 @@ void Server::drawLine(unsigned char* image, int x0, int y0, int x1, int y1,
       y0 += sy;
     }
   }
+}
+
+// _____________________________________________________________________________
+heatmap_stamp_t* Server::raster_stamp(double res, double w, double h,
+                                      double screenW, double screenH) const {
+  if (w < 0) w = 0;
+  if (h < 0) h = 0;
+  if (isnan(w)) w = 0;  // NaN
+  if (isnan(h)) h = 0;  // NaN
+
+  int width = std::min(screenW * 2, (ceil(w / res)));
+  int height = std::min(screenH * 2, (ceil(h / res)));
+
+  float* stamp = (float*)calloc(width * height, sizeof(float));
+  if (!stamp) return 0;
+
+  for (int x = 0; x < width; x++) {
+    for (int y = 0; y < height; y++) {
+      stamp[x * height + y] = 1.0;
+    }
+  }
+
+  return heatmap_stamp_new_with(width, height, stamp);
 }

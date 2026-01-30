@@ -27,6 +27,8 @@ const static size_t MAXROWS = 18446744073709551615u;
 const static int16_t M_COORD_GRANULARITY = 12230;
 const static int16_t M_COORD_OFFSET = 16384;
 
+const static std::string CURL_USER_AGENT = "petrimaps";
+
 namespace petrimaps {
 
 enum ParseState { IN_HEADER, IN_ROW };
@@ -86,26 +88,34 @@ inline void checkMem(size_t want, size_t max) {
 }
 
 struct RequestReader {
-  explicit RequestReader(const std::string& backendUrl, size_t maxMemory)
+  explicit RequestReader(const std::string& backendUrl, size_t maxMemory,
+                         size_t geomFields,
+                         std::map<size_t, size_t> valFields)
       : _backendUrl(backendUrl),
         _curl(curl_easy_init()),
-        _maxMemory(maxMemory) {}
+        _maxMemory(maxMemory),
+        _geomFields(geomFields),
+        _valFields(valFields) {}
   ~RequestReader() {
     if (_curl) curl_easy_cleanup(_curl);
   }
 
   std::vector<std::string> requestColumns(const std::string& query);
   void requestIds(const std::string& qurl);
+  void requestVals(const std::string& query);
   void requestRows(const std::string& qurl);
   void requestRows(const std::string& query,
                    size_t (*writeCb)(void*, size_t, size_t, void*), void* ptr);
   void parse(const char*, size_t size);
   void parseIds(const char*, size_t size);
+  void parseVals(const char*, size_t size);
 
   static size_t writeStringCb(void* contents, size_t size, size_t nmemb,
                               void* userp);
   static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
   static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
+                           void* userp);
+  static size_t writeCbVals(void* contents, size_t size, size_t nmemb,
                            void* userp);
 
   std::string queryUrl(const std::string& query) const;
@@ -117,17 +127,23 @@ struct RequestReader {
   size_t _curCol = 0;
   size_t _curRow = 0;
 
-  std::string _dangling, _raw;
+  std::string _dangling, _raw, _curVal;
   ParseState _state = IN_HEADER;
 
   std::vector<std::vector<std::pair<std::string, std::string>>> rows;
   std::vector<std::pair<std::string, std::string>> curCols;
 
   uint8_t _curByte = 0;
+  size_t _curIdCol = 0;
   ID _curId;
   size_t _received = 0;
   std::vector<IdMapping> _ids;
+  std::vector<double> _vals;
   size_t _maxMemory;
+
+  size_t _geomFields;
+  std::map<size_t, size_t> _valFields;
+
   std::exception_ptr exceptionPtr;
 };
 

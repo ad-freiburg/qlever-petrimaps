@@ -5,13 +5,15 @@
 #ifndef PETRIMAPS_SERVER_SERVER_H_
 #define PETRIMAPS_SERVER_SERVER_H_
 
+#include <png.h>
+
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 
-#include <png.h>
+#include "3rdparty/heatmap.h"
 #include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "util/http/Server.h"
@@ -20,7 +22,7 @@ namespace petrimaps {
 
 typedef std::map<std::string, std::string> Params;
 
-enum MapStyle { HEATMAP, OBJECTS };
+enum MapStyle { HEATMAP, OBJECTS, RASTER };
 
 class Server : public util::http::Handler {
  public:
@@ -59,9 +61,11 @@ class Server : public util::http::Handler {
 
   void drawPoint(std::vector<uint32_t>& points, std::vector<double>& points2,
                  int px, int py, int w, int h, MapStyle style,
-                 size_t num) const;
+                 double weight) const;
   void drawLine(unsigned char* image, int x0, int y0, int x1, int y1, int w,
                 int h) const;
+  heatmap_stamp_t* raster_stamp(double res, double w, double h, double screenW,
+                                double screenH) const;
 
   size_t _maxMemory;
 

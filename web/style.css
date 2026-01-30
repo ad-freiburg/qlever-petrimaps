@@ -781,6 +781,21 @@ h1, #msg-heading {
     background-color: #f4f4f4;
 }
 
+.leaflet-control-layers .leaflet-control-layers-overlays {
+	display: none;
+}
+
+.leaflet-control-layers .leaflet-control-layers-overlays:has(> :nth-child(3)) {
+	display: block;
+   margin-top:20px;
+}
+
+.leaflet-control-layers .leaflet-control-layers-separator {
+  margin: 0;
+  position: relative;
+  top: 10px;
+}
+
 .export-link {
     font-size: 80%;
 }

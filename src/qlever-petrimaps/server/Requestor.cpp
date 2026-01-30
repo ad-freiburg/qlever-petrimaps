@@ -24,12 +24,12 @@ using petrimaps::GeomCache;
 using petrimaps::Requestor;
 using petrimaps::RequestReader;
 using petrimaps::ResObj;
-using util::LogLevel::INFO;
 using util::LogLevel::ERROR;
+using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
 // _____________________________________________________________________________
-void Requestor::request(const std::string& qry) {
+void Requestor::request(const std::string& qry, const std::vector<std::pair<std::string, std::string>>& fields) {
   std::lock_guard<std::mutex> guard(_m);
 
   if (_ready) {
@@ -46,14 +46,56 @@ void Requestor::request(const std::string& qry) {
   _objects.clear();
   _clusterObjects.clear();
 
-  RequestReader reader(_cache->getBackendURL(), _maxMemory);
   _query = qry;
 
-  LOG(INFO) << "[REQUESTOR] Requesting IDs for query " << qry;
-  reader.requestIds(prepQuery(qry));
+  // TODO: make this configurable
+  std::vector<std::string> geomColumns;
+  std::vector<std::string> valueColumns;
+  std::map<size_t, size_t> valueFlds;
 
-  LOG(INFO) << "[REQUESTOR] Done, have " << reader._ids.size()
-            << " ids in total.";
+  auto columns = getColumns(qry);
+  std::map<std::string, size_t> columnsMap;
+	for (size_t i = 0; i < columns.size(); i++) columnsMap[columns[i]] = i;
+
+	if (fields.size() == 0) {
+		geomColumns = {columns.back()};
+	} else {
+		for (const auto& field : fields) {
+			if (!columnsMap.count(field.first)) continue;
+			geomColumns.push_back(field.first);
+			if (columnsMap.count(field.second)) {
+				valueFlds[geomColumns.size() - 1] = columnsMap[field.second];
+				valueColumns.push_back(field.second);
+			}
+		}
+	}
+
+	RequestReader reader(_cache->getBackendURL(), _maxMemory, geomColumns.size(),
+												 valueFlds);
+
+	_sortColumn = "";
+
+	if (geomColumns.size()) {
+ 		_sortColumn = geomColumns.front();
+
+		std::string prepedGeomQuery = prepQuery(qry, geomColumns, _sortColumn);
+
+		LOG(INFO) << "[REQUESTOR] Requesting IDs for query " << qry;
+
+		reader.requestIds(prepedGeomQuery);
+
+		LOG(INFO) << "[REQUESTOR] Done, have " << reader._ids.size()
+							<< " ids in total.";
+		if (valueColumns.size()) {
+			LOG(INFO) << "[REQUESTOR] Requesting values for query " << qry;
+
+			std::string prepedValueQuery = prepQuery(qry, valueColumns, _sortColumn);
+
+			reader.requestVals(prepedValueQuery);
+
+			LOG(INFO) << "[REQUESTOR] Done.";
+		}
+  }
 
   // join with geoms from GeomCache
 
@@ -69,8 +111,17 @@ void Requestor::request(const std::string& qry) {
   _objects = ret.first;
   _numObjects = ret.second;
 
-  LOG(INFO) << "[REQUESTOR] ... done, got "
-            << _objects.size() << " objects.";
+  _vals = reader._vals;
+
+  _valMin = std::numeric_limits<double>::max();
+  _valMax = 0;
+
+  for (auto v : _vals) {
+    if (v < _valMin) _valMin = v;
+    if (v > _valMax) _valMax = v;
+  }
+
+  LOG(INFO) << "[REQUESTOR] ... done, got " << _objects.size() << " objects.";
 
   LOG(INFO) << "[REQUESTOR] Retrieving points dynamically from query...";
 
@@ -78,8 +129,8 @@ void Requestor::request(const std::string& qry) {
   _dynamicPoints = getDynamicPoints(reader._ids);
   _numObjects += _dynamicPoints.size();
 
-  LOG(INFO) << "[REQUESTOR] ... done, got "
-            << _dynamicPoints.size() << " points.";
+  LOG(INFO) << "[REQUESTOR] ... done, got " << _dynamicPoints.size()
+            << " points.";
 
   LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";
 
@@ -380,7 +431,7 @@ std::vector<std::pair<std::string, std::string>> Requestor::requestRow(
   if (!_cache->ready()) {
     throw std::runtime_error("Geom cache not ready");
   }
-  RequestReader reader(_cache->getBackendURL(), _maxMemory);
+  RequestReader reader(_cache->getBackendURL(), _maxMemory, {}, {});
   LOG(INFO) << "[REQUESTOR] Requesting single row " << row << " for query "
             << _query;
   auto query = prepQueryRow(_query, row);
@@ -402,7 +453,7 @@ void Requestor::requestRows(
   if (!_cache->ready()) {
     throw std::runtime_error("Geom cache not ready");
   }
-  RequestReader reader(_cache->getBackendURL(), _maxMemory);
+  RequestReader reader(_cache->getBackendURL(), _maxMemory, {}, {});
   LOG(INFO) << "[REQUESTOR] Requesting rows for query " << _query;
 
   ReaderCbPair cbPair{&reader, cb};
@@ -428,30 +479,37 @@ void Requestor::requestRows(
 }
 
 // _____________________________________________________________________________
-std::string Requestor::prepQuery(std::string query) const {
+std::vector<std::string> Requestor::getColumns(std::string query) const {
   std::regex expr("select[^{]*(\\*|[\\?$][A-Z0-9_\\-+]*)+[^{]*\\s*\\{",
                   std::regex_constants::icase);
 
-  std::string var;
-
-  std::smatch m;
-  std::regex_search(query, m, expr);
-
-  if (m.size() == 2) var = m[1].str();
-
-  if (var == "*") {
-    // if we have a wildcard variable (*), we request the list of variables
-    // from the backend by sending a LIMIT 0 requests.
-    RequestReader reader(_cache->getBackendURL(), _maxMemory);
-    auto cols = reader.requestColumns(query + " LIMIT 0");
-    if (cols.size() > 0) var = cols.back();
-  }
-
-  query = std::regex_replace(query, expr, "SELECT " + var + " WHERE {$&",
+  query = std::regex_replace(query, expr, "SELECT * WHERE {$&",
                              std::regex_constants::format_first_only) +
           "}";
 
-  query += " LIMIT 18446744073709551615";
+  query += " LIMIT 0";
+
+  std::cout << "COLUMNS QUERY " << query << std::endl;
+
+  RequestReader reader(_cache->getBackendURL(), _maxMemory, {}, {});
+  return reader.requestColumns(query);
+}
+
+// _____________________________________________________________________________
+std::string Requestor::prepQuery(std::string query,
+                                 std::vector<std::string> columns,
+                                 std::string sortBy) const {
+  std::regex expr("select[^{]*(\\*|[\\?$][A-Z0-9_\\-+]*)+[^{]*\\s*\\{",
+                  std::regex_constants::icase);
+
+  query =
+      std::regex_replace(query, expr,
+                         "SELECT " + util::implode(columns, " ") + " WHERE {$&",
+                         std::regex_constants::format_first_only) +
+      "}";
+
+	if (sortBy.size()) query += " INTERNAL SORT BY " + sortBy;
+	query += " LIMIT 18446744073709551615";
 
   return query;
 }
@@ -465,7 +523,8 @@ std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
   query = std::regex_replace(query, expr, "SELECT * {$&",
                              std::regex_constants::format_first_only) +
           "}";
-  query += " OFFSET " + std::to_string(row) + " LIMIT 1";
+	if (_sortColumn.size()) query += " INTERNAL SORT BY " + _sortColumn;
+	query += " OFFSET " + std::to_string(row) + " LIMIT 1";
   return query;
 }
 
@@ -927,7 +986,7 @@ util::geo::DPoint Requestor::clusterGeom(size_t cid, double res) const {
   size_t oid = _clusterObjects[cid].first;
 
   util::geo::FPoint pp;
-  if (oid > _objects.size())
+  if (oid >= _objects.size())
     pp = _dynamicPoints[oid - _objects.size()].first;
   else
     pp = getPoint(_objects[oid].first);
@@ -966,4 +1025,24 @@ util::geo::DPoint Requestor::clusterGeom(size_t cid, double res) const {
 
     return util::geo::DPoint{x, y};
   }
+}
+
+// _____________________________________________________________________________
+std::pair<double, double> Requestor::getValRange() const {
+  if (_valMin >= _valMax) return {0, 0};
+  return {_valMin, _valMax};
+}
+
+// _____________________________________________________________________________
+double Requestor::getVal(size_t oid) const {
+  if (oid < _objects.size()) {
+    if (_objects[oid].second >= _vals.size()) return 1;
+    return _vals[_objects[oid].second];
+  }
+  if (oid >= _objects.size()) {
+    if (_dynamicPoints[oid - _objects.size()].second >= _vals.size()) return 1;
+    return _vals[_dynamicPoints[oid - _objects.size()].second];
+  }
+
+  return 1;
 }
