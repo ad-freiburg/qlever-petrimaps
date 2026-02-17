@@ -2,6 +2,8 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
+#include "qlever-petrimaps/GeomCache.h"
+
 #include <curl/curl.h>
 #include <stdlib.h>
 
@@ -13,7 +15,6 @@
 #include <iostream>
 #include <sstream>
 
-#include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/Misc.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "util/Misc.h"
@@ -441,17 +442,15 @@ size_t GeomCache::requestSize() {
 
     if (httpCode != 200) {
       std::stringstream ss;
-      ss << "QLever backend returned status code " << httpCode
-         << " during count query";
-      ss << "\n";
-      ss << _raw;
-      throw std::runtime_error(ss.str());
+      LOG(ERROR) << "[GEOMCACHE] QLever backend returned status code "
+                 << httpCode << " during count query";
+      return 0;
     }
 
     if (_exceptionPtr) std::rethrow_exception(_exceptionPtr);
   } else {
     LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request.";
-    return -1;
+    return 0;
   }
 
   // check if there was an error
@@ -462,6 +461,7 @@ size_t GeomCache::requestSize() {
     } else {
       LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
     }
+    return 0;
   }
 
   std::istringstream iss(_dangling);
@@ -1005,7 +1005,8 @@ void GeomCache::insertLine(const util::geo::DLine &lR, bool isArea) {
 
   // this is the THRESHOLD from Server.cpp
   auto l = lR;
-  if (isArea) if (l.size()) l.push_back(l.front());
+  if (isArea)
+    if (l.size()) l.push_back(l.front());
   l = util::geo::densify(l, 500);
 
   int16_t mainX = (bbox.getLowerLeft().getX() * 10.0) / M_COORD_GRANULARITY;
@@ -1076,7 +1077,7 @@ void GeomCache::insertLine(const util::geo::DLine &lR, bool isArea) {
 
   // add closing point for area
   if (isArea && l.size()) {
-    const auto& p = l.front();
+    const auto &p = l.front();
     mainXLoc = (p.getX() * 10.0) / M_COORD_GRANULARITY;
     mainYLoc = (p.getY() * 10.0) / M_COORD_GRANULARITY;
 
