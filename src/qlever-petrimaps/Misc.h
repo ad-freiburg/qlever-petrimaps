@@ -79,8 +79,8 @@ class OutOfMemoryError : public std::exception {
   std::string _msg;
 };
 
-inline void checkMem(size_t want, size_t max) {
-  size_t currentSize = util::getCurrentRSS();
+inline void checkMem(double want, double max) {
+  double currentSize = util::getCurrentRSS();
 
   if (currentSize + want > max) {
     throw OutOfMemoryError(want, currentSize, max);

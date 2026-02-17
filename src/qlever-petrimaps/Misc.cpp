@@ -27,6 +27,7 @@ std::vector<std::string> RequestReader::requestColumns(
 
   if (_curl) {
     auto url = queryUrl(query) + "&action=tsv_export";
+    curl_easy_reset(_curl);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
     curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
@@ -92,6 +93,7 @@ void RequestReader::requestVals(const std::string& query) {
 
   if (_curl) {
     auto url = queryUrl(query);
+    curl_easy_reset(_curl);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
     curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
@@ -157,6 +159,7 @@ void RequestReader::requestIds(const std::string& query) {
 
   if (_curl) {
     auto url = queryUrl(query);
+    curl_easy_reset(_curl);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
     curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
@@ -229,6 +232,7 @@ void RequestReader::requestRows(const std::string& query,
 
   if (_curl) {
     auto url = queryUrl(query);
+    curl_easy_reset(_curl);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
     curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);

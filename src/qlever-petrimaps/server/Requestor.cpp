@@ -48,7 +48,6 @@ void Requestor::request(const std::string& qry, const std::vector<std::pair<std:
 
   _query = qry;
 
-  // TODO: make this configurable
   std::vector<std::string> geomColumns;
   std::vector<std::string> valueColumns;
   std::map<size_t, size_t> valueFlds;
@@ -111,7 +110,7 @@ void Requestor::request(const std::string& qry, const std::vector<std::pair<std:
   _objects = ret.first;
   _numObjects = ret.second;
 
-  _vals = reader._vals;
+  _vals = std::move(reader._vals);
 
   _valMin = std::numeric_limits<double>::max();
   _valMax = 0;
@@ -959,6 +958,16 @@ util::geo::MultiPolygon<double> Requestor::geomPolyGeoms(size_t oid,
 std::vector<std::pair<util::geo::FPoint, ID_TYPE>> Requestor::getDynamicPoints(
     const std::vector<IdMapping>& ids) const {
   std::vector<std::pair<util::geo::FPoint, ID_TYPE>> ret;
+
+  size_t count = 0;
+
+  for (const auto& p : ids) {
+    uint8_t type = (p.qid & (uint64_t(15) << 60)) >> 60;
+    if (type == 8) count++;  // 8 = Geopoint in Qlever
+  }
+
+  checkMem(sizeof(std::pair<util::geo::FPoint, ID_TYPE>) * count, _maxMemory);
+  ret.reserve(count);
 
   for (const auto& p : ids) {
     uint8_t type = (p.qid & (uint64_t(15) << 60)) >> 60;

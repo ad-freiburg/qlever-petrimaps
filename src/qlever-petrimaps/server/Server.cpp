@@ -130,6 +130,9 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
   } catch (const std::invalid_argument& e) {
     a = util::http::Answer("400 Bad Request", e.what());
     LOG(ERROR) << e.what();
+  } catch (const OutOfMemoryError& e) {
+    a = util::http::Answer("507 Insufficient Storage", e.what());
+    LOG(ERROR) << e.what();
   } catch (const std::exception& e) {
     a = util::http::Answer("500 Internal Server Error", e.what());
     LOG(ERROR) << e.what();
@@ -261,6 +264,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   double res = mercH / h;
 
+  checkMem(sizeof(float) * w * h, _maxMemory);
   heatmap_t* hm = heatmap_new(w, h);
   hm->max = r->getValRange().second;
 
@@ -275,6 +279,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   LOG(INFO) << "[SERVER] Virt cell size: " << virtCellSize;
   LOG(INFO) << "[SERVER] Num virt cells: " << subCellSize * subCellSize;
 
+  checkMem(sizeof(unsigned char) * w * h * 4, _maxMemory);
   std::vector<unsigned char> image(w * h * 4);
 
   std::vector<std::vector<uint32_t>> points(NUM_THREADS);
@@ -318,7 +323,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           int ppx = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int ppy = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-          drawPoint(points[0], points2[0], px, py, w, h, style, r->getVal(i));
+          drawPoint(points[0], points2[0], px, py, w, h, style, r->getVal(oid));
           drawLine(image.data(), ppx, ppy, px, py, w, h);
         } else {
           if (i >= objs.size() + dynPoints.size())
@@ -1438,6 +1443,7 @@ heatmap_stamp_t* Server::raster_stamp(double res, double w, double h,
   int width = std::min(screenW * 2, (ceil(w / res)));
   int height = std::min(screenH * 2, (ceil(h / res)));
 
+  checkMem(sizeof(float) * width * height, _maxMemory);
   float* stamp = (float*)calloc(width * height, sizeof(float));
   if (!stamp) return 0;
 
