@@ -259,8 +259,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   int w = atoi(pars.find("width")->second.c_str());
   int h = atoi(pars.find("height")->second.c_str());
 
-  if (w < 0 || w > 20000) throw std::invalid_argument("Invalid request");
-  if (h < 0 || h > 20000) throw std::invalid_argument("Invalid request");
+  if (w < 0 || w > 3000) throw std::invalid_argument("Invalid request");
+  if (h < 0 || h > 3000) throw std::invalid_argument("Invalid request");
 
   double res = mercH / h;
 
@@ -286,6 +286,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   std::vector<std::vector<double>> points2(NUM_THREADS);
 
   // initialize vectors to 0
+  checkMem(sizeof(unsigned char) * w * h * 4, _maxMemory);
   for (size_t i = 0; i < NUM_THREADS; i++) points2[i].resize(w * h, 0);
 
   // POINTS
@@ -1071,6 +1072,7 @@ void Server::writePNG(const unsigned char* data, size_t w, size_t h,
   png_set_IHDR(png_ptr, info_ptr, w, h, bit_depth, color_type, interlace_type,
                PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
 
+  checkMem(h * sizeof(png_bytep), _maxMemory);
   png_bytep* row_pointers =
       (png_byte**)png_malloc(png_ptr, h * sizeof(png_bytep));
 
@@ -1357,12 +1359,9 @@ std::string Server::getSessionId() const {
 
 // _____________________________________________________________________________
 double Server::getLoadStatusPercent() const {
-  if (_totalSize == 0) {
-    return 0.0;
-  }
+  if (_totalSize == 0) return 0.0;
 
   double percent = _curRow / static_cast<double>(_totalSize) * 100.0;
-  assert(percent <= 100.0);
 
   return percent;
 }
