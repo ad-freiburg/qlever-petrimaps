@@ -878,7 +878,7 @@ util::http::Answer Server::handleClearSessReq(const Params& pars) const {
 util::http::Answer Server::handleLoadReq(const Params& pars) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
-  auto backend = pars.find("backend")->second;
+  auto backend = canonizeURL(pars.find("backend")->second);
 
   LOG(INFO) << "[SERVER] Queried backend is " << backend;
 
@@ -910,7 +910,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   }
 
   auto query = pars.find("query")->second;
-  auto backend = pars.find("backend")->second;
+  auto backend = canonizeURL(pars.find("backend")->second);
 
   LOG(INFO) << "[SERVER] Queried backend is " << backend;
   LOG(INFO) << "[SERVER] Query is:\n" << query;
@@ -1282,7 +1282,7 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
 util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
-  auto backend = pars.find("backend")->second;
+  auto backend = canonizeURL(pars.find("backend")->second);
   createCache(backend);
   std::shared_ptr<GeomCache> cache = _caches[backend];
 

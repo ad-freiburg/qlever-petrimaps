@@ -2,13 +2,14 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
+#include "qlever-petrimaps/Misc.h"
+
 #include <stdint.h>
 
 #include <cstring>
 #include <string>
 #include <vector>
 
-#include "qlever-petrimaps/Misc.h"
 #include "util/String.h"
 #include "util/log/Log.h"
 
@@ -358,7 +359,7 @@ void RequestReader::parseVals(const char* c, size_t size) {
     if (*c == '\n') {
       if (_curRow > 0) {
         double val = atof(_curVal.c_str());
-				if (_curCol == 0) _vals.push_back(val);
+        if (_curCol == 0) _vals.push_back(val);
       }
       _curVal.resize(0);
       _curRow++;
@@ -367,8 +368,8 @@ void RequestReader::parseVals(const char* c, size_t size) {
       if (_curRow > 0) {
         double val = atof(_curVal.c_str());
 
-				// TODO: support multiple vals
-				if (_curCol == 0) _vals.push_back(val);
+        // TODO: support multiple vals
+        if (_curCol == 0) _vals.push_back(val);
       }
       _curVal.resize(0);
       _curCol = (_curCol + 1) % _valFields.size();
@@ -447,4 +448,83 @@ void RequestReader::parse(const char* c, size_t size) {
         break;
     }
   }
+}
+
+// _____________________________________________________________________________
+std::string petrimaps::normalizeURL(const std::string& inURL) {
+  CURLU* url = curl_url();
+  if (!url) {
+    std::stringstream ss;
+    ss << "Could not normalize URL " << inURL;
+    throw std::runtime_error(ss.str());
+  }
+
+  CURLUcode ret =
+      curl_url_set(url, CURLUPART_URL, inURL.c_str(), CURLU_NON_SUPPORT_SCHEME);
+  if (ret != CURLUE_OK) {
+    curl_url_cleanup(url);
+    std::stringstream ss;
+    ss << "Could not normalize URL " << inURL;
+    throw std::runtime_error(ss.str());
+  }
+
+  char* out = nullptr;
+  ret = curl_url_get(url, CURLUPART_URL, &out, 0);
+  if (ret != CURLUE_OK) {
+    curl_url_cleanup(url);
+    std::stringstream ss;
+    ss << "Could not normalize URL " << inURL;
+    throw std::runtime_error(ss.str());
+  }
+
+  std::string res(out);
+  curl_free(out);
+  curl_url_cleanup(url);
+
+  // drop trailing /
+  if (res.back() == '/') res.pop_back();
+
+  return res;
+}
+
+// _____________________________________________________________________________
+std::string petrimaps::canonizeURL(const std::string& inURL) {
+  CURL* curl = curl_easy_init();
+  if (!curl) {
+    std::stringstream ss;
+    ss << "Could not canonize URL " << inURL;
+    throw std::runtime_error(ss.str());
+  }
+
+  curl_easy_setopt(curl, CURLOPT_URL, inURL.c_str());
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
+  curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+
+  CURLcode res = curl_easy_perform(curl);
+  if (res != CURLE_OK) {
+    curl_easy_cleanup(curl);
+    std::stringstream ss;
+    ss << "Could not canonize URL " << inURL;
+    ss << "\n";
+    ss << curl_easy_strerror(res);
+    throw std::runtime_error(ss.str());
+  }
+
+  char* effective = nullptr;
+  curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &effective);
+
+  if (!effective) {
+    curl_easy_cleanup(curl);
+    std::stringstream ss;
+    ss << "Could not canonize URL " << inURL;
+    ss << "\n";
+    ss << curl_easy_strerror(res);
+    throw std::runtime_error(ss.str());
+  }
+
+  std::string ret(effective);
+
+  curl_easy_cleanup(curl);
+  return normalizeURL(ret);
 }

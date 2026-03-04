@@ -62,6 +62,9 @@ inline int16_t isMCoord(int16_t c) {
   return c < -M_COORD_OFFSET || c >= M_COORD_OFFSET;
 }
 
+std::string normalizeURL(const std::string& inURL);
+std::string canonizeURL(const std::string& inURL);
+
 class OutOfMemoryError : public std::exception {
  public:
   explicit OutOfMemoryError(size_t want, size_t have, size_t max) {
