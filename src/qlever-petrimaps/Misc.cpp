@@ -518,8 +518,6 @@ std::string petrimaps::canonizeURL(const std::string& inURL) {
     curl_easy_cleanup(curl);
     std::stringstream ss;
     ss << "Could not canonize URL " << inURL;
-    ss << "\n";
-    ss << curl_easy_strerror(res);
     throw std::runtime_error(ss.str());
   }
 
