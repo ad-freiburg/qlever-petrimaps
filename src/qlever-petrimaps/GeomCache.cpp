@@ -768,10 +768,10 @@ std::string GeomCache::queryUrl(std::string query, size_t offset,
 
 // _____________________________________________________________________________
 bool GeomCache::pointValid(const DPoint &p) {
-  if (p.getY() > std::numeric_limits<double>::max()) return false;
-  if (p.getY() < std::numeric_limits<double>::lowest()) return false;
-  if (p.getX() > std::numeric_limits<double>::max()) return false;
-  if (p.getX() < std::numeric_limits<double>::lowest()) return false;
+  if (p.getY() > 90.0) return false;
+  if (p.getY() < -90.0) return false;
+  if (p.getX() > 180.0) return false;
+  if (p.getX() < -180.0) return false;
 
   return true;
 }
