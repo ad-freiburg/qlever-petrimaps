@@ -80,6 +80,7 @@ void Requestor::request(const std::string& qry, const std::vector<std::pair<std:
 		std::string prepedGeomQuery = prepQuery(qry, geomColumns, _sortColumn);
 
 		LOG(INFO) << "[REQUESTOR] Requesting IDs for query " << qry;
+		LOG(INFO) << "[REQUESTOR] Prepped query: " << prepedGeomQuery;
 
 		reader.requestIds(prepedGeomQuery);
 
@@ -102,6 +103,15 @@ void Requestor::request(const std::string& qry, const std::vector<std::pair<std:
   LOG(INFO) << "[REQUESTOR] Sorting results by qlever ID...";
   std::sort(reader._ids.begin(), reader._ids.end());
   LOG(INFO) << "[REQUESTOR] ... done";
+
+  // print first 10 IDs for debugging purposes
+  LOG(INFO) << "[REQUESTOR] First 10 (sorted) IDs sent by qlever: ";
+  std::stringstream ss;
+  for (size_t i = 0; i < 10 && i < reader._ids.size(); i++) {
+    ss << reader._ids[i].qid << " ";
+  }
+  LOG(INFO) << ss.str();
+
 
   LOG(INFO) << "[REQUESTOR] Retrieving geoms from cache...";
 
