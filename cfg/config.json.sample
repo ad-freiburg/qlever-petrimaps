@@ -1,0 +1,14 @@
+{
+	"https://qlever.dev/api/osm-planet" : {
+		"fillQuery":  "PREFIX geo: <http://www.opengis.net/ont/geosparql#>\n SELECT ?geometry WHERE {?subject geo:asWKT ?geometry FILTER (!ql:isGeoPoint(?geometry))} INTERNAL SORT BY ?geometry"
+	},
+	"https://qlever.dev/api/wikidata" : {
+		"fillQuery":  "PREFIX wdt:  <http://www.wikidata.org/prop/direct/>\n SELECT ?geometry WHERE {?subject wdt:P625 ?geometry FILTER (!ql:isGeoPoint(?geometry))} INTERNAL SORT BY ?geometry"
+	},
+	"https://qlever.dev/api/dblp-plus" : {
+		"fillQuery":  "PREFIX wdt: <http://www.wikidata.org/prop/direct/>\n SELECT ?geometry WHERE {?subject wdt:P625 ?geometry FILTER (!ql:isGeoPoint(?geometry))} INTERNAL SORT BY ?geometry"
+	},
+	"https://qlever.dev/api/dblp" : {
+		"fillQuery":  "PREFIX wdt: <http://www.wikidata.org/prop/direct/>\n SELECT ?geometry WHERE {SERVICE <https://qlever.cs.uni-freiburg.de/api/wikidata> {SELECT ?geometry WHERE {?subject wdt:P625 ?geometry FILTER (!ql:isGeoPoint(?geometry))} INTERNAL SORT BY ?geometry }}"
+	}
+}

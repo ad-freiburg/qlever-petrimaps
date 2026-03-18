@@ -69,7 +69,7 @@ void Requestor::request(const std::string& qry, const std::vector<std::pair<std:
 		}
 	}
 
-	RequestReader reader(_cache->getBackendURL(), _maxMemory, geomColumns.size(),
+	RequestReader reader(_cache->getConfig().backend, _maxMemory, geomColumns.size(),
 												 valueFlds);
 
 	_sortColumn = "";
@@ -440,7 +440,7 @@ std::vector<std::pair<std::string, std::string>> Requestor::requestRow(
   if (!_cache->ready()) {
     throw std::runtime_error("Geom cache not ready");
   }
-  RequestReader reader(_cache->getBackendURL(), _maxMemory, {}, {});
+  RequestReader reader(_cache->getConfig().backend, _maxMemory, {}, {});
   LOG(INFO) << "[REQUESTOR] Requesting single row " << row << " for query "
             << _query;
   auto query = prepQueryRow(_query, row);
@@ -462,7 +462,7 @@ void Requestor::requestRows(
   if (!_cache->ready()) {
     throw std::runtime_error("Geom cache not ready");
   }
-  RequestReader reader(_cache->getBackendURL(), _maxMemory, {}, {});
+  RequestReader reader(_cache->getConfig().backend, _maxMemory, {}, {});
   LOG(INFO) << "[REQUESTOR] Requesting rows for query " << _query;
 
   ReaderCbPair cbPair{&reader, cb};
@@ -500,7 +500,7 @@ std::vector<std::string> Requestor::getColumns(std::string query) const {
 
   std::cout << "COLUMNS QUERY " << query << std::endl;
 
-  RequestReader reader(_cache->getBackendURL(), _maxMemory, {}, {});
+  RequestReader reader(_cache->getConfig().backend, _maxMemory, {}, {});
   return reader.requestColumns(query);
 }
 

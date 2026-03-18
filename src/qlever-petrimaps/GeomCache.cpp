@@ -73,30 +73,32 @@ const static std::string QUERY_WDTP625_SERVICE =
     "}";
 
 // _____________________________________________________________________________
-const std::string &GeomCache::getQuery(const std::string &backendUrl) const {
+const std::string &GeomCache::getFillQuery() const {
   // Helper lambda that returns true if the backend name (the part after the
   // final slash) starts with the given prefix.
-  size_t backendPos = backendUrl.find_last_of('/');
-  backendPos = backendPos != std::string::npos ? backendPos + 1 : 0;
-  auto backendStartsWith = [&backendPos,
-                            &backendUrl](const std::string &prefix) {
-    return backendUrl.find(prefix, backendPos) == backendPos;
-  };
+  // size_t backendPos = backendUrl.find_last_of('/');
+  // backendPos = backendPos != std::string::npos ? backendPos + 1 : 0;
+  // auto backendStartsWith = [&backendPos,
+                            // &backendUrl](const std::string &prefix) {
+    // return backendUrl.find(prefix, backendPos) == backendPos;
+  // };
 
-  // Return query depending on the backend name.
-  if (backendStartsWith("wikidata") || backendStartsWith("dblp-plus")) {
-    return QUERY_WDTP625;
-  } else if (backendStartsWith("dblp")) {
-    return QUERY_WDTP625_SERVICE;
-  } else {
-    return QUERY_ASWKT;
-  }
+  // // Return query depending on the backend name.
+  // if (backendStartsWith("wikidata") || backendStartsWith("dblp-plus")) {
+    // return QUERY_WDTP625;
+  // } else if (backendStartsWith("dblp")) {
+    // return QUERY_WDTP625_SERVICE;
+  // } else {
+    // return QUERY_ASWKT;
+  // }
+
+  return _config.fillQuery;
 }
 
 // _____________________________________________________________________________
-std::string GeomCache::getCountQuery(const std::string &backendUrl) const {
-  // Modify the query from `getQuery` to count the number of geometries.
-  std::string query = getQuery(backendUrl);
+std::string GeomCache::getCountQuery() const {
+  // Modify the query from `getFillQuery` to count the number of geometries.
+  std::string query = getFillQuery();
   auto pos = query.find("SELECT");
   if (pos == std::string::npos) {
     LOG(ERROR) << "Could not find SELECT in query: " << query;
@@ -411,7 +413,7 @@ size_t GeomCache::requestSize() {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    const std::string &countQuery = getCountQuery(_backendUrl);
+    const std::string &countQuery = getCountQuery();
     LOG(INFO) << "[GEOMCACHE] Count query to obtain the number of geometries:"
               << std::endl
               << countQuery;
@@ -484,7 +486,7 @@ void GeomCache::requestPart(size_t offset) {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 10000000);
+    auto qUrl = queryUrl(getFillQuery(), offset, 10000000);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
     curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
@@ -599,7 +601,7 @@ void GeomCache::request() {
   size_t lastNum = -1;
 
   LOG(INFO) << "[GEOMCACHE] Total request size: " << _totalSize;
-  LOG(INFO) << "[GEOMCACHE] Query is:\n" << getQuery(_backendUrl);
+  LOG(INFO) << "[GEOMCACHE] Query is:\n" << getFillQuery();
 
   while (lastNum != 0) {
     size_t offset = _curRow;
@@ -619,24 +621,28 @@ void GeomCache::request() {
 
   LOG(INFO) << "[GEOMCACHE] Building vectors...";
 
+  checkMem(sizeof(util::geo::FPoint) * _pointsFSize, _maxMemory);
   _points.resize(_pointsFSize);
   _pointsF.seekg(0);
   _pointsF.read(reinterpret_cast<char *>(&_points[0]),
                 sizeof(util::geo::FPoint) * _pointsFSize);
   _pointsF.close();
 
+  checkMem(sizeof(util::geo::Point<int16_t>) * _linePointsFSize, _maxMemory);
   _linePoints.resize(_linePointsFSize);
   _linePointsF.seekg(0);
   _linePointsF.read(reinterpret_cast<char *>(&_linePoints[0]),
                     sizeof(util::geo::Point<int16_t>) * _linePointsFSize);
   _linePointsF.close();
 
+  checkMem(sizeof(size_t) * _linesFSize, _maxMemory);
   _lines.resize(_linesFSize);
   _linesF.seekg(0);
   _linesF.read(reinterpret_cast<char *>(&_lines[0]),
                sizeof(size_t) * _linesFSize);
   _linesF.close();
 
+  checkMem(sizeof(IdMapping) * _qidToIdFSize, _maxMemory);
   _qidToId.resize(_qidToIdFSize);
   _qidToIdF.seekg(0);
   _qidToIdF.read(reinterpret_cast<char *>(&_qidToId[0]),
@@ -662,7 +668,7 @@ void GeomCache::requestIds() {
   _lastQid = -1;
   _exceptionPtr = 0;
 
-  LOG(INFO) << "[GEOMCACHE] Query is " << getQuery(_backendUrl);
+  LOG(INFO) << "[GEOMCACHE] Query is " << getFillQuery();
 
   size_t lastNum = -1;
 
@@ -693,7 +699,7 @@ void GeomCache::requestIdPart(size_t offset) {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 100000000);
+    auto qUrl = queryUrl(getFillQuery(), offset, 100000000);
     curl_easy_reset(_curl);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
@@ -759,7 +765,7 @@ std::string GeomCache::queryUrl(std::string query, size_t offset,
 
   auto esc = curl_easy_escape(_curl, query.c_str(), query.size());
 
-  ss << _backendUrl << "/?send=" << std::to_string(MAXROWS) << "&query=" << esc;
+  ss << _config.backend << "/?send=" << std::to_string(MAXROWS) << "&query=" << esc;
 
   curl_free(esc);
 
@@ -1182,24 +1188,28 @@ void GeomCache::fromDisk(const std::string &fname) {
   // points
   f.read(reinterpret_cast<char *>(&numPoints), sizeof(size_t));
 
+  checkMem(sizeof(util::geo::FPoint) * numPoints, _maxMemory);
   _points.resize(numPoints);
   posPoints = f.tellg();
   f.seekg(sizeof(util::geo::FPoint) * numPoints, f.cur);
 
   // linePoints
   f.read(reinterpret_cast<char *>(&numLinePoints), sizeof(size_t));
+  checkMem(sizeof(util::geo::Point<int16_t>) * numLinePoints, _maxMemory);
   _linePoints.resize(numLinePoints);
   posLinePoints = f.tellg();
   f.seekg(sizeof(util::geo::Point<int16_t>) * numLinePoints, f.cur);
 
   // lines
   f.read(reinterpret_cast<char *>(&numLines), sizeof(size_t));
+  checkMem(sizeof(size_t) * numLines, _maxMemory);
   _lines.resize(numLines);
   posLines = f.tellg();
   f.seekg(sizeof(size_t) * numLines, f.cur);
 
   // qidToId
   f.read(reinterpret_cast<char *>(&numQidToId), sizeof(size_t));
+  checkMem(sizeof(IdMapping) * numQidToId, _maxMemory);
   _qidToId.resize(numQidToId);
   posQidToId = f.tellg();
   f.seekg(sizeof(IdMapping) * numQidToId, f.cur);
@@ -1281,7 +1291,7 @@ std::string GeomCache::requestIndexHash() {
   std::string response;
 
   if (_curl) {
-    std::string url = _backendUrl + "/?cmd=get-index-id";
+    std::string url = _config.backend + "/?cmd=get-index-id";
     curl_easy_reset(_curl);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
@@ -1317,7 +1327,7 @@ std::string GeomCache::requestIndexHash() {
       return "";
     }
 
-    return INDEX_HASH_PREFIX + response;
+    return INDEX_HASH_PREFIX + "|" + _config.getHash() + "|" + response;
   } else {
     LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request for index hash.";
     return "";
@@ -1330,19 +1340,24 @@ std::string GeomCache::load(const std::string &cacheDir) {
 
   if (_ready) {
     auto indexHash = requestIndexHash();
-    if (_indexHash == indexHash) return _indexHash;
+
+    // if the hash size is 0, we could not obtain an index hash from
+    // qlever. In this case, just assume they matched
+    if (indexHash.size() == 0 ||_indexHash == indexHash) return _indexHash;
     LOG(INFO) << "Loaded index hash (" << _indexHash
               << ") and remote index hash (" << indexHash << ") dont match.";
     _ready = false;
   }
 
   if (cacheDir.size()) {
-    std::string backend = getBackendURL();
+    std::string backend = getConfig().backend;
     util::replaceAll(backend, "/", "_");
     std::string cacheFile = cacheDir + "/" + backend;
     auto indexHash = requestIndexHash();
+    // if the hash size is 0, we could not obtain an index hash from
+    // qlever. In this case, just assume they matched
     if (access(cacheFile.c_str(), F_OK) != -1 &&
-        indexHash == indexHashFromDisk(cacheFile)) {
+        (indexHash.size() == 0 || indexHash == indexHashFromDisk(cacheFile))) {
       LOG(INFO) << "Reading from cache file " << cacheFile << "...";
       fromDisk(cacheFile);
       LOG(INFO) << "done ...";

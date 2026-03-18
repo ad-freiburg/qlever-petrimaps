@@ -8,27 +8,41 @@
 #include <curl/curl.h>
 
 #include <atomic>
+#include <chrono>
 #include <fstream>
 #include <map>
 #include <mutex>
 #include <string>
+#include <functional>
 #include <unordered_map>
 #include <vector>
-#include <chrono>
 
 #include "qlever-petrimaps/Misc.h"
 #include "util/geo/Geo.h"
 
 namespace petrimaps {
 
+struct GeomCacheConfig {
+  std::string backend;
+  std::string fillQuery;
+
+  std::string getHash() const {
+    std::hash<std::string> hashF;
+    return std::to_string(hashF(backend + fillQuery));
+  }
+};
+
 class GeomCache {
  public:
-  GeomCache() : _backendUrl(""), _curl(0), _curRow(0)  {}
-  explicit GeomCache(const std::string& backendUrl)
-      : _backendUrl(backendUrl), _curl(curl_easy_init()), _curRow(0)  {}
+  GeomCache() : _config(), _curl(0), _curRow(0), _maxMemory(-1) {}
+  explicit GeomCache(const GeomCacheConfig& config, size_t maxMemory)
+      : _config(config),
+        _curl(curl_easy_init()),
+        _curRow(0),
+        _maxMemory(maxMemory) {}
 
   GeomCache& operator=(GeomCache&& o) {
-    _backendUrl = o._backendUrl;
+    _config = o._config;
     _curl = curl_easy_init();
     _lines = std::move(o._lines);
     _linePoints = std::move(o._linePoints);
@@ -65,7 +79,7 @@ class GeomCache {
   std::pair<std::vector<std::pair<ID_TYPE, ID_TYPE>>, size_t> getRelObjects(
       const std::vector<IdMapping>& id) const;
 
-  const std::string& getBackendURL() const { return _backendUrl; }
+  const GeomCacheConfig& getConfig() const { return _config; }
 
   const std::vector<util::geo::FPoint>& getPoints() const { return _points; }
 
@@ -97,7 +111,7 @@ class GeomCache {
   size_t getCurrentProgress();
 
  private:
-  std::string _backendUrl;
+  GeomCacheConfig _config;
   CURL* _curl;
 
   uint8_t _curByte;
@@ -107,6 +121,7 @@ class GeomCache {
   std::atomic<size_t> _curRow;
   std::atomic<size_t> _curIdRow;
   size_t _curUniqueGeom;
+  size_t _maxMemory;
 
   enum _LoadStatusStages { Parse = 1, ParseIds, FromFile, Finished };
   _LoadStatusStages _loadStatusStage = Parse;
@@ -120,8 +135,8 @@ class GeomCache {
                               void* userp);
 
   // Get the right SPARQL query for the given backend.
-  const std::string& getQuery(const std::string& backendUrl) const;
-  std::string getCountQuery(const std::string& backendUrl) const;
+  const std::string& getFillQuery() const;
+  std::string getCountQuery() const;
 
   std::string requestIndexHash();
 
@@ -131,15 +146,15 @@ class GeomCache {
 
   static util::geo::DLine createLineString(const std::string& a, size_t p);
 
-	void addPolygon(const util::geo::Polygon<double>& p, size_t* i);
-	void addMultiPoint(const util::geo::MultiPoint<double>& mp, size_t *i);
-	void addMultiLineString(const util::geo::MultiLine<double>& ml, size_t* i);
-	void addLineString(const util::geo::Line<double>& l, size_t* i);
+  void addPolygon(const util::geo::Polygon<double>& p, size_t* i);
+  void addMultiPoint(const util::geo::MultiPoint<double>& mp, size_t* i);
+  void addMultiLineString(const util::geo::MultiLine<double>& ml, size_t* i);
+  void addLineString(const util::geo::Line<double>& l, size_t* i);
   void addMultiPolygon(const util::geo::MultiPolygon<double>& mp, size_t* i);
 
   void insertLine(const util::geo::DLine& l, bool isArea);
 
-	static std::vector<size_t> getGeomStarts(const std::string &str, size_t a);
+  static std::vector<size_t> getGeomStarts(const std::string& str, size_t a);
 
   std::string indexHashFromDisk(const std::string& fname);
 

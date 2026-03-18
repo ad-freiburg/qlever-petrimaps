@@ -6,11 +6,13 @@
 
 #include <iostream>
 
+#include "3rdparty/json.hpp"
 #include "qlever-petrimaps/server/Server.h"
 #include "util/Misc.h"
 #include "util/http/Server.h"
 #include "util/log/Log.h"
 
+using nlohmann::json;
 using petrimaps::Server;
 using util::LogLevel::ERROR;
 using util::LogLevel::INFO;
@@ -47,6 +49,7 @@ int main(int argc, char** argv) {
   int port = 9090;
   int cacheLifetime = 6 * 60;
   size_t autoThreshold = 1000;
+  std::vector<std::string> cacheConfigs;
   double maxMemoryGB =
       (sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE) * 0.9) / 1000000000;
   std::string cacheDir;
@@ -74,6 +77,12 @@ int main(int argc, char** argv) {
         exit(1);
       }
       cacheDir = argv[i];
+    } else if (cur == "-g") {
+      if (++i >= argc) {
+        LOG(ERROR) << "Missing argument for geometry cache config (-g).";
+        exit(1);
+      }
+      cacheConfigs.push_back(argv[i]);
     } else if (cur == "-t") {
       if (++i >= argc) {
         LOG(ERROR) << "Missing argument for cache lifetime (-t).";
@@ -89,7 +98,39 @@ int main(int argc, char** argv) {
     }
   }
 
+  std::map<std::string, petrimaps::GeomCacheConfig> geomCacheConfigs;
+
   try {
+    for (const auto& cfgFile : cacheConfigs) {
+      std::ifstream f(cfgFile);
+      json data = json::parse(f);
+
+      if (data.is_object()) {
+        for (const auto& cfg : data.items()) {
+          if (!cfg.value().is_object()) {
+            std::stringstream ss;
+            ss << "Could not parse geom cache config file '" << cfgFile << "'";
+            throw std::runtime_error(ss.str());
+          }
+          auto canonized = petrimaps::canonizeURL(cfg.key());
+          auto fillQuery = cfg.value()["fillQuery"];
+          if (fillQuery.size() == 0) {
+            std::stringstream ss;
+            ss << "Could not parse geom cache config file '" << cfgFile
+               << "', field 'fillQuery' required";
+            throw std::runtime_error(ss.str());
+          }
+          geomCacheConfigs[canonized] = {canonized, fillQuery};
+          LOG(INFO) << "Configured backend '" << canonized << "' from file '"
+                    << cfgFile << "'";
+        }
+      }
+    }
+    if (geomCacheConfigs.size() == 0) {
+      LOG(WARN) << "No geometry cache config configured, falling back to "
+                   "default config for all backends. Use -g to provide one or "
+                   "more config files";
+    }
     if (cacheDir.size() && access(cacheDir.c_str(), W_OK) != 0) {
       std::stringstream ss;
       ss << "No write access to cache dir '" << cacheDir << "'";
@@ -99,7 +140,7 @@ int main(int argc, char** argv) {
     LOG(INFO) << "Starting server...";
     LOG(INFO) << "Max memory is " << maxMemoryGB << " GB...";
     Server serv(maxMemoryGB * 1000000000, cacheDir, cacheLifetime,
-                autoThreshold);
+                autoThreshold, geomCacheConfigs);
 
     LOG(INFO) << "Listening on port " << port;
     util::http::HttpServer(port, &serv, std::thread::hardware_concurrency())

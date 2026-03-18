@@ -48,6 +48,7 @@
 
 using petrimaps::Params;
 using petrimaps::Server;
+using petrimaps::GeomCacheConfig;
 using util::geo::contains;
 using util::geo::densify;
 using util::geo::DLine;
@@ -63,11 +64,12 @@ static std::atomic<size_t> _curRow;
 
 // _____________________________________________________________________________
 Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime,
-               size_t autoThreshold)
+               size_t autoThreshold, std::map<std::string, GeomCacheConfig> cacheConfigs)
     : _maxMemory(maxMemory),
       _cacheDir(cacheDir),
       _cacheLifetime(cacheLifetime),
-      _autoThreshold(autoThreshold) {
+      _autoThreshold(autoThreshold),
+      _cacheConfigs(cacheConfigs) {
   std::thread t(&Server::clearOldSessions, this);
   t.detach();
 }
@@ -98,8 +100,6 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
       a = handleClearSessReq(params);
     } else if (cmd == "/clearsessions") {
       a = handleClearSessReq(params);
-    } else if (cmd == "/load") {
-      a = handleLoadReq(params);
     } else if (cmd == "/pos") {
       a = handlePosReq(params);
     } else if (cmd == "/export") {
@@ -171,9 +171,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   auto colorScheme = heatmap_cs_Spectral_mixed_exp;
   double rasterWidth = 10;
   double rasterHeight = 10;
-
-  if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
-  }
 
   if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
     auto parts = util::split(pars.find("styles")->second, '-');
@@ -875,22 +872,6 @@ util::http::Answer Server::handleClearSessReq(const Params& pars) const {
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleLoadReq(const Params& pars) const {
-  if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
-    throw std::invalid_argument("No backend (?backend=) specified.");
-  auto backend = canonizeURL(pars.find("backend")->second);
-
-  LOG(INFO) << "[SERVER] Queried backend is " << backend;
-
-  createCache(backend);
-  loadCache(backend);
-
-  auto answ = util::http::Answer("200 OK", "{}");
-  answ.params["Content-Type"] = "application/json; charset=utf-8";
-  return answ;
-}
-
-// _____________________________________________________________________________
 util::http::Answer Server::handleQueryReq(const Params& pars) const {
   if (pars.count("query") == 0 || pars.find("query")->second.empty())
     throw std::invalid_argument("No query (?q=) specified.");
@@ -910,16 +891,17 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   }
 
   auto query = pars.find("query")->second;
-  auto backend = canonizeURL(pars.find("backend")->second);
+  auto backendCfg = getGeomCacheConfig(pars.find("backend")->second);
 
-  LOG(INFO) << "[SERVER] Queried backend is " << backend;
+
+  LOG(INFO) << "[SERVER] Queried backend is " << backendCfg.backend;
   LOG(INFO) << "[SERVER] Query is:\n" << query;
 
-  createCache(backend);
-  std::string indexHash = loadCache(backend);
+  createCache(backendCfg);
+  std::string indexHash = loadCache(backendCfg);
 
   std::string queryId =
-      backend + "$" + indexHash + "$" + query + "$" + fieldsHash;
+      backendCfg.backend + "$" + indexHash + "$" + query + "$" + fieldsHash;
 
   std::shared_ptr<Requestor> reqor;
   std::string sessionId;
@@ -931,7 +913,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
       reqor = _rs[sessionId];
     } else {
       reqor = std::shared_ptr<Requestor>(
-          new Requestor(_caches[backend], _maxMemory));
+          new Requestor(_caches[backendCfg.backend], _maxMemory));
 
       sessionId = getSessionId();
 
@@ -944,7 +926,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   try {
     reqor->request(query, fields);
   } catch (OutOfMemoryError& ex) {
-    LOG(ERROR) << ex.what() << backend;
+    LOG(ERROR) << ex.what() << backendCfg.backend;
 
     // delete cache, is now in unready state
     {
@@ -1282,9 +1264,11 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
 util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
-  auto backend = canonizeURL(pars.find("backend")->second);
-  createCache(backend);
-  std::shared_ptr<GeomCache> cache = _caches[backend];
+
+  auto backendCfg = getGeomCacheConfig(pars.find("backend")->second);
+
+  createCache(backendCfg);
+  std::shared_ptr<GeomCache> cache = _caches[backendCfg.backend];
 
   // We have 3 loading stages:
   // 1) Filling geometry cache / reading cache from disk
@@ -1367,30 +1351,30 @@ double Server::getLoadStatusPercent() const {
 }
 
 // _____________________________________________________________________________
-void Server::createCache(const std::string& backend) const {
+void Server::createCache(const GeomCacheConfig& cfg) const {
   std::shared_ptr<GeomCache> cache;
 
   {
     std::lock_guard<std::mutex> guard(_m);
-    if (_caches.count(backend)) {
-      cache = _caches[backend];
+    if (_caches.count(cfg.backend)) {
+      cache = _caches[cfg.backend];
     } else {
-      cache = std::shared_ptr<GeomCache>(new GeomCache(backend));
-      _caches[backend] = cache;
+      cache = std::shared_ptr<GeomCache>(new GeomCache(cfg, _maxMemory));
+      _caches[cfg.backend] = cache;
     }
   }
 }
 
 // _____________________________________________________________________________
-std::string Server::loadCache(const std::string& backend) const {
-  std::shared_ptr<GeomCache> cache = _caches[backend];
+std::string Server::loadCache(const GeomCacheConfig& cfg) const {
+  std::shared_ptr<GeomCache> cache = _caches[cfg.backend];
 
   try {
     return cache->load(_cacheDir);
   } catch (...) {
     std::lock_guard<std::mutex> guard(_m);
 
-    auto it = _caches.find(backend);
+    auto it = _caches.find(cfg.backend);
     if (it != _caches.end()) _caches.erase(it);
 
     throw;
@@ -1453,4 +1437,23 @@ heatmap_stamp_t* Server::raster_stamp(double res, double w, double h,
   }
 
   return heatmap_stamp_new_with(width, height, stamp);
+}
+
+// _____________________________________________________________________________
+GeomCacheConfig Server::getGeomCacheConfig(const std::string& backendUrl) const {
+  auto canonizedBackend = canonizeURL(backendUrl);
+
+  auto cfg = _cacheConfigs.find(canonizedBackend);
+
+  if (cfg != _cacheConfigs.end()) return cfg->second;
+
+  // default fallback
+  return GeomCacheConfig{
+    backendUrl,
+    "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
+    "SELECT ?geometry WHERE {"
+    " ?subject geo:asWKT ?geometry "
+    " FILTER (!ql:isGeoPoint(?geometry)) "
+    "} INTERNAL SORT BY ?geometry"
+  };
 }

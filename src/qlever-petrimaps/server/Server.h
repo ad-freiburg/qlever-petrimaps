@@ -27,7 +27,8 @@ enum MapStyle { HEATMAP, OBJECTS, RASTER };
 class Server : public util::http::Handler {
  public:
   explicit Server(size_t maxMemory, const std::string& cacheDir,
-                  int cacheLifetime, size_t autoThreshold);
+                  int cacheLifetime, size_t autoThreshold,
+                  std::map<std::string, GeomCacheConfig> cacheConfigs);
 
   virtual util::http::Answer handle(const util::http::Req& request,
                                     int connection) const;
@@ -45,8 +46,8 @@ class Server : public util::http::Handler {
   util::http::Answer handleExportReq(const Params& pars, int sock) const;
   util::http::Answer handleLoadStatusReq(const Params& pars) const;
 
-  void createCache(const std::string& backend) const;
-  std::string loadCache(const std::string& backend) const;
+  void createCache(const GeomCacheConfig& cfg) const;
+  std::string loadCache(const GeomCacheConfig& cfg) const;
 
   void clearSession(const std::string& id) const;
   void clearSessions() const;
@@ -55,6 +56,8 @@ class Server : public util::http::Handler {
   std::string getSessionId() const;
 
   double getLoadStatusPercent() const;
+
+  GeomCacheConfig getGeomCacheConfig(const std::string& backendUrl) const;
 
   static void pngWriteRowCb(png_structp png_ptr, png_uint_32 row, int pass);
   void writePNG(const unsigned char* data, size_t w, size_t h, int sock) const;
@@ -82,6 +85,8 @@ class Server : public util::http::Handler {
   mutable std::map<std::string, std::shared_ptr<GeomCache>> _caches;
   mutable std::map<std::string, std::shared_ptr<Requestor>> _rs;
   mutable std::map<std::string, std::string> _queryCache;
+
+  std::map<std::string, GeomCacheConfig> _cacheConfigs;
 };
 }  // namespace petrimaps
 
