@@ -29,7 +29,7 @@ using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
 // _____________________________________________________________________________
-void Requestor::request(const std::string& qry, const std::vector<std::pair<std::string, std::string>>& fields) {
+void Requestor::request(const std::string& qry) {
   std::lock_guard<std::mutex> guard(_m);
 
   if (_ready) {
@@ -56,15 +56,15 @@ void Requestor::request(const std::string& qry, const std::vector<std::pair<std:
   std::map<std::string, size_t> columnsMap;
 	for (size_t i = 0; i < columns.size(); i++) columnsMap[columns[i]] = i;
 
-	if (fields.size() == 0) {
+	if (_rcfg.fields.size() == 0) {
 		geomColumns = {columns.back()};
 	} else {
-		for (const auto& field : fields) {
-			if (!columnsMap.count(field.first)) continue;
-			geomColumns.push_back(field.first);
-			if (columnsMap.count(field.second)) {
-				valueFlds[geomColumns.size() - 1] = columnsMap[field.second];
-				valueColumns.push_back(field.second);
+		for (const auto& field : _rcfg.fields) {
+			if (!columnsMap.count(field.geomField)) continue;
+			geomColumns.push_back(field.geomField);
+			if (columnsMap.count(field.valueField)) {
+				valueFlds[geomColumns.size() - 1] = columnsMap[field.valueField];
+				valueColumns.push_back(field.valueField);
 			}
 		}
 	}

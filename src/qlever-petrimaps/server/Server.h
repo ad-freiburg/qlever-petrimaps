@@ -58,6 +58,7 @@ class Server : public util::http::Handler {
   double getLoadStatusPercent() const;
 
   GeomCacheConfig getGeomCacheConfig(const std::string& backendUrl) const;
+  RequestorConfig getRequestorCfgFromURL(const std::string& url) const;
 
   static void pngWriteRowCb(png_structp png_ptr, png_uint_32 row, int pass);
   void writePNG(const unsigned char* data, size_t w, size_t h, int sock) const;

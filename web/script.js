@@ -7,8 +7,6 @@ let qleverBackend = urlParams.get("backend");
 let query = urlParams.get("query");
 let mode = urlParams.get("mode");
 
-let rasterWidth = parseFloat(urlParams.get("rasterw"));
-let rasterHeight = parseFloat(urlParams.get("rasterh"));
 let fieldsRaw = (urlParams.get("fields") || "").split(";");
 let fields = [];
 
@@ -148,7 +146,7 @@ function showError(msg) {
     else error.innerHTML = "";
 }
 
-function loadMap(id, bounds, numObjects, autoThreshold) {
+function loadMap(id, bounds, numObjects, autoThreshold, layerName, rasterWidth, rasterHeight) {
     const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
     const ur =  L.Projection.SphericalMercator.unproject({"x": bounds[1][0], "y":bounds[1][1]});
     const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
@@ -379,7 +377,11 @@ function fetchResults() {
         })
     .then(response => response.json())
     .then(data => {
-        loadMap(data["qid"], data["bounds"], data["numobjects"], data["autothreshold"]);
+            console.log(data);
+        for (let layer in data["layers"]) {
+            console.log(layer);
+            loadMap(data["qid"], data["bounds"], data["numobjects"], data["autothreshold"], layer, 0, 0);
+        }
     })
 	.catch(error => showError(error));
 }

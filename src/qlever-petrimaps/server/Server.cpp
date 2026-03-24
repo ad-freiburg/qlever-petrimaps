@@ -46,9 +46,10 @@
 #define omp_get_thread_num() 0
 #endif
 
-using petrimaps::Params;
-using petrimaps::Server;
 using petrimaps::GeomCacheConfig;
+using petrimaps::Params;
+using petrimaps::RequestorConfig;
+using petrimaps::Server;
 using util::geo::contains;
 using util::geo::densify;
 using util::geo::DLine;
@@ -64,7 +65,8 @@ static std::atomic<size_t> _curRow;
 
 // _____________________________________________________________________________
 Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime,
-               size_t autoThreshold, std::map<std::string, GeomCacheConfig> cacheConfigs)
+               size_t autoThreshold,
+               std::map<std::string, GeomCacheConfig> cacheConfigs)
     : _maxMemory(maxMemory),
       _cacheDir(cacheDir),
       _cacheLifetime(cacheLifetime),
@@ -878,21 +880,33 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
 
-  std::vector<std::pair<std::string, std::string>> fields;
-  std::string fieldsHash = "";
+  RequestorConfig rcfg;
 
   if (pars.count("fields") != 0) {
-    fieldsHash = pars.find("fields")->second;
     for (auto raw : util::split(pars.find("fields")->second, ';')) {
       auto parts = util::split(raw, ',');
       if (parts.size() == 0) continue;
-      fields.push_back({parts[0], parts.size() > 1 ? parts[1] : ""});
+      rcfg.fields.push_back({parts[0], parts.size() > 1 ? parts[1] : "", 0, 0});
     }
+  }
+
+  if (pars.count("rasterw") != 0 && pars.count("rasterh") != 0) {
+    double rasterW = ::atof(pars.find("rasterw")->second.c_str());
+    double rasterH = ::atof(pars.find("rasterh")->second.c_str());
+
+    // set the same rasterw and rasterh for all fields
+    for (auto& fld : rcfg.fields) {
+      fld.rasterW = rasterW;
+      fld.rasterH = rasterH;
+    }
+  }
+
+  if (pars.count("cfg") != 0 && pars.find("cfg")->second.size()) {
+    rcfg = getRequestorCfgFromURL(util::urlDecode(pars.find("cfg")->second));
   }
 
   auto query = pars.find("query")->second;
   auto backendCfg = getGeomCacheConfig(pars.find("backend")->second);
-
 
   LOG(INFO) << "[SERVER] Queried backend is " << backendCfg.backend;
   LOG(INFO) << "[SERVER] Query is:\n" << query;
@@ -901,7 +915,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   std::string indexHash = loadCache(backendCfg);
 
   std::string queryId =
-      backendCfg.backend + "$" + indexHash + "$" + query + "$" + fieldsHash;
+      backendCfg.backend + "$" + indexHash + "$" + query + "$" + rcfg.getHash();
 
   std::shared_ptr<Requestor> reqor;
   std::string sessionId;
@@ -913,7 +927,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
       reqor = _rs[sessionId];
     } else {
       reqor = std::shared_ptr<Requestor>(
-          new Requestor(_caches[backendCfg.backend], _maxMemory));
+          new Requestor(_caches[backendCfg.backend], rcfg, _maxMemory));
 
       sessionId = getSessionId();
 
@@ -924,7 +938,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   }
 
   try {
-    reqor->request(query, fields);
+    reqor->request(query);
   } catch (OutOfMemoryError& ex) {
     LOG(ERROR) << ex.what() << backendCfg.backend;
 
@@ -956,7 +970,20 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   json << std::fixed << "{\"qid\" : \"" << sessionId << "\",\"bounds\":[["
        << llX << "," << llY << "],[" << urX << "," << urY << "]]"
        << ",\"numobjects\":" << numObjs
-       << ",\"autothreshold\":" << _autoThreshold << "}";
+       << ",\"autothreshold\":" << _autoThreshold
+       << ",\"layers\": {";
+
+  bool first = false;
+  for (const auto& fld : rcfg.fields) {
+    if (first) json << ",";
+    first = true;
+    json << "\"" << fld.geomField << "\":{";
+    if (fld.rasterW != 0 && fld.rasterH != 0) json << "\"rasterw\":" << fld.rasterW << ", \"rasterh\":" << fld.rasterH;
+    json << "}";
+
+  }
+
+  json << "}}";
 
   auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";
@@ -1440,7 +1467,15 @@ heatmap_stamp_t* Server::raster_stamp(double res, double w, double h,
 }
 
 // _____________________________________________________________________________
-GeomCacheConfig Server::getGeomCacheConfig(const std::string& backendUrl) const {
+RequestorConfig Server::getRequestorCfgFromURL(const std::string& url) const {
+  RequestorConfig ret;
+
+  return ret;
+}
+
+// _____________________________________________________________________________
+GeomCacheConfig Server::getGeomCacheConfig(
+    const std::string& backendUrl) const {
   auto canonizedBackend = canonizeURL(backendUrl);
 
   auto cfg = _cacheConfigs.find(canonizedBackend);
@@ -1448,12 +1483,10 @@ GeomCacheConfig Server::getGeomCacheConfig(const std::string& backendUrl) const 
   if (cfg != _cacheConfigs.end()) return cfg->second;
 
   // default fallback
-  return GeomCacheConfig{
-    backendUrl,
-    "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
-    "SELECT ?geometry WHERE {"
-    " ?subject geo:asWKT ?geometry "
-    " FILTER (!ql:isGeoPoint(?geometry)) "
-    "} INTERNAL SORT BY ?geometry"
-  };
+  return GeomCacheConfig{backendUrl,
+                         "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
+                         "SELECT ?geometry WHERE {"
+                         " ?subject geo:asWKT ?geometry "
+                         " FILTER (!ql:isGeoPoint(?geometry)) "
+                         "} INTERNAL SORT BY ?geometry"};
 }

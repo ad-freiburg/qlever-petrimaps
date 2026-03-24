@@ -20,6 +20,27 @@
 
 namespace petrimaps {
 
+struct FieldConfig {
+  std::string geomField;
+  std::string valueField;
+  double rasterW = 0;
+  double rasterH = 0;
+};
+
+struct RequestorConfig {
+  std::vector<FieldConfig> fields;
+
+  std::string getHash() const {
+    std::hash<std::string> hashF;
+    std::string fieldsStr;
+    for (const auto& field : fields)
+      fieldsStr += field.geomField + "|" + field.valueField + "|" +
+                   std::to_string(field.rasterW) + "|" +
+                   std::to_string(field.rasterH);
+    return std::to_string(hashF(fieldsStr));
+  }
+};
+
 struct ResObj {
   bool has;
   size_t id;
@@ -42,13 +63,14 @@ struct ReaderCbPair {
 class Requestor {
  public:
   Requestor() : _maxMemory(-1) {}
-  Requestor(std::shared_ptr<const GeomCache> cache, size_t maxMemory)
+  Requestor(std::shared_ptr<const GeomCache> cache, RequestorConfig rcfg,
+            size_t maxMemory)
       : _cache(cache),
+        _rcfg(rcfg),
         _maxMemory(maxMemory),
         _createdAt(std::chrono::system_clock::now()) {}
 
-  void request(const std::string& query,
-               const std::vector<std::pair<std::string, std::string>>& fields);
+  void request(const std::string& query);
 
   std::vector<std::pair<std::string, std::string>> requestRow(
       uint64_t row) const;
@@ -135,6 +157,7 @@ class Requestor {
   std::string _backendUrl;
 
   std::shared_ptr<const GeomCache> _cache;
+  RequestorConfig _rcfg;
 
   size_t _maxMemory;
 
