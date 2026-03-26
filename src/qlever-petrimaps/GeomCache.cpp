@@ -418,23 +418,17 @@ size_t GeomCache::requestSize() {
               << std::endl
               << countQuery;
     auto qUrl = queryUrl(countQuery, 0, 1);
+    petrimapsCurlSetup(_curl);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
-    curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
-    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbCount);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
     // set headers
     struct curl_slist *headers = 0;
     headers = curl_slist_append(headers, "Accept: text/tab-separated-values");
     curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
 
-    // accept any compression supported
-    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     res = curl_easy_perform(_curl);
 
     long httpCode = 0;
@@ -487,15 +481,11 @@ void GeomCache::requestPart(size_t offset) {
 
   if (_curl) {
     auto qUrl = queryUrl(getFillQuery(), offset, 10000000);
+    petrimapsCurlSetup(_curl);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
-    curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
-    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
     // set headers
     struct curl_slist *headers = 0;
@@ -700,24 +690,17 @@ void GeomCache::requestIdPart(size_t offset) {
 
   if (_curl) {
     auto qUrl = queryUrl(getFillQuery(), offset, 100000000);
-    curl_easy_reset(_curl);
+    petrimapsCurlSetup(_curl);
     curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
-    curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
-    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbIds);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
     // set headers
     struct curl_slist *headers = 0;
     headers = curl_slist_append(headers, "Accept: application/octet-stream");
     curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
 
-    // accept any compression supported
-    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     res = curl_easy_perform(_curl);
 
     long httpCode = 0;
@@ -1292,19 +1275,12 @@ std::string GeomCache::requestIndexHash() {
 
   if (_curl) {
     std::string url = _config.backend + "/?cmd=get-index-id";
-    curl_easy_reset(_curl);
+    petrimapsCurlSetup(_curl);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
-    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbString);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
-    // accept any compression supported
-    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     res = curl_easy_perform(_curl);
 
     if (res != CURLE_OK) {

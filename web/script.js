@@ -169,7 +169,7 @@ function loadMap(id, bounds, numObjects, autoThreshold, layerName, rasterWidth, 
 				minZoom: 0,
 				maxZoom: 19,
 				opacity: 0.8,
-				layers: id,
+				layers: id + "-" + layerName,
 				styles: ["heatmap-" + s],
 				format: 'image/png',
 				transparent: true,
@@ -185,7 +185,7 @@ function loadMap(id, bounds, numObjects, autoThreshold, layerName, rasterWidth, 
 				minZoom: 0,
 				maxZoom: 19,
 				opacity: 0.8,
-				layers: id,
+				layers: id + "-" + layerName,
 				styles: ["raster-" + rasterWidth + "x" + rasterHeight + "-" + s],
 				format: 'image/png',
 				transparent: true,
@@ -198,7 +198,7 @@ function loadMap(id, bounds, numObjects, autoThreshold, layerName, rasterWidth, 
         minZoom: 0,
         maxZoom: 19,
         opacity: 0.9,
-        layers: id,
+		layers: id + "-" + layerName,
         styles: ["objects"],
         format: 'image/png'
     });
@@ -207,7 +207,7 @@ function loadMap(id, bounds, numObjects, autoThreshold, layerName, rasterWidth, 
         minZoom: 0,
         maxZoom: 15,
         opacity: numObjects > autoThreshold ? 0.8 : 0.9,
-        layers: id,
+		layers: id + "-" + layerName,
         styles: numObjects > autoThreshold ? ["heatmap-spectralexp"] : ["objects"],
         format: 'image/png',
         transparent: true,
@@ -217,7 +217,7 @@ function loadMap(id, bounds, numObjects, autoThreshold, layerName, rasterWidth, 
         minZoom: 16,
         maxZoom: 19,
         opacity: 0.9,
-        layers: id,
+		layers: id + "-" + layerName,
         styles: ["objects"],
         format: 'image/png'
     });
@@ -377,9 +377,12 @@ function fetchResults() {
         })
     .then(response => response.json())
     .then(data => {
-            console.log(data);
+        console.log(data);
+        if (Object.keys(data["layers"]).length == 0) {
+            showError("No layers specified in config");
+            clearInterval(loadStatusIntervalId);
+        }
         for (let layer in data["layers"]) {
-            console.log(layer);
             loadMap(data["qid"], data["bounds"], data["numobjects"], data["autothreshold"], layer, 0, 0);
         }
     })

@@ -22,12 +22,13 @@ namespace petrimaps {
 
 struct FieldConfig {
   std::string geomField;
-  std::string valueField;
+  std::string valueField = "";
   double rasterW = 0;
   double rasterH = 0;
 };
 
 struct RequestorConfig {
+  std::string query;
   std::vector<FieldConfig> fields;
 
   std::string getHash() const {
@@ -37,7 +38,7 @@ struct RequestorConfig {
       fieldsStr += field.geomField + "|" + field.valueField + "|" +
                    std::to_string(field.rasterW) + "|" +
                    std::to_string(field.rasterH);
-    return std::to_string(hashF(fieldsStr));
+    return std::to_string(hashF(query + fieldsStr));
   }
 };
 
@@ -68,9 +69,30 @@ class Requestor {
       : _cache(cache),
         _rcfg(rcfg),
         _maxMemory(maxMemory),
-        _createdAt(std::chrono::system_clock::now()) {}
+        _createdAt(std::chrono::system_clock::now()) {
+    auto columns = getColumns(_rcfg.query);
+    for (size_t i = 0; i < columns.size(); i++) _columnsMap[columns[i]] = i;
 
-  void request(const std::string& query);
+    if (_rcfg.fields.size() == 0) {
+      _geomColumns = {columns.back()};
+      _rcfg.fields.push_back({columns.back()});
+    } else {
+      for (const auto& field : _rcfg.fields) {
+        if (!_columnsMap.count(field.geomField)) continue;
+        _geomColumns.push_back(field.geomField);
+        if (_columnsMap.count(field.valueField)) {
+          _valueFlds[_geomColumns.size() - 1] = _columnsMap[field.valueField];
+          _valueColumns.push_back(field.valueField);
+        }
+      }
+    }
+
+    for (size_t i = 0; i < _geomColumns.size(); i++) {
+      _geoColToLid[_geomColumns[i]] = i;
+    }
+  }
+
+  void request();
 
   std::vector<std::pair<std::string, std::string>> requestRow(
       uint64_t row) const;
@@ -89,8 +111,9 @@ class Requestor {
     return _lpgrid;
   }
 
-  const std::vector<std::pair<ID_TYPE, ID_TYPE>>& getObjects() const {
-    return _objects;
+  const std::vector<std::pair<ID_TYPE, ID_TYPE>>& getObjects(
+      size_t layerId) const {
+    return _objects[layerId];
   }
 
   const std::vector<std::pair<util::geo::FPoint, ID_TYPE>>& getDynamicPoints()
@@ -123,23 +146,32 @@ class Requestor {
     return _cache->getLineBBox(id);
   }
 
-  const ResObj getNearest(util::geo::DPoint p, double rad, double res,
-                          util::geo::FBox box) const;
+  const ResObj getNearest(size_t lid, util::geo::DPoint p, double rad,
+                          double res, util::geo::FBox box) const;
 
-  const ResObj getGeom(size_t id, double rad) const;
+  const ResObj getGeom(size_t lid, size_t id, double rad) const;
 
-  util::geo::MultiPolygon<double> geomPolyGeoms(size_t oid, double eps) const;
-  util::geo::MultiLine<double> geomLineGeoms(size_t oid, double eps) const;
-  util::geo::MultiPoint<double> geomPointGeoms(size_t oid, double res) const;
-  util::geo::MultiPoint<double> geomPointGeoms(size_t oid) const;
+  util::geo::MultiPolygon<double> geomPolyGeoms(size_t lid, size_t oid,
+                                                double eps) const;
+  util::geo::MultiLine<double> geomLineGeoms(size_t lid, size_t oid,
+                                             double eps) const;
+  util::geo::MultiPoint<double> geomPointGeoms(size_t lid, size_t oid,
+                                               double res) const;
+  util::geo::MultiPoint<double> geomPointGeoms(size_t lid, size_t oid) const;
 
   util::geo::DLine extractLineGeom(size_t lineId) const;
   bool isArea(size_t lineId) const;
 
   size_t getNumObjects() const { return _numObjects; }
-  util::geo::DPoint clusterGeom(size_t cid, double res) const;
+  util::geo::DPoint clusterGeom(size_t layerId, size_t cid, double res) const;
 
-  double getVal(size_t oid) const;
+  std::vector<std::string> getColumns(std::string query) const;
+
+  double getVal(size_t lid, size_t oid) const;
+
+  size_t getLayerId(const std::string& layer) { return _geoColToLid.find(layer)->second; }
+
+  const std::vector<FieldConfig> getFields() const { return _rcfg.fields; }
   std::pair<double, double> getValRange() const;
 
   std::chrono::time_point<std::chrono::system_clock> createdAt() const {
@@ -163,7 +195,6 @@ class Requestor {
 
   std::string prepQuery(std::string query, std::vector<std::string> columns,
                         std::string sortBy) const;
-  std::vector<std::string> getColumns(std::string query) const;
   std::string prepQueryRow(std::string query, uint64_t row) const;
 
   std::vector<std::pair<util::geo::FPoint, ID_TYPE>> getDynamicPoints(
@@ -173,12 +204,18 @@ class Requestor {
 
   mutable std::mutex _m;
 
-  std::vector<std::pair<ID_TYPE, ID_TYPE>> _objects;
+  std::vector<std::vector<std::pair<ID_TYPE, ID_TYPE>>> _objects;
   std::vector<std::pair<util::geo::FPoint, ID_TYPE>> _dynamicPoints;
   std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>> _clusterObjects;
   std::vector<double> _vals;
   double _valMax, _valMin;
   size_t _numObjects = 0;
+
+  std::vector<std::string> _geomColumns;
+  std::vector<std::string> _valueColumns;
+  std::map<std::string, size_t> _columnsMap;
+  std::map<std::string, size_t> _geoColToLid;
+  std::map<size_t, size_t> _valueFlds;
 
   petrimaps::Grid<ID_TYPE, float> _pgrid;
   petrimaps::Grid<ID_TYPE, float> _lgrid;

@@ -16,6 +16,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "3rdparty/json.hpp"
 #include "3rdparty/heatmap.h"
 #include "3rdparty/colorschemes/Blues.h"
 #include "3rdparty/colorschemes/Greens.h"
@@ -46,6 +47,7 @@
 #define omp_get_thread_num() 0
 #endif
 
+using nlohmann::json;
 using petrimaps::GeomCacheConfig;
 using petrimaps::Params;
 using petrimaps::RequestorConfig;
@@ -167,7 +169,16 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   if (pars.count("layers") == 0 || pars.find("layers")->second.empty())
     throw std::invalid_argument("No layer specified.");
-  std::string id = pars.find("layers")->second;
+  std::string layers = pars.find("layers")->second;
+
+  std::string id;
+  std::string layer;
+
+  auto parts = util::split(layers, '-');
+  if (parts.size()) id = parts[0];
+  if (parts.size() > 1) layer = parts[1];
+
+  std::cout << id << " : " << layer << std::endl;
 
   MapStyle style = HEATMAP;
   auto colorScheme = heatmap_cs_Spectral_mixed_exp;
@@ -263,6 +274,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   double res = mercH / h;
 
+  size_t lid = r->getLayerId(layer);
+
   checkMem(sizeof(float) * w * h, _maxMemory);
   heatmap_t* hm = heatmap_new(w, h);
   hm->max = r->getValRange().second;
@@ -300,7 +313,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
       for (size_t j = 0; j < ret.size(); j++) {
         size_t i = ret[j];
 
-        const auto& objs = r->getObjects();
+        const auto& objs = r->getObjects(lid);
         const auto& dynPoints = r->getDynamicPoints();
 
         if (i >= objs.size() + dynPoints.size() && style == OBJECTS) {
@@ -315,7 +328,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
           if (!contains(p, fbbox)) continue;
 
-          const auto& cp = r->clusterGeom(cid, res);
+          const auto& cp = r->clusterGeom(lid, cid, res);
 
           int px = ((cp.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int py = h - ((cp.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
@@ -323,7 +336,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           int ppx = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int ppy = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-          drawPoint(points[0], points2[0], px, py, w, h, style, r->getVal(oid));
+          drawPoint(points[0], points2[0], px, py, w, h, style, r->getVal(lid, oid));
           drawLine(image.data(), ppx, ppy, px, py, w, h);
         } else {
           if (i >= objs.size() + dynPoints.size())
@@ -340,7 +353,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-          drawPoint(points[0], points2[0], px, py, w, h, style, r->getVal(i));
+          drawPoint(points[0], points2[0], px, py, w, h, style, r->getVal(lid, i));
         }
       }
     } else {
@@ -377,24 +390,24 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                       cell->size());
           } else {
             for (auto i : *cell) {
-              if (i >= r->getObjects().size() + r->getDynamicPoints().size()) {
-                i = r->getClusters()[i - r->getObjects().size() -
+              if (i >= r->getObjects(lid).size() + r->getDynamicPoints().size()) {
+                i = r->getClusters()[i - r->getObjects(lid).size() -
                                      r->getDynamicPoints().size()]
                         .first;
               }
 
               FPoint p;
-              if (i < r->getObjects().size())
-                p = r->getPoint(r->getObjects()[i].first);
+              if (i < r->getObjects(lid).size())
+                p = r->getPoint(r->getObjects(lid)[i].first);
               else
-                p = r->getDPoint(i - r->getObjects().size());
+                p = r->getDPoint(i - r->getObjects(lid).size());
 
               int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
               int py =
                   h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
               drawPoint(points[omp_get_thread_num()],
                         points2[omp_get_thread_num()], px, py, w, h, style,
-                        r->getVal(i));
+                        r->getVal(lid, i));
             }
           }
         }
@@ -417,14 +430,14 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
       for (size_t idx = 0; idx < ret.size(); idx++) {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
-        auto lid = r->getObjects()[ret[idx]].first;
-        const auto& lbox = r->getLineBBox(lid - I_OFFSET);
+        auto lineId = r->getObjects(lid)[ret[idx]].first;
+        const auto& lbox = r->getLineBBox(lineId - I_OFFSET);
         if (!intersects(lbox, bbox)) continue;
 
         size_t gi = 0;
 
-        size_t start = r->getLine(lid - I_OFFSET);
-        size_t end = r->getLineEnd(lid - I_OFFSET);
+        size_t start = r->getLine(lineId - I_OFFSET);
+        size_t end = r->getLineEnd(lineId - I_OFFSET);
 
         // ___________________________________
         bool isects = false;
@@ -475,7 +488,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         // the factor depends on the render thickness of the line, make
         // this configurable!
         const auto& denseLine =
-            densify(r->extractLineGeom(lid - I_OFFSET), res);
+            densify(r->extractLineGeom(lineId - I_OFFSET), res);
 
         for (const auto& p : denseLine) {
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
@@ -651,6 +664,10 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
     throw std::invalid_argument("No geom id (?gid=) specified.");
   size_t gid = std::atoi(pars.find("gid")->second.c_str());
 
+  if (pars.count("layer") == 0 || pars.find("layer")->second.empty())
+    throw std::invalid_argument("No layer (?layer=) specified.");
+  std::string layer = pars.find("layer")->second.c_str();
+
   bool noExport = pars.count("export") == 0 ||
                   pars.find("export")->second.empty() ||
                   !std::atoi(pars.find("export")->second.c_str());
@@ -671,16 +688,17 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
   if (!reqor->ready()) {
     throw std::invalid_argument("Session not ready.");
   }
-  // as soon as we are ready, the reqor can be read concurrently
+  size_t lid = reqor->getLayerId(layer);
 
-  auto res = reqor->getGeom(gid, rad);
+  // as soon as we are ready, the reqor can be read concurrently
+  auto res = reqor->getGeom(lid, gid, rad);
 
   util::json::Val dict;
 
   if (!noExport) {
     size_t row;
-    if (gid < reqor->getObjects().size())
-      row = reqor->getObjects()[gid].second;
+    if (gid < reqor->getObjects(lid).size())
+      row = reqor->getObjects(lid)[gid].second;
     else
       row = reqor->getDynamicPoints()[gid].second;
 
@@ -749,6 +767,10 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
     throw std::invalid_argument("No bbox specified.");
   auto box = util::split(pars.find("bbox")->second, ',');
 
+  if (pars.count("layer") == 0 || pars.find("layer")->second.empty())
+    throw std::invalid_argument("No layer (?layer=) specified.");
+  std::string layer = pars.find("layer")->second.c_str();
+
   MapStyle style = HEATMAP;
   if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
     if (pars.find("styles")->second == "objects") style = OBJECTS;
@@ -789,7 +811,9 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   }
   // as soon as we are ready, the reqor can be read concurrently
 
-  auto res = reqor->getNearest({x, y}, rad, reso, fbbox);
+  size_t lid = reqor->getLayerId(layer);
+
+  auto res = reqor->getNearest(lid, {x, y}, rad, reso, fbbox);
 
   std::stringstream json;
 
@@ -875,8 +899,6 @@ util::http::Answer Server::handleClearSessReq(const Params& pars) const {
 
 // _____________________________________________________________________________
 util::http::Answer Server::handleQueryReq(const Params& pars) const {
-  if (pars.count("query") == 0 || pars.find("query")->second.empty())
-    throw std::invalid_argument("No query (?q=) specified.");
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
 
@@ -905,17 +927,22 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     rcfg = getRequestorCfgFromURL(util::urlDecode(pars.find("cfg")->second));
   }
 
-  auto query = pars.find("query")->second;
+  if (pars.count("query") != 0 && !pars.find("query")->second.empty()) {
+    rcfg.query = pars.find("query")->second;
+  }
+
+  if (rcfg.query.size() == 0) throw std::invalid_argument("No query specified.");
+
   auto backendCfg = getGeomCacheConfig(pars.find("backend")->second);
 
   LOG(INFO) << "[SERVER] Queried backend is " << backendCfg.backend;
-  LOG(INFO) << "[SERVER] Query is:\n" << query;
+  LOG(INFO) << "[SERVER] Query is:\n" << rcfg.query;
 
   createCache(backendCfg);
   std::string indexHash = loadCache(backendCfg);
 
   std::string queryId =
-      backendCfg.backend + "$" + indexHash + "$" + query + "$" + rcfg.getHash();
+      backendCfg.backend + "$" + indexHash + "$" + rcfg.getHash();
 
   std::shared_ptr<Requestor> reqor;
   std::string sessionId;
@@ -932,13 +959,13 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
       sessionId = getSessionId();
 
       _rs[sessionId] = reqor;
-      if (util::toLower(query).find("rand()") == std::string::npos)
+      if (util::toLower(rcfg.query).find("rand()") == std::string::npos)
         _queryCache[queryId] = sessionId;
     }
   }
 
   try {
-    reqor->request(query);
+    reqor->request();
   } catch (OutOfMemoryError& ex) {
     LOG(ERROR) << ex.what() << backendCfg.backend;
 
@@ -974,13 +1001,12 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
        << ",\"layers\": {";
 
   bool first = false;
-  for (const auto& fld : rcfg.fields) {
+  for (const auto& fld : reqor->getFields()) {
     if (first) json << ",";
     first = true;
     json << "\"" << fld.geomField << "\":{";
     if (fld.rasterW != 0 && fld.rasterH != 0) json << "\"rasterw\":" << fld.rasterW << ", \"rasterh\":" << fld.rasterH;
     json << "}";
-
   }
 
   json << "}}";
@@ -1469,6 +1495,40 @@ heatmap_stamp_t* Server::raster_stamp(double res, double w, double h,
 // _____________________________________________________________________________
 RequestorConfig Server::getRequestorCfgFromURL(const std::string& url) const {
   RequestorConfig ret;
+
+  try {
+    std::string jsonStr = httpRequest(url);
+
+    nlohmann::json data = nlohmann::json::parse(jsonStr);
+
+    if (data.is_object()) {
+      for (const auto& cfg : data.items()) {
+        if (cfg.key() == "query") {
+          ret.query = cfg.value().get<std::string>();
+        }
+        if (cfg.key() == "layers") {
+          for (const auto& layer : cfg.value().items()) {
+            if (!layer.value().is_object()) {
+              std::stringstream ss;
+              ss << "Could not parse requestor config '" << jsonStr << "'";
+              throw std::runtime_error(ss.str());
+            }
+            FieldConfig curField;
+            curField.geomField = layer.key();
+            if (layer.value().contains("valueField"))
+              curField.valueField = layer.value()["valueField"];
+            if (layer.value().contains("rasterw"))
+              curField.rasterW = layer.value()["rasterw"].get<double>();
+            if (layer.value().contains("rasterh"))
+              curField.rasterH = layer.value()["rasterh"].get<double>();
+            ret.fields.push_back(curField);
+          }
+        }
+      }
+    }
+  } catch (const std::runtime_error& e) {
+    LOG(ERROR) << "[SERVER] " << e.what();
+  }
 
   return ret;
 }

@@ -90,15 +90,70 @@ inline void checkMem(double want, double max) {
   }
 }
 
+inline void petrimapsCurlSetup(CURL* curl) {
+  curl_easy_reset(curl);
+  curl_easy_setopt(curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, false);
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, 0);
+  curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+}
+
+size_t writeStringCb(void* contents, size_t size, size_t nmemb, void* userp);
+
+inline std::string httpRequest(const std::string& url) {
+  CURL* curl = curl_easy_init();
+  CURLcode res;
+  char errbuf[CURL_ERROR_SIZE];
+
+  std::string resString;
+
+  petrimapsCurlSetup(curl);
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeStringCb);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resString);
+  curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+  res = curl_easy_perform(curl);
+
+  long httpCode = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+  if (httpCode != 200) {
+    std::stringstream ss;
+    ss << "Remote server returned status code " << httpCode;
+    ss << "\n";
+    ss << resString;
+    throw std::runtime_error(ss.str());
+  }
+
+  if (res != CURLE_OK) {
+    std::stringstream ss;
+    ss << "HTTP request failed: ";
+    size_t len = strlen(errbuf);
+    if (len > 0) {
+      ss << errbuf;
+    } else {
+      ss << curl_easy_strerror(res);
+    }
+
+    throw std::runtime_error(ss.str());
+  }
+
+  return resString;
+}
+
 struct RequestReader {
   explicit RequestReader(const std::string& backendUrl, size_t maxMemory,
-                         size_t geomFields,
-                         std::map<size_t, size_t> valFields)
+                         size_t geomFields, std::map<size_t, size_t> valFields)
       : _backendUrl(backendUrl),
         _curl(curl_easy_init()),
         _maxMemory(maxMemory),
         _geomFields(geomFields),
-        _valFields(valFields) {}
+        _valFields(valFields) {
+          _ids.resize(geomFields);
+          _vals.resize(valFields.size());
+        }
   ~RequestReader() {
     if (_curl) curl_easy_cleanup(_curl);
   }
@@ -113,13 +168,11 @@ struct RequestReader {
   void parseIds(const char*, size_t size);
   void parseVals(const char*, size_t size);
 
-  static size_t writeStringCb(void* contents, size_t size, size_t nmemb,
-                              void* userp);
   static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
   static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
                            void* userp);
   static size_t writeCbVals(void* contents, size_t size, size_t nmemb,
-                           void* userp);
+                            void* userp);
 
   std::string queryUrl(const std::string& query) const;
 
@@ -140,8 +193,8 @@ struct RequestReader {
   size_t _curIdCol = 0;
   ID _curId;
   size_t _received = 0;
-  std::vector<IdMapping> _ids;
-  std::vector<double> _vals;
+  std::vector<std::vector<IdMapping>> _ids;
+  std::vector<std::vector<double>> _vals;
   size_t _maxMemory;
 
   size_t _geomFields;

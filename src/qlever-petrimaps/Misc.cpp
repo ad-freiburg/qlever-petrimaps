@@ -2,14 +2,13 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
-#include "qlever-petrimaps/Misc.h"
-
 #include <stdint.h>
 
 #include <cstring>
 #include <string>
 #include <vector>
 
+#include "qlever-petrimaps/Misc.h"
 #include "util/String.h"
 #include "util/log/Log.h"
 
@@ -21,60 +20,15 @@ using util::LogLevel::WARN;
 // _____________________________________________________________________________
 std::vector<std::string> RequestReader::requestColumns(
     const std::string& query) {
-  CURLcode res;
-  char errbuf[CURL_ERROR_SIZE];
 
   std::string resString;
 
-  if (_curl) {
+  try {
     auto url = queryUrl(query) + "&action=tsv_export";
-    curl_easy_reset(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
-    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION,
-                     RequestReader::writeStringCb);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, &resString);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
-
-    // accept any compression supported
-    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
-    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    res = curl_easy_perform(_curl);
-
-    long httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    if (httpCode != 200) {
-      std::stringstream ss;
-      ss << "QLever backend returned status code " << httpCode;
-      ss << "\n";
-      ss << _raw;
-      throw std::runtime_error(ss.str());
-    }
-
-    if (exceptionPtr) std::rethrow_exception(exceptionPtr);
-
-  } else {
+    resString = httpRequest(url);
+  } catch (const std::runtime_error& e) {
     std::stringstream ss;
-    ss << "[REQUESTREADER] Failed to perform curl request.\n";
-    throw std::runtime_error(ss.str());
-  }
-
-  if (res != CURLE_OK) {
-    std::stringstream ss;
-    ss << "QLever backend request failed: ";
-    size_t len = strlen(errbuf);
-    if (len > 0) {
-      LOG(ERROR) << "[REQUESTREADER] " << errbuf;
-      ss << errbuf;
-    } else {
-      LOG(ERROR) << "[REQUESTREADER] " << curl_easy_strerror(res);
-      ss << curl_easy_strerror(res);
-    }
-
+    ss << "[REQUESTREADER] " << e.what();
     throw std::runtime_error(ss.str());
   }
 
@@ -94,23 +48,16 @@ void RequestReader::requestVals(const std::string& query) {
 
   if (_curl) {
     auto url = queryUrl(query);
-    curl_easy_reset(_curl);
+    petrimapsCurlSetup(_curl);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
-    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, RequestReader::writeCbVals);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
     // set headers
     struct curl_slist* headers = 0;
     headers = curl_slist_append(headers, "Accept: text/tab-separated-values");
     curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
 
-    // accept any compression supported
-    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
     res = curl_easy_perform(_curl);
 
@@ -160,23 +107,16 @@ void RequestReader::requestIds(const std::string& query) {
 
   if (_curl) {
     auto url = queryUrl(query);
-    curl_easy_reset(_curl);
+    petrimapsCurlSetup(_curl);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
-    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, RequestReader::writeCbIds);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
     // set headers
     struct curl_slist* headers = 0;
     headers = curl_slist_append(headers, "Accept: application/octet-stream");
     curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
 
-    // accept any compression supported
-    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
     res = curl_easy_perform(_curl);
 
@@ -233,23 +173,16 @@ void RequestReader::requestRows(const std::string& query,
 
   if (_curl) {
     auto url = queryUrl(query);
-    curl_easy_reset(_curl);
+    petrimapsCurlSetup(_curl);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(_curl, CURLOPT_USERAGENT, CURL_USER_AGENT.c_str());
-    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, ptr);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
     // set headers
     struct curl_slist* headers = 0;
     headers = curl_slist_append(headers, "Accept: text/tab-separated-values");
     curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
 
-    // accept any compression supported
-    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
     res = curl_easy_perform(_curl);
 
@@ -298,7 +231,7 @@ std::string RequestReader::queryUrl(const std::string& query) const {
 }
 
 // _____________________________________________________________________________
-size_t RequestReader::writeStringCb(void* contents, size_t size, size_t nmemb,
+size_t petrimaps::writeStringCb(void* contents, size_t size, size_t nmemb,
                                     void* userp) {
   ((std::string*)userp)->append((char*)contents, size * nmemb);
   return size * nmemb;
@@ -359,7 +292,7 @@ void RequestReader::parseVals(const char* c, size_t size) {
     if (*c == '\n') {
       if (_curRow > 0) {
         double val = atof(_curVal.c_str());
-        if (_curCol == 0) _vals.push_back(val);
+        _vals[_curCol].push_back(val);
       }
       _curVal.resize(0);
       _curRow++;
@@ -367,9 +300,7 @@ void RequestReader::parseVals(const char* c, size_t size) {
     } else if (*c == '\t') {
       if (_curRow > 0) {
         double val = atof(_curVal.c_str());
-
-        // TODO: support multiple vals
-        if (_curCol == 0) _vals.push_back(val);
+        _vals[_curCol].push_back(val);
       }
       _curVal.resize(0);
       _curCol = (_curCol + 1) % _valFields.size();
@@ -395,7 +326,7 @@ void RequestReader::parseIds(const char* c, size_t size) {
 
     if (_curByte == 0) {
       // TODO: support multiple geom fields
-      if (_curIdCol == 0) _ids.push_back({_curId.val, _ids.size()});
+      _ids[_curIdCol].push_back({_curId.val, _ids[_curIdCol].size()});
       _curIdCol += 1;
     }
   }
