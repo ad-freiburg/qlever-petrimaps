@@ -308,6 +308,8 @@ function loadMap(id, bounds, numObjects, autoThreshold, layerName, rasterWidth, 
 		for (let layer of heatmapLayers) if (map.hasLayer(layer)) styles = "heatmap";
         if (map.hasLayer(objectsLayer)) styles = "objects";
 
+        console.log("CLICK", e);
+
         fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=' + bounds.join(',') + '&styles=' + styles)
           .then(response => {
               if (!response.ok) return response.text().then(text => {throw new Error(text)});

@@ -16,7 +16,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include "3rdparty/json.hpp"
 #include "3rdparty/heatmap.h"
 #include "3rdparty/colorschemes/Blues.h"
 #include "3rdparty/colorschemes/Greens.h"
@@ -30,6 +29,7 @@
 #include "3rdparty/colorschemes/Spectral.h"
 #include "3rdparty/colorschemes/YlOrRd.h"
 #include "3rdparty/colorschemes/gray.h"
+#include "3rdparty/json.hpp"
 #include "qlever-petrimaps/build.h"
 #include "qlever-petrimaps/index.h"
 #include "qlever-petrimaps/server/Requestor.h"
@@ -178,8 +178,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   if (parts.size()) id = parts[0];
   if (parts.size() > 1) layer = parts[1];
 
-  std::cout << id << " : " << layer << std::endl;
-
   MapStyle style = HEATMAP;
   auto colorScheme = heatmap_cs_Spectral_mixed_exp;
   double rasterWidth = 10;
@@ -276,11 +274,19 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   size_t lid = r->getLayerId(layer);
 
+  FieldConfig fieldCfg;
+  for (const auto& fld : r->getFields()) {
+    if (fld.geomField == layer) {
+      fieldCfg = fld;
+      break;
+    }
+  }
+
   checkMem(sizeof(float) * w * h, _maxMemory);
   heatmap_t* hm = heatmap_new(w, h);
   hm->max = r->getValRange().second;
 
-  double realCellSize = r->getPointGrid().getCellWidth();
+  double realCellSize = r->getPointGrid(lid).getCellWidth();
   double virtCellSize = res * 2.5;
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
@@ -302,24 +308,24 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   for (size_t i = 0; i < NUM_THREADS; i++) points2[i].resize(w * h, 0);
 
   // POINTS
-  if (intersects(r->getPointGrid().getBBox(), fbbox)) {
+  if (intersects(r->getPointGrid(lid).getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display points...";
     if (res < THRESHOLD) {
       std::vector<ID_TYPE> ret;
 
       // duplicates are not possible with points
-      r->getPointGrid().get(fbbox, &ret);
+      r->getPointGrid(lid).get(fbbox, &ret);
 
       for (size_t j = 0; j < ret.size(); j++) {
         size_t i = ret[j];
 
         const auto& objs = r->getObjects(lid);
-        const auto& dynPoints = r->getDynamicPoints();
+        const auto& dynPoints = r->getDynamicPoints(lid);
 
         if (i >= objs.size() + dynPoints.size() && style == OBJECTS) {
           size_t cid = i - objs.size() - dynPoints.size();
           FPoint p;
-          size_t oid = r->getClusters()[cid].first;
+          size_t oid = r->getClusters(lid)[cid].first;
 
           if (oid >= objs.size())
             p = dynPoints[oid - objs.size()].first;
@@ -336,30 +342,32 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           int ppx = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int ppy = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-          drawPoint(points[0], points2[0], px, py, w, h, style, r->getVal(lid, oid));
+          drawPoint(points[0], points2[0], px, py, w, h, style,
+                    r->getVal(lid, oid));
           drawLine(image.data(), ppx, ppy, px, py, w, h);
         } else {
           if (i >= objs.size() + dynPoints.size())
-            i = r->getClusters()[i - objs.size() - dynPoints.size()].first;
+            i = r->getClusters(lid)[i - objs.size() - dynPoints.size()].first;
 
           FPoint p;
           if (i < objs.size())
             p = r->getPoint(objs[i].first);
           else
-            p = r->getDPoint(i - objs.size());
+            p = r->getDPoint(lid, i - objs.size());
 
           if (!contains(p, fbbox)) continue;
 
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-          drawPoint(points[0], points2[0], px, py, w, h, style, r->getVal(lid, i));
+          drawPoint(points[0], points2[0], px, py, w, h, style,
+                    r->getVal(lid, i));
         }
       }
     } else {
       // they intersect, we checked this above
-      auto iBox = intersection(r->getPointGrid().getBBox(), fbbox);
-      const auto& grid = r->getPointGrid();
+      auto iBox = intersection(r->getPointGrid(lid).getBBox(), fbbox);
+      const auto& grid = r->getPointGrid(lid);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t x = grid.getCellXFromX(iBox.getLowerLeft().getX());
@@ -390,9 +398,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                       cell->size());
           } else {
             for (auto i : *cell) {
-              if (i >= r->getObjects(lid).size() + r->getDynamicPoints().size()) {
-                i = r->getClusters()[i - r->getObjects(lid).size() -
-                                     r->getDynamicPoints().size()]
+              if (i >=
+                  r->getObjects(lid).size() + r->getDynamicPoints(lid).size()) {
+                i = r->getClusters(lid)[i - r->getObjects(lid).size() -
+                                        r->getDynamicPoints(lid).size()]
                         .first;
               }
 
@@ -400,7 +409,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
               if (i < r->getObjects(lid).size())
                 p = r->getPoint(r->getObjects(lid)[i].first);
               else
-                p = r->getDPoint(i - r->getObjects(lid).size());
+                p = r->getDPoint(lid, i - r->getObjects(lid).size());
 
               int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
               int py =
@@ -416,7 +425,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   }
 
   // LINES
-  const auto& lgrid = r->getLineGrid();
+  const auto& lgrid = r->getLineGrid(lid);
 
   if (intersects(lgrid.getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display lines...";
@@ -501,7 +510,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         }
       }
     } else {
-      const auto& lpgrid = r->getLinePointGrid();
+      const auto& lpgrid = r->getLinePointGrid(lid);
       auto iBox = intersection(lpgrid.getBBox(), fbbox);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
@@ -594,11 +603,16 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   if (style == RASTER) {
     heatmap_render_to(hm, colorScheme, &image[0]);
   } else if (style == OBJECTS) {
-    static const unsigned char discrete_data[] = {
-        0,   0,   0,   0,   0,   0,   0,   0,   51,  136, 255, 16,  51,  136,
-        255, 32,  51,  136, 255, 64,  51,  136, 255, 128, 51,  136, 255, 160,
-        51,  136, 255, 192, 51,  136, 255, 224, 51,  136, 255, 255};
-    static const heatmap_colorscheme_t discrete = {
+    int r = 0, g = 0, b = 0;
+    if (fieldCfg.color.size() == 6) {
+      r = hexToInt(fieldCfg.color[0]) * 16 + hexToInt(fieldCfg.color[1]);
+      g = hexToInt(fieldCfg.color[2]) * 16 + hexToInt(fieldCfg.color[3]);
+      b = hexToInt(fieldCfg.color[4]) * 16 + hexToInt(fieldCfg.color[5]);
+    }
+    unsigned char discrete_data[] = {
+        0, 0, 0, 0,   0, 0, 0, 0,   r, g, b, 16,  r, g, b, 32,  r, g, b, 64,
+        r, g, b, 128, r, g, b, 160, r, g, b, 192, r, g, b, 224, r, g, b, 255};
+    heatmap_colorscheme_t discrete = {
         discrete_data, sizeof(discrete_data) / sizeof(discrete_data[0] / 4)};
 
     heatmap_render_saturated_to(hm, &discrete, 1, &image[0]);
@@ -700,7 +714,7 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
     if (gid < reqor->getObjects(lid).size())
       row = reqor->getObjects(lid)[gid].second;
     else
-      row = reqor->getDynamicPoints()[gid].second;
+      row = reqor->getDynamicPoints(lid)[gid].second;
 
     for (auto col : reqor->requestRow(row)) {
       dict.dict[col.first] = col.second;
@@ -931,7 +945,8 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     rcfg.query = pars.find("query")->second;
   }
 
-  if (rcfg.query.size() == 0) throw std::invalid_argument("No query specified.");
+  if (rcfg.query.size() == 0)
+    throw std::invalid_argument("No query specified.");
 
   auto backendCfg = getGeomCacheConfig(pars.find("backend")->second);
 
@@ -980,8 +995,12 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     return answ;
   }
 
-  auto bbox = reqor->getPointGrid().getBBox();
-  bbox = extendBox(reqor->getLineGrid().getBBox(), bbox);
+  util::geo::FBox bbox;
+
+  for (size_t lid = 0; lid < reqor->getNumLayers(); lid++) {
+    bbox = extendBox(reqor->getPointGrid(lid).getBBox(), bbox);
+    bbox = extendBox(reqor->getLineGrid(lid).getBBox(), bbox);
+  }
 
   size_t numObjs = reqor->getNumObjects();
 
@@ -997,15 +1016,15 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   json << std::fixed << "{\"qid\" : \"" << sessionId << "\",\"bounds\":[["
        << llX << "," << llY << "],[" << urX << "," << urY << "]]"
        << ",\"numobjects\":" << numObjs
-       << ",\"autothreshold\":" << _autoThreshold
-       << ",\"layers\": {";
+       << ",\"autothreshold\":" << _autoThreshold << ",\"layers\": {";
 
   bool first = false;
   for (const auto& fld : reqor->getFields()) {
     if (first) json << ",";
     first = true;
     json << "\"" << fld.geomField << "\":{";
-    if (fld.rasterW != 0 && fld.rasterH != 0) json << "\"rasterw\":" << fld.rasterW << ", \"rasterh\":" << fld.rasterH;
+    if (fld.rasterW != 0 && fld.rasterH != 0)
+      json << "\"rasterw\":" << fld.rasterW << ", \"rasterh\":" << fld.rasterH;
     json << "}";
   }
 
@@ -1521,6 +1540,8 @@ RequestorConfig Server::getRequestorCfgFromURL(const std::string& url) const {
               curField.rasterW = layer.value()["rasterw"].get<double>();
             if (layer.value().contains("rasterh"))
               curField.rasterH = layer.value()["rasterh"].get<double>();
+            if (layer.value().contains("color"))
+              curField.color = layer.value()["color"].get<std::string>();
             ret.fields.push_back(curField);
           }
         }
@@ -1549,4 +1570,12 @@ GeomCacheConfig Server::getGeomCacheConfig(
                          " ?subject geo:asWKT ?geometry "
                          " FILTER (!ql:isGeoPoint(?geometry)) "
                          "} INTERNAL SORT BY ?geometry"};
+}
+
+// _____________________________________________________________________________
+int Server::hexToInt(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  return 0;
 }

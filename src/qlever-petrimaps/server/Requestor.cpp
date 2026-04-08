@@ -94,13 +94,19 @@ void Requestor::request() {
   }
   LOG(INFO) << ss.str();
 
+  _objects.resize(_geomColumns.size());
+  _dynamicPoints.resize(_geomColumns.size());
+  _pgrid.resize(_geomColumns.size());
+  _lgrid.resize(_geomColumns.size());
+  _lpgrid.resize(_geomColumns.size());
+  _clusterObjects.resize(_geomColumns.size());
 
   for (size_t geomColId = 0; geomColId < _geomColumns.size(); geomColId++) {
     std::string layerName = _geomColumns[geomColId];
     LOG(INFO) << "[REQUESTOR] Retrieving geoms from cache for layer " << layerName << "...";
     // (geom id, result row)
     const auto& ret = _cache->getRelObjects(reader._ids[geomColId]);
-    _objects.push_back(ret.first);
+    _objects[geomColId] = ret.first;
     _numObjects = ret.second;
 
     if (_valueFlds.count(geomColId)) {
@@ -120,8 +126,8 @@ void Requestor::request() {
     LOG(INFO) << "[REQUESTOR] Retrieving points dynamically from query...";
 
     // dynamic points present in query
-    _dynamicPoints = getDynamicPoints(reader._ids[geomColId]);
-    _numObjects += _dynamicPoints.size();
+    _dynamicPoints[geomColId] = getDynamicPoints(reader._ids[geomColId]);
+    _numObjects += _dynamicPoints.back().size();
 
     LOG(INFO) << "[REQUESTOR] ... done, got " << _dynamicPoints.size()
               << " points.";
@@ -157,13 +163,13 @@ void Requestor::request() {
       }
     }
 
-    batch = ceil(static_cast<double>(_dynamicPoints.size()) / NUM_THREADS);
+    batch = ceil(static_cast<double>(_dynamicPoints[geomColId].size()) / NUM_THREADS);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
     for (size_t t = 0; t < NUM_THREADS; t++) {
-      for (size_t i = batch * t; i < batch * (t + 1) && i < _dynamicPoints.size();
+      for (size_t i = batch * t; i < batch * (t + 1) && i < _dynamicPoints[geomColId].size();
            i++) {
-        auto geom = _dynamicPoints[i].first;
+        auto geom = _dynamicPoints[geomColId][i].first;
 
         pointBoxes[t] = util::geo::extendBox(geom, pointBoxes[t]);
       }
@@ -226,9 +232,9 @@ void Requestor::request() {
         {lineBbox.getLowerLeft().getX(), lineBbox.getLowerLeft().getY()},
         {lineBbox.getUpperRight().getX(), lineBbox.getUpperRight().getY()}};
 
-    _pgrid = petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, pointBbox);
-    _lgrid = petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, fLineBbox);
-    _lpgrid = petrimaps::Grid<util::geo::Point<uint8_t>, float>(
+    _pgrid[geomColId] = petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, pointBbox);
+    _lgrid[geomColId] = petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, fLineBbox);
+    _lpgrid[geomColId] = petrimaps::Grid<util::geo::Point<uint8_t>, float>(
         GRID_SIZE, GRID_SIZE, fLineBbox);
 
     std::exception_ptr ePtr;
@@ -237,7 +243,7 @@ void Requestor::request() {
     {
 #pragma omp section
       {
-        size_t j = _objects[geomColId].size() + _dynamicPoints.size();
+        size_t j = _objects[geomColId].size() + _dynamicPoints[geomColId].size();
 
         for (size_t i = 0; i < _objects[geomColId].size(); i++) {
           const auto& p = _objects[geomColId][i];
@@ -254,12 +260,12 @@ void Requestor::request() {
           if (clusterI > 0) {
             for (size_t m = 0; m < clusterI; m++) {
               const auto& p = _objects[geomColId][i - m];
-              _pgrid.add(_cache->getPoints()[p.first], j);
-              _clusterObjects.push_back({i - m, {m, clusterI}});
+              _pgrid[geomColId].add(_cache->getPoints()[p.first], j);
+              _clusterObjects[geomColId].push_back({i - m, {m, clusterI}});
               j++;
             }
           } else {
-            _pgrid.add(_cache->getPoints()[geomId], i);
+            _pgrid[geomColId].add(_cache->getPoints()[geomId], i);
           }
 
           // every 100000 objects, check memory...
@@ -274,28 +280,28 @@ void Requestor::request() {
           }
         }
 
-        for (size_t i = 0; i < _dynamicPoints.size(); i++) {
-          const auto& p = _dynamicPoints[i];
+        for (size_t i = 0; i < _dynamicPoints[geomColId].size(); i++) {
+          const auto& p = _dynamicPoints[geomColId][i];
           auto geom = p.first;
 
           size_t clusterI = 0;
           // cluster if they have same geometry, don't do for multigeoms
-          while (i < _dynamicPoints.size() - 1 &&
-                 geom == _dynamicPoints[i + 1].first) {
+          while (i < _dynamicPoints[geomColId].size() - 1 &&
+                 geom == _dynamicPoints[geomColId][i + 1].first) {
             clusterI++;
             i++;
           }
 
           if (clusterI > 0) {
             for (size_t m = 0; m < clusterI; m++) {
-              const auto& p = _dynamicPoints[i - m];
+              const auto& p = _dynamicPoints[geomColId][i - m];
               auto geom = p.first;
-              _pgrid.add(geom, j);
-              _clusterObjects.push_back({i - m + _objects[geomColId].size(), {m, clusterI}});
+              _pgrid[geomColId].add(geom, j);
+              _clusterObjects[geomColId].push_back({i - m + _objects[geomColId].size(), {m, clusterI}});
               j++;
             }
           } else {
-            _pgrid.add(geom, i + _objects[geomColId].size());
+            _pgrid[geomColId].add(geom, i + _objects[geomColId].size());
           }
 
           // every 100000 objects, check memory...
@@ -322,7 +328,7 @@ void Requestor::request() {
             util::geo::FBox fbox = {
                 {box.getLowerLeft().getX(), box.getLowerLeft().getY()},
                 {box.getUpperRight().getX(), box.getUpperRight().getY()}};
-            _lgrid.add(fbox, i);
+            _lgrid[geomColId].add(fbox, i);
           }
           i++;
 
@@ -375,20 +381,20 @@ void Requestor::request() {
                   (mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
                   (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
 
-              size_t cellX = _lpgrid.getCellXFromX(curP.getX());
-              size_t cellY = _lpgrid.getCellYFromY(curP.getY());
+              size_t cellX = _lpgrid[geomColId].getCellXFromX(curP.getX());
+              size_t cellY = _lpgrid[geomColId].getCellYFromY(curP.getY());
 
               uint8_t sX =
-                  (curP.getX() - _lpgrid.getBBox().getLowerLeft().getX() +
-                   cellX * _lpgrid.getCellWidth()) /
+                  (curP.getX() - _lpgrid[geomColId].getBBox().getLowerLeft().getX() +
+                   cellX * _lpgrid[geomColId].getCellWidth()) /
                   256;
               uint8_t sY =
-                  (curP.getY() - _lpgrid.getBBox().getLowerLeft().getY() +
-                   cellY * _lpgrid.getCellHeight()) /
+                  (curP.getY() - _lpgrid[geomColId].getBBox().getLowerLeft().getY() +
+                   cellY * _lpgrid[geomColId].getCellHeight()) /
                   256;
 
               if (gi == 3 || lastX != sX || lastY != sY) {
-                _lpgrid.add(cellX, cellY, {sX, sY});
+                _lpgrid[geomColId].add(cellX, cellY, {sX, sY});
                 lastX = sX;
                 lastY = sY;
               }
@@ -556,23 +562,23 @@ const ResObj Requestor::getNearest(size_t layerId, util::geo::DPoint rp, double 
       std::vector<ID_TYPE> ret;
 
       if (res > 0)
-        _pgrid.get(fullbox, &ret);
+        _pgrid[layerId].get(fullbox, &ret);
       else
-        _pgrid.get(fbox, &ret);
+        _pgrid[layerId].get(fbox, &ret);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t idx = 0; idx < ret.size(); idx++) {
         auto i = ret[idx];
         util::geo::FPoint p;
-        if (i >= _objects[layerId].size() + _dynamicPoints.size()) {
-          size_t cid = i - _objects[layerId].size() - _dynamicPoints.size();
+        if (i >= _objects[layerId].size() + _dynamicPoints[layerId].size()) {
+          size_t cid = i - _objects[layerId].size() - _dynamicPoints[layerId].size();
           auto dp = clusterGeom(layerId, cid, res);
           p = {dp.getX(), dp.getY()};
         } else {
           if (i < _objects[layerId].size())
             p = _cache->getPoints()[_objects[layerId][i].first];
           else
-            p = _dynamicPoints[i - _objects[layerId].size()].first;
+            p = _dynamicPoints[layerId][i - _objects[layerId].size()].first;
         }
 
         if (!util::geo::contains(p, fbox)) continue;
@@ -590,7 +596,7 @@ const ResObj Requestor::getNearest(size_t layerId, util::geo::DPoint rp, double 
     {
       // lines
       std::vector<ID_TYPE> retL;
-      _lgrid.get(fbox, &retL);
+      _lgrid[layerId].get(fbox, &retL);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t idx = 0; idx < retL.size(); idx++) {
@@ -689,26 +695,26 @@ const ResObj Requestor::getNearest(size_t layerId, util::geo::DPoint rp, double 
 
   if (dBest < rad && dBest <= dBestL) {
     size_t row = 0;
-    if (nearest >= _objects[layerId].size() + _dynamicPoints.size()) {
+    if (nearest >= _objects[layerId].size() + _dynamicPoints[layerId].size()) {
       auto id =
-          _clusterObjects[nearest - _objects[layerId].size() - _dynamicPoints.size()]
+          _clusterObjects[layerId][nearest - _objects[layerId].size() - _dynamicPoints[layerId].size()]
               .first;
       if (id >= _objects[layerId].size())
-        row = _dynamicPoints[id - _objects[layerId].size()].second;
+        row = _dynamicPoints[layerId][id - _objects[layerId].size()].second;
       else
         row = _objects[layerId][id].second;
     } else {
       if (nearest < _objects[layerId].size())
         row = _objects[layerId][nearest].second;
       else
-        row = _dynamicPoints[nearest - _objects[layerId].size()].second;
+        row = _dynamicPoints[layerId][nearest - _objects[layerId].size()].second;
     }
 
     auto points = geomPointGeoms(nearest, res);
 
     return {true,
-            nearest >= _objects[layerId].size() + _dynamicPoints.size()
-                ? nearest - _objects[layerId].size() - _dynamicPoints.size()
+            nearest >= _objects[layerId].size() + _dynamicPoints[layerId].size()
+                ? nearest - _objects[layerId].size() - _dynamicPoints[layerId].size()
                 : nearest,
             points.size() == 1 ? points[0] : util::geo::centroid(points),
             requestRow(row),
@@ -887,17 +893,17 @@ util::geo::MultiPoint<double> Requestor::geomPointGeoms(size_t layerId, size_t o
                                                         double res) const {
   std::vector<util::geo::DPoint> points;
 
-  if (!(res < 0) && oid >= _objects[layerId].size() + _dynamicPoints.size()) {
-    return {clusterGeom(layerId, oid - _objects[layerId].size() - _dynamicPoints.size(), res)};
+  if (!(res < 0) && oid >= _objects[layerId].size() + _dynamicPoints[layerId].size()) {
+    return {clusterGeom(layerId, oid - _objects[layerId].size() - _dynamicPoints[layerId].size(), res)};
   }
 
-  if (oid >= _objects[layerId].size() + _dynamicPoints.size()) {
-    oid = _clusterObjects[oid - _objects[layerId].size() - _dynamicPoints.size()].first;
+  if (oid >= _objects[layerId].size() + _dynamicPoints[layerId].size()) {
+    oid = _clusterObjects[layerId][oid - _objects[layerId].size() - _dynamicPoints[layerId].size()].first;
   }
 
   if (oid >= _objects[layerId].size()) {
-    points.push_back({_dynamicPoints[oid - _objects[layerId].size()].first.getX(),
-                      _dynamicPoints[oid - _objects[layerId].size()].first.getY()});
+    points.push_back({_dynamicPoints[layerId][oid - _objects[layerId].size()].first.getX(),
+                      _dynamicPoints[layerId][oid - _objects[layerId].size()].first.getY()});
   }
 
   // catch multigeometries
@@ -989,18 +995,18 @@ std::vector<std::pair<util::geo::FPoint, ID_TYPE>> Requestor::getDynamicPoints(
 
 // _____________________________________________________________________________
 util::geo::DPoint Requestor::clusterGeom(size_t layerId, size_t cid, double res) const {
-  size_t oid = _clusterObjects[cid].first;
+  size_t oid = _clusterObjects[layerId][cid].first;
 
   util::geo::FPoint pp;
   if (oid >= _objects[layerId].size())
-    pp = _dynamicPoints[oid - _objects[layerId].size()].first;
+    pp = _dynamicPoints[layerId][oid - _objects[layerId].size()].first;
   else
     pp = getPoint(_objects[layerId][oid].first);
 
   if (res < 0) return {pp.getX(), pp.getY()};
 
-  size_t num = _clusterObjects[cid].second.first;
-  size_t tot = _clusterObjects[cid].second.second;
+  size_t num = _clusterObjects[layerId][cid].second.first;
+  size_t tot = _clusterObjects[layerId][cid].second.second;
 
   double a = 25;
   double b = 6;
@@ -1046,8 +1052,8 @@ double Requestor::getVal(size_t layerId, size_t oid) const {
     return _vals[_objects[layerId][oid].second];
   }
   if (oid >= _objects[layerId].size()) {
-    if (_dynamicPoints[oid - _objects[layerId].size()].second >= _vals.size()) return 1;
-    return _vals[_dynamicPoints[oid - _objects[layerId].size()].second];
+    if (_dynamicPoints[layerId][oid - _objects[layerId].size()].second >= _vals.size()) return 1;
+    return _vals[_dynamicPoints[layerId][oid - _objects[layerId].size()].second];
   }
 
   return 1;

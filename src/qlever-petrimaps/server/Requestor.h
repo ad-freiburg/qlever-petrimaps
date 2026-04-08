@@ -25,6 +25,7 @@ struct FieldConfig {
   std::string valueField = "";
   double rasterW = 0;
   double rasterH = 0;
+  std::string color = "3388ff";
 };
 
 struct RequestorConfig {
@@ -37,7 +38,7 @@ struct RequestorConfig {
     for (const auto& field : fields)
       fieldsStr += field.geomField + "|" + field.valueField + "|" +
                    std::to_string(field.rasterW) + "|" +
-                   std::to_string(field.rasterH);
+                   std::to_string(field.rasterH) + "|" + field.color;
     return std::to_string(hashF(query + fieldsStr));
   }
 };
@@ -102,13 +103,17 @@ class Requestor {
           void(std::vector<std::vector<std::pair<std::string, std::string>>>)>
           cb) const;
 
-  const petrimaps::Grid<ID_TYPE, float>& getPointGrid() const { return _pgrid; }
+  const petrimaps::Grid<ID_TYPE, float>& getPointGrid(size_t layerId) const {
+    return _pgrid[layerId];
+  }
 
-  const petrimaps::Grid<ID_TYPE, float>& getLineGrid() const { return _lgrid; }
+  const petrimaps::Grid<ID_TYPE, float>& getLineGrid(size_t layerId) const {
+    return _lgrid[layerId];
+  }
 
-  const petrimaps::Grid<util::geo::Point<uint8_t>, float>& getLinePointGrid()
-      const {
-    return _lpgrid;
+  const petrimaps::Grid<util::geo::Point<uint8_t>, float>& getLinePointGrid(
+      size_t layerId) const {
+    return _lpgrid[layerId];
   }
 
   const std::vector<std::pair<ID_TYPE, ID_TYPE>>& getObjects(
@@ -116,22 +121,22 @@ class Requestor {
     return _objects[layerId];
   }
 
-  const std::vector<std::pair<util::geo::FPoint, ID_TYPE>>& getDynamicPoints()
-      const {
-    return _dynamicPoints;
+  const std::vector<std::pair<util::geo::FPoint, ID_TYPE>>& getDynamicPoints(
+      size_t layerId) const {
+    return _dynamicPoints[layerId];
   }
 
-  const std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>&
-  getClusters() const {
-    return _clusterObjects;
+  const std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>& getClusters(
+      size_t layerId) const {
+    return _clusterObjects[layerId];
   }
 
   const util::geo::FPoint& getPoint(ID_TYPE id) const {
     return _cache->getPoints()[id];
   }
 
-  const util::geo::FPoint& getDPoint(ID_TYPE id) const {
-    return _dynamicPoints[id].first;
+  const util::geo::FPoint& getDPoint(size_t layerId, ID_TYPE id) const {
+    return _dynamicPoints[layerId][id].first;
   }
 
   size_t getLine(ID_TYPE id) const { return _cache->getLine(id); }
@@ -169,7 +174,10 @@ class Requestor {
 
   double getVal(size_t lid, size_t oid) const;
 
-  size_t getLayerId(const std::string& layer) { return _geoColToLid.find(layer)->second; }
+  size_t getLayerId(const std::string& layer) {
+    return _geoColToLid.find(layer)->second;
+  }
+  size_t getNumLayers() const { return _pgrid.size(); }
 
   const std::vector<FieldConfig> getFields() const { return _rcfg.fields; }
   std::pair<double, double> getValRange() const;
@@ -205,8 +213,10 @@ class Requestor {
   mutable std::mutex _m;
 
   std::vector<std::vector<std::pair<ID_TYPE, ID_TYPE>>> _objects;
-  std::vector<std::pair<util::geo::FPoint, ID_TYPE>> _dynamicPoints;
-  std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>> _clusterObjects;
+  std::vector<std::vector<std::pair<util::geo::FPoint, ID_TYPE>>>
+      _dynamicPoints;
+  std::vector<std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>>
+      _clusterObjects;
   std::vector<double> _vals;
   double _valMax, _valMin;
   size_t _numObjects = 0;
@@ -217,9 +227,9 @@ class Requestor {
   std::map<std::string, size_t> _geoColToLid;
   std::map<size_t, size_t> _valueFlds;
 
-  petrimaps::Grid<ID_TYPE, float> _pgrid;
-  petrimaps::Grid<ID_TYPE, float> _lgrid;
-  petrimaps::Grid<util::geo::Point<uint8_t>, float> _lpgrid;
+  std::vector<petrimaps::Grid<ID_TYPE, float>> _pgrid;
+  std::vector<petrimaps::Grid<ID_TYPE, float>> _lgrid;
+  std::vector<petrimaps::Grid<util::geo::Point<uint8_t>, float>> _lpgrid;
 
   bool _ready = false;
 

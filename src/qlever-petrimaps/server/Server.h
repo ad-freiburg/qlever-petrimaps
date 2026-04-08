@@ -63,6 +63,8 @@ class Server : public util::http::Handler {
   static void pngWriteRowCb(png_structp png_ptr, png_uint_32 row, int pass);
   void writePNG(const unsigned char* data, size_t w, size_t h, int sock) const;
 
+  static int hexToInt(char c);
+
   void drawPoint(std::vector<uint32_t>& points, std::vector<double>& points2,
                  int px, int py, int w, int h, MapStyle style,
                  double weight) const;
