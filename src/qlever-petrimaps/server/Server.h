@@ -59,6 +59,8 @@ class Server : public util::http::Handler {
 
   GeomCacheConfig getGeomCacheConfig(const std::string& backendUrl) const;
   RequestorConfig getRequestorCfgFromURL(const std::string& url) const;
+  RequestorConfig getRequestorCfgFromJSON(const std::string& json) const;
+  RequestorConfig getRequestorCfgFromQuery(const std::string& query) const;
 
   static void pngWriteRowCb(png_structp png_ptr, png_uint_32 row, int pass);
   void writePNG(const unsigned char* data, size_t w, size_t h, int sock) const;

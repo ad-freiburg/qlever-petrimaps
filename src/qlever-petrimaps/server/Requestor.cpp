@@ -491,8 +491,6 @@ std::vector<std::string> Requestor::getColumns(std::string query) const {
 
   query += " LIMIT 0";
 
-  std::cout << "COLUMNS QUERY " << query << std::endl;
-
   RequestReader reader(_cache->getConfig().backend, _maxMemory, {}, {});
   return reader.requestColumns(query);
 }
@@ -528,6 +526,17 @@ std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
 	if (_sortColumn.size()) query += " INTERNAL SORT BY " + _sortColumn;
 	query += " OFFSET " + std::to_string(row) + " LIMIT 1";
   return query;
+}
+
+// _____________________________________________________________________________
+const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
+                                   util::geo::FBox fullbox) const {
+  for (size_t lid = 0; lid < getNumLayers(); lid++) {
+    auto r = getNearest(lid, rp, rad, res, fullbox);
+    if (r.has) return r;
+  }
+
+  return {false, 0, {0, 0}, {}, {}, {}, {}};
 }
 
 // _____________________________________________________________________________

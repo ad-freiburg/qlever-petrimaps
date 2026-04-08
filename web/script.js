@@ -293,32 +293,6 @@ function loadMap(id, bounds, numObjects, autoThreshold, layerName, rasterWidth, 
 		themeControl.applyTheme("raster");
 	}
 
-    map.on('click', function(e) {
-        const pos = L.Projection.SphericalMercator.project(e.latlng);
-
-        const w = map.getPixelBounds().max.x - map.getPixelBounds().min.x;
-        const h = map.getPixelBounds().max.y - map.getPixelBounds().min.y;
-
-        const sw = L.Projection.SphericalMercator.project((map.getBounds().getSouthWest()));
-        const ne = L.Projection.SphericalMercator.project((map.getBounds().getNorthEast()));
-
-        const bounds = [sw.x, sw.y, ne.x, ne.y];
-
-        let styles = "objects";
-		for (let layer of heatmapLayers) if (map.hasLayer(layer)) styles = "heatmap";
-        if (map.hasLayer(objectsLayer)) styles = "objects";
-
-        console.log("CLICK", e);
-
-        fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=' + bounds.join(',') + '&styles=' + styles)
-          .then(response => {
-              if (!response.ok) return response.text().then(text => {throw new Error(text)});
-              return response.json();
-            })
-          .then(data => openPopup(data))
-          .catch(error => showError(error));
-        });
-
     map.on('zoomend', function(e) {
         if (curGeojsonId > -1) {
             fetch('geojson?gid=' + curGeojsonId + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
@@ -379,7 +353,6 @@ function fetchResults() {
         })
     .then(response => response.json())
     .then(data => {
-        console.log(data);
         if (Object.keys(data["layers"]).length == 0) {
             showError("No layers specified in config");
             clearInterval(loadStatusIntervalId);
@@ -387,8 +360,30 @@ function fetchResults() {
         for (let layer in data["layers"]) {
             loadMap(data["qid"], data["bounds"], data["numobjects"], data["autothreshold"], layer, 0, 0);
         }
-    })
-	.catch(error => showError(error));
+
+        let id = data["qid"];
+
+        map.on('click', function(e) {
+            const pos = L.Projection.SphericalMercator.project(e.latlng);
+
+            const w = map.getPixelBounds().max.x - map.getPixelBounds().min.x;
+            const h = map.getPixelBounds().max.y - map.getPixelBounds().min.y;
+
+            const sw = L.Projection.SphericalMercator.project((map.getBounds().getSouthWest()));
+            const ne = L.Projection.SphericalMercator.project((map.getBounds().getNorthEast()));
+
+            const bounds = [sw.x, sw.y, ne.x, ne.y];
+
+            fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=' + bounds.join(','))
+              .then(response => {
+                  if (!response.ok) return response.text().then(text => {throw new Error(text)});
+                  return response.json();
+                })
+              .then(data => openPopup(data))
+              .catch(error => showError(error));
+            });
+        })
+        .catch(error => showError(error));
 }
 
 function fetchLoadStatusInterval(interval) {

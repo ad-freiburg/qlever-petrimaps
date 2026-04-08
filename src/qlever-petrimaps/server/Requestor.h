@@ -154,6 +154,9 @@ class Requestor {
   const ResObj getNearest(size_t lid, util::geo::DPoint p, double rad,
                           double res, util::geo::FBox box) const;
 
+  const ResObj getNearest(util::geo::DPoint p, double rad, double res,
+                          util::geo::FBox box) const;
+
   const ResObj getGeom(size_t lid, size_t id, double rad) const;
 
   util::geo::MultiPolygon<double> geomPolyGeoms(size_t lid, size_t oid,

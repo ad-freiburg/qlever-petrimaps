@@ -15,6 +15,8 @@
 #include <set>
 #include <unordered_set>
 #include <vector>
+#include <regex>
+#include <string>
 
 #include "3rdparty/heatmap.h"
 #include "3rdparty/colorschemes/Blues.h"
@@ -781,16 +783,6 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
     throw std::invalid_argument("No bbox specified.");
   auto box = util::split(pars.find("bbox")->second, ',');
 
-  if (pars.count("layer") == 0 || pars.find("layer")->second.empty())
-    throw std::invalid_argument("No layer (?layer=) specified.");
-  std::string layer = pars.find("layer")->second.c_str();
-
-  MapStyle style = HEATMAP;
-  if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
-    if (pars.find("styles")->second == "objects") style = OBJECTS;
-    if (pars.find("styles")->second == "raster") style = RASTER;
-  }
-
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
 
   double x1 = std::atof(box[0].c_str());
@@ -806,7 +798,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   double reso = mercH / h;
 
   // res of -1 means dont render clusters
-  if (style == HEATMAP || reso >= THRESHOLD) reso = -1;
+  if (reso >= THRESHOLD) reso = -1;
 
   LOG(DEBUG) << "[SERVER] Click at " << x << ", " << y;
 
@@ -825,9 +817,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   }
   // as soon as we are ready, the reqor can be read concurrently
 
-  size_t lid = reqor->getLayerId(layer);
-
-  auto res = reqor->getNearest(lid, {x, y}, rad, reso, fbbox);
+  auto res = reqor->getNearest({x, y}, rad, reso, fbbox);
 
   std::stringstream json;
 
@@ -942,7 +932,11 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   }
 
   if (pars.count("query") != 0 && !pars.find("query")->second.empty()) {
-    rcfg.query = pars.find("query")->second;
+    //. TODO: check if we have!
+    auto queryCfg = getRequestorCfgFromQuery(pars.find("query")->second);
+
+    if (queryCfg.query.size()) rcfg = queryCfg;
+    else rcfg.query = pars.find("query")->second;
   }
 
   if (rcfg.query.size() == 0)
@@ -1512,12 +1506,10 @@ heatmap_stamp_t* Server::raster_stamp(double res, double w, double h,
 }
 
 // _____________________________________________________________________________
-RequestorConfig Server::getRequestorCfgFromURL(const std::string& url) const {
+RequestorConfig Server::getRequestorCfgFromJSON(const std::string& jsonStr) const {
   RequestorConfig ret;
 
   try {
-    std::string jsonStr = httpRequest(url);
-
     nlohmann::json data = nlohmann::json::parse(jsonStr);
 
     if (data.is_object()) {
@@ -1546,6 +1538,42 @@ RequestorConfig Server::getRequestorCfgFromURL(const std::string& url) const {
           }
         }
       }
+    }
+  } catch (const std::runtime_error& e) {
+    LOG(ERROR) << "[SERVER] " << e.what();
+  }
+
+  return ret;
+}
+
+// _____________________________________________________________________________
+RequestorConfig Server::getRequestorCfgFromURL(const std::string& url) const {
+  RequestorConfig ret;
+
+  try {
+    std::string jsonStr = httpRequest(url);
+    ret = getRequestorCfgFromJSON(jsonStr);
+  } catch (const std::runtime_error& e) {
+    LOG(ERROR) << "[SERVER] " << e.what();
+  }
+
+  return ret;
+}
+
+// _____________________________________________________________________________
+RequestorConfig Server::getRequestorCfgFromQuery(const std::string& query) const {
+  RequestorConfig ret;
+
+  try {
+    std::regex re(R"(# --- petrimaps\s*\n((?:#.*\n)*?)# ---)");
+    std::smatch match;
+
+    if (std::regex_search(query, match, re)) {
+      std::string block = match[1];
+
+      std::cout << "Raw block:\n" << block << "\n";
+      ret = getRequestorCfgFromJSON(block);
+      ret.query = query;
     }
   } catch (const std::runtime_error& e) {
     LOG(ERROR) << "[SERVER] " << e.what();
