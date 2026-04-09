@@ -1543,8 +1543,8 @@ RequestorConfig Server::getRequestorCfgFromJSON(const std::string& jsonStr) cons
             }
             FieldConfig curField;
             curField.geomField = layer.key();
-            if (layer.value().contains("valueField"))
-              curField.valueField = layer.value()["valueField"];
+            if (layer.value().contains("weightField"))
+              curField.valueField = layer.value()["weightField"];
             if (layer.value().contains("rasterw"))
               curField.rasterW = layer.value()["rasterw"].get<double>();
             if (layer.value().contains("rasterh"))

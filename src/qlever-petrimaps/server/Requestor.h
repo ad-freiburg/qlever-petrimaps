@@ -81,6 +81,7 @@ class Requestor {
       for (const auto& field : _rcfg.fields) {
         if (!_columnsMap.count(field.geomField)) continue;
         _geomColumns.push_back(field.geomField);
+        std::cout << field.valueField << std::endl;
         if (_columnsMap.count(field.valueField)) {
           _valueFlds[_geomColumns.size() - 1] = _columnsMap[field.valueField];
           _valueColumns.push_back(field.valueField);
