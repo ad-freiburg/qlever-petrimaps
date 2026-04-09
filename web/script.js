@@ -2,12 +2,13 @@ let sessionId;
 let curGeojson;
 let curGeojsonId = -1;
 
-let urlParams = new URLSearchParams(window.location.search);
-let qleverBackend = urlParams.get("backend");
-let query = urlParams.get("query");
-let mode = urlParams.get("mode");
+let urlParams = window.postParams;
+console.log(urlParams);
+let qleverBackend = urlParams["backend"];
+let query = urlParams["query"];
+let mode = urlParams["mode"];
 
-let fieldsRaw = (urlParams.get("fields") || "").split(";");
+let fieldsRaw = (urlParams["fields"] || "").split(";");
 let fields = [];
 
 for (let fieldRaw of fieldsRaw) {
@@ -346,7 +347,14 @@ function updateLoad(stage, percent, totalProgress, currentProgress) {
 }
 
 function fetchResults() {
-    fetch('query' + window.location.search)
+    fetch('query',
+        {
+          method: "POST",
+          headers: {
+                  "Content-Type": "application/x-www-form-urlencoded"
+                },
+          body: new URLSearchParams(urlParams).toString()
+        })
     .then(response => {
         if (!response.ok) return response.text().then(text => {throw new Error(text)});
         return response;

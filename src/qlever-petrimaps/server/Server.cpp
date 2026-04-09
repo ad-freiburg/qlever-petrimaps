@@ -93,11 +93,7 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
     auto cmd = parseUrl(req.url, req.payload, &params);
 
     if (cmd == "/") {
-      a = util::http::Answer(
-          "200 OK",
-          std::string(index_html,
-                      index_html + sizeof index_html / sizeof index_html[0]));
-      a.params["Content-Type"] = "text/html; charset=utf-8";
+      a = handleIndexReq(params);
     } else if (cmd == "/query") {
       a = handleQueryReq(params);
     } else if (cmd == "/geojson") {
@@ -902,6 +898,31 @@ util::http::Answer Server::handleClearSessReq(const Params& pars) const {
 }
 
 // _____________________________________________________________________________
+util::http::Answer Server::handleIndexReq(const Params& pars) const {
+  std::stringstream ss;
+  ss << "window.postParams =";
+
+  util::json::Writer w(&ss);
+  w.obj();
+  for (const auto& param : pars) {
+    w.key(param.first);
+    w.val(param.second);
+  }
+  w.closeAll();
+  std::string html = std::string(index_html,
+                      index_html + sizeof index_html / sizeof index_html[0]);
+
+  util::replace(html, "<!-- PETRIMAPS_INLINE_SCRIPT -->", ss.str());
+
+      auto a = util::http::Answer(
+          "200 OK", html
+          );
+      a.params["Content-Type"] = "text/html; charset=utf-8";
+
+      return a;
+}
+
+// _____________________________________________________________________________
 util::http::Answer Server::handleQueryReq(const Params& pars) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
@@ -927,16 +948,12 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     }
   }
 
-  if (pars.count("cfg") != 0 && pars.find("cfg")->second.size()) {
-    rcfg = getRequestorCfgFromURL(util::urlDecode(pars.find("cfg")->second));
+  if (pars.count("cfg") != 0 && !pars.find("cfg")->second.empty()) {
+    rcfg = getRequestorCfgFromJSON(pars.find("cfg")->second);
   }
 
   if (pars.count("query") != 0 && !pars.find("query")->second.empty()) {
-    //. TODO: check if we have!
-    auto queryCfg = getRequestorCfgFromQuery(pars.find("query")->second);
-
-    if (queryCfg.query.size()) rcfg = queryCfg;
-    else rcfg.query = pars.find("query")->second;
+    rcfg.query = pars.find("query")->second;
   }
 
   if (rcfg.query.size() == 0)
@@ -1538,42 +1555,6 @@ RequestorConfig Server::getRequestorCfgFromJSON(const std::string& jsonStr) cons
           }
         }
       }
-    }
-  } catch (const std::runtime_error& e) {
-    LOG(ERROR) << "[SERVER] " << e.what();
-  }
-
-  return ret;
-}
-
-// _____________________________________________________________________________
-RequestorConfig Server::getRequestorCfgFromURL(const std::string& url) const {
-  RequestorConfig ret;
-
-  try {
-    std::string jsonStr = httpRequest(url);
-    ret = getRequestorCfgFromJSON(jsonStr);
-  } catch (const std::runtime_error& e) {
-    LOG(ERROR) << "[SERVER] " << e.what();
-  }
-
-  return ret;
-}
-
-// _____________________________________________________________________________
-RequestorConfig Server::getRequestorCfgFromQuery(const std::string& query) const {
-  RequestorConfig ret;
-
-  try {
-    std::regex re(R"(# --- petrimaps\s*\n((?:#.*\n)*?)# ---)");
-    std::smatch match;
-
-    if (std::regex_search(query, match, re)) {
-      std::string block = match[1];
-
-      std::cout << "Raw block:\n" << block << "\n";
-      ret = getRequestorCfgFromJSON(block);
-      ret.query = query;
     }
   } catch (const std::runtime_error& e) {
     LOG(ERROR) << "[SERVER] " << e.what();
