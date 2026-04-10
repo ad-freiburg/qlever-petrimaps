@@ -532,8 +532,9 @@ void GeomCache::request() {
   _geometryDuplicates = 0;
 
   if (_totalSize == 0) {
-    throw std::runtime_error(
-        "Could not determine number of rows, or number of rows was 0");
+    LOG(WARN)
+        << "Could not determine number of rows, or number of rows was 0 (this "
+           "may happen if your dataset only contains folded points)";
   }
 
   _state = IN_HEADER;
