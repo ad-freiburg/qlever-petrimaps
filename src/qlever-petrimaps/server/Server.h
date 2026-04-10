@@ -21,6 +21,7 @@
 namespace petrimaps {
 
 typedef std::map<std::string, std::string> Params;
+typedef std::unordered_map<std::string, std::string> HeaderParams;
 
 enum MapStyle { HEATMAP, OBJECTS, RASTER };
 
@@ -28,7 +29,8 @@ class Server : public util::http::Handler {
  public:
   explicit Server(size_t maxMemory, const std::string& cacheDir,
                   int cacheLifetime, size_t autoThreshold,
-                  std::map<std::string, GeomCacheConfig> cacheConfigs);
+                  std::map<std::string, GeomCacheConfig> cacheConfigs,
+                  const std::string& accessToken);
 
   virtual util::http::Answer handle(const util::http::Req& request,
                                     int connection) const;
@@ -37,10 +39,14 @@ class Server : public util::http::Handler {
   static std::string parseUrl(std::string u, std::string pl, Params* params);
 
   util::http::Answer handleIndexReq(const Params& pars) const;
+  util::http::Answer handleStatusReq(const Params& pars,
+                                    const HeaderParams& headerPars) const;
   util::http::Answer handleHeatMapReq(const Params& pars, int sock) const;
-  util::http::Answer handleQueryReq(const Params& pars) const;
+  util::http::Answer handleQueryReq(const Params& pars,
+                                    const HeaderParams& headerPars) const;
   util::http::Answer handleGeoJSONReq(const Params& pars) const;
-  util::http::Answer handleClearSessReq(const Params& pars) const;
+  util::http::Answer handleClearSessReq(const Params& pars,
+                                    const HeaderParams& headerPars) const;
   util::http::Answer handlePosReq(const Params& pars) const;
   util::http::Answer handleLoadReq(const Params& pars) const;
 
@@ -58,7 +64,8 @@ class Server : public util::http::Handler {
 
   double getLoadStatusPercent() const;
 
-  GeomCacheConfig getGeomCacheConfig(const std::string& backendUrl) const;
+  GeomCacheConfig getGeomCacheConfig(const std::string& backendUrl,
+                                     const std::string& access) const;
   RequestorConfig getRequestorCfgFromJSON(const std::string& json) const;
 
   static void pngWriteRowCb(png_structp png_ptr, png_uint_32 row, int pass);
@@ -90,7 +97,8 @@ class Server : public util::http::Handler {
   mutable std::map<std::string, std::shared_ptr<Requestor>> _rs;
   mutable std::map<std::string, std::string> _queryCache;
 
-  std::map<std::string, GeomCacheConfig> _cacheConfigs;
+  mutable std::map<std::string, GeomCacheConfig> _cacheConfigs;
+  std::string _accessToken;
 };
 }  // namespace petrimaps
 

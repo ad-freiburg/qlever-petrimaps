@@ -160,19 +160,15 @@ struct RequestReader {
 
   std::vector<std::string> requestColumns(const std::string& query);
   void requestIds(const std::string& qurl);
-  void requestVals(const std::string& query);
   void requestRows(const std::string& qurl);
   void requestRows(const std::string& query,
                    size_t (*writeCb)(void*, size_t, size_t, void*), void* ptr);
   void parse(const char*, size_t size);
   void parseIds(const char*, size_t size);
-  void parseVals(const char*, size_t size);
 
   static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
   static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
                            void* userp);
-  static size_t writeCbVals(void* contents, size_t size, size_t nmemb,
-                            void* userp);
 
   std::string queryUrl(const std::string& query) const;
 

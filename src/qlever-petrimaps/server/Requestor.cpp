@@ -54,27 +54,20 @@ void Requestor::request() {
 	if (_geomColumns.size()) {
  		_sortColumn = _geomColumns.front();
 
-		std::string prepedGeomQuery = prepQuery(_rcfg.query, _geomColumns, _sortColumn);
+    auto wantCols = _geomColumns;
 
-		LOG(INFO) << "[REQUESTOR] Requesting IDs for query " << _rcfg.query;
+    // value columns come after geom columns
+    wantCols.insert(wantCols.end(), _valueColumns.begin(), _valueColumns.end());
+
+		std::string prepedGeomQuery = prepQuery(_rcfg.query, wantCols, _sortColumn);
+
+		LOG(INFO) << "[REQUESTOR] Requesting IDs/weights for query " << _rcfg.query;
 		LOG(INFO) << "[REQUESTOR] Prepped query: " << prepedGeomQuery;
 
 		reader.requestIds(prepedGeomQuery);
 
     size_t totNumIds = 0;
     for (size_t i = 0; i < _geomColumns.size(); i++) totNumIds += reader._ids[i].size();
-
-		LOG(INFO) << "[REQUESTOR] Done, have " << totNumIds
-							<< " ids in total.";
-		if (_valueColumns.size()) {
-			LOG(INFO) << "[REQUESTOR] Requesting values for query " << _rcfg.query;
-
-			std::string prepedValueQuery = prepQuery(_rcfg.query, _valueColumns, _sortColumn);
-
-			reader.requestVals(prepedValueQuery);
-
-			LOG(INFO) << "[REQUESTOR] Done.";
-		}
   }
 
   // join with geoms from GeomCache

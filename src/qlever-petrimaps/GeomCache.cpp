@@ -2,8 +2,6 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
-#include "qlever-petrimaps/GeomCache.h"
-
 #include <curl/curl.h>
 #include <stdlib.h>
 
@@ -15,6 +13,7 @@
 #include <iostream>
 #include <sstream>
 
+#include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/Misc.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "util/Misc.h"
@@ -38,7 +37,7 @@ using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
 // change on each index-breaking change to the code base
-const static std::string INDEX_HASH_PREFIX = "_3_";
+const static std::string INDEX_HASH_PREFIX = "_4_";
 
 // Different SPAQRL queries to obtain the WKT geometries from an endpoint.
 // It depends on the endpoint which query is used, see `getQuery`.
@@ -79,17 +78,17 @@ const std::string &GeomCache::getFillQuery() const {
   // size_t backendPos = backendUrl.find_last_of('/');
   // backendPos = backendPos != std::string::npos ? backendPos + 1 : 0;
   // auto backendStartsWith = [&backendPos,
-                            // &backendUrl](const std::string &prefix) {
-    // return backendUrl.find(prefix, backendPos) == backendPos;
+  // &backendUrl](const std::string &prefix) {
+  // return backendUrl.find(prefix, backendPos) == backendPos;
   // };
 
   // // Return query depending on the backend name.
   // if (backendStartsWith("wikidata") || backendStartsWith("dblp-plus")) {
-    // return QUERY_WDTP625;
+  // return QUERY_WDTP625;
   // } else if (backendStartsWith("dblp")) {
-    // return QUERY_WDTP625_SERVICE;
+  // return QUERY_WDTP625_SERVICE;
   // } else {
-    // return QUERY_ASWKT;
+  // return QUERY_ASWKT;
   // }
 
   return _config.fillQuery;
@@ -748,7 +747,8 @@ std::string GeomCache::queryUrl(std::string query, size_t offset,
 
   auto esc = curl_easy_escape(_curl, query.c_str(), query.size());
 
-  ss << _config.backend << "/?send=" << std::to_string(MAXROWS) << "&query=" << esc;
+  ss << _config.backend << "/?send=" << std::to_string(MAXROWS)
+     << "&query=" << esc;
 
   curl_free(esc);
 
@@ -1319,7 +1319,7 @@ std::string GeomCache::load(const std::string &cacheDir) {
 
     // if the hash size is 0, we could not obtain an index hash from
     // qlever. In this case, just assume they matched
-    if (indexHash.size() == 0 ||_indexHash == indexHash) return _indexHash;
+    if (indexHash.size() == 0 || _indexHash == indexHash) return _indexHash;
     LOG(INFO) << "Loaded index hash (" << _indexHash
               << ") and remote index hash (" << indexHash << ") dont match.";
     _ready = false;
@@ -1327,7 +1327,7 @@ std::string GeomCache::load(const std::string &cacheDir) {
 
   if (cacheDir.size()) {
     std::string backend = getConfig().backend;
-    util::replaceAll(backend, "/", "_");
+    util::replaceAll(backend, "/", "#");
     std::string cacheFile = cacheDir + "/" + backend;
     auto indexHash = requestIndexHash();
     // if the hash size is 0, we could not obtain an index hash from

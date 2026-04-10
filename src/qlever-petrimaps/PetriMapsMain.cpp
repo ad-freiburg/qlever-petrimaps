@@ -3,6 +3,8 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <curl/curl.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #include <iostream>
 
@@ -29,9 +31,18 @@ void printHelp(int argc, char** argv) {
          "(default: 9090)"
       << "\n    -m <memory>  Max memory in GB (default: 90% of system RAM)"
       << "\n    -c <dir>     cache dir (default: none)"
+      << "\n    -x <token>   access token (default: none)"
       << "\n    -t <minutes> request cache lifetime (default: 360)"
       << "\n    -a <numobjects> threshold for auto layer selection (default: "
          "1000)\n";
+}
+
+// _____________________________________________________________________________
+petrimaps::GeomCacheConfig cacheConfigFromDisk(const std::string& fname) {
+  std::string url = util::split(fname, '/').back();
+  util::replaceAll(url, "#", "/");
+  auto canonized = petrimaps::canonizeURL(url);
+  return {canonized, petrimaps::getFillQuery(canonized)};
 }
 
 // _____________________________________________________________________________
@@ -49,7 +60,7 @@ int main(int argc, char** argv) {
   int port = 9090;
   int cacheLifetime = 6 * 60;
   size_t autoThreshold = 1000;
-  std::vector<std::string> cacheConfigs;
+  std::string accessToken;
   double maxMemoryGB =
       (sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE) * 0.9) / 1000000000;
   std::string cacheDir;
@@ -77,18 +88,18 @@ int main(int argc, char** argv) {
         exit(1);
       }
       cacheDir = argv[i];
-    } else if (cur == "-g") {
-      if (++i >= argc) {
-        LOG(ERROR) << "Missing argument for geometry cache config (-g).";
-        exit(1);
-      }
-      cacheConfigs.push_back(argv[i]);
     } else if (cur == "-t") {
       if (++i >= argc) {
         LOG(ERROR) << "Missing argument for cache lifetime (-t).";
         exit(1);
       }
       cacheLifetime = atof(argv[i]);
+    } else if (cur == "-x") {
+      if (++i >= argc) {
+        LOG(ERROR) << "Missing argument for access token (-x).";
+        exit(1);
+      }
+      accessToken = argv[i];
     } else if (cur == "-a") {
       if (++i >= argc) {
         LOG(ERROR) << "Missing argument for auto threshold (-a).";
@@ -101,46 +112,35 @@ int main(int argc, char** argv) {
   std::map<std::string, petrimaps::GeomCacheConfig> geomCacheConfigs;
 
   try {
-    for (const auto& cfgFile : cacheConfigs) {
-      std::ifstream f(cfgFile);
-      json data = json::parse(f);
-
-      if (data.is_object()) {
-        for (const auto& cfg : data.items()) {
-          if (!cfg.value().is_object()) {
-            std::stringstream ss;
-            ss << "Could not parse geom cache config file '" << cfgFile << "'";
-            throw std::runtime_error(ss.str());
-          }
-          auto canonized = petrimaps::canonizeURL(cfg.key());
-          auto fillQuery = cfg.value()["fillQuery"];
-          if (fillQuery.size() == 0) {
-            std::stringstream ss;
-            ss << "Could not parse geom cache config file '" << cfgFile
-               << "', field 'fillQuery' required";
-            throw std::runtime_error(ss.str());
-          }
-          geomCacheConfigs[canonized] = {canonized, fillQuery};
-          LOG(INFO) << "Configured backend '" << canonized << "' from file '"
-                    << cfgFile << "'";
-        }
-      }
-    }
-    if (geomCacheConfigs.size() == 0) {
-      LOG(WARN) << "No geometry cache config configured, falling back to "
-                   "default config for all backends. Use -g to provide one or "
-                   "more config files";
-    }
     if (cacheDir.size() && access(cacheDir.c_str(), W_OK) != 0) {
       std::stringstream ss;
       ss << "No write access to cache dir '" << cacheDir << "'";
       throw std::runtime_error(ss.str());
     }
 
+    DIR* dir = opendir(cacheDir.c_str());
+    struct dirent* entry;
+
+    if (dir != nullptr) {
+      while ((entry = readdir(dir)) != nullptr) {
+        std::string fullpath = cacheDir + "/" + entry->d_name;
+
+        struct stat sb;
+        if (stat(fullpath.c_str(), &sb) == 0) {
+          if (S_ISREG(sb.st_mode)) {
+            auto cfg = cacheConfigFromDisk(fullpath);
+            geomCacheConfigs[cfg.backend] = cfg;
+            LOG(INFO) << "Configured backend " << cfg.backend;
+          }
+        }
+      }
+      closedir(dir);
+    }
+
     LOG(INFO) << "Starting server...";
     LOG(INFO) << "Max memory is " << maxMemoryGB << " GB...";
     Server serv(maxMemoryGB * 1000000000, cacheDir, cacheLifetime,
-                autoThreshold, geomCacheConfigs);
+                autoThreshold, geomCacheConfigs, accessToken);
 
     LOG(INFO) << "Listening on port " << port;
     util::http::HttpServer(port, &serv, std::thread::hardware_concurrency())

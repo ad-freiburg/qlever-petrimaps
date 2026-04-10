@@ -12,11 +12,11 @@
 #include <locale>
 #include <memory>
 #include <random>
+#include <regex>
 #include <set>
+#include <string>
 #include <unordered_set>
 #include <vector>
-#include <regex>
-#include <string>
 
 #include "3rdparty/heatmap.h"
 #include "3rdparty/colorschemes/Blues.h"
@@ -70,12 +70,14 @@ static std::atomic<size_t> _curRow;
 // _____________________________________________________________________________
 Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime,
                size_t autoThreshold,
-               std::map<std::string, GeomCacheConfig> cacheConfigs)
+               std::map<std::string, GeomCacheConfig> cacheConfigs,
+               const std::string& accessToken)
     : _maxMemory(maxMemory),
       _cacheDir(cacheDir),
       _cacheLifetime(cacheLifetime),
       _autoThreshold(autoThreshold),
-      _cacheConfigs(cacheConfigs) {
+      _cacheConfigs(cacheConfigs),
+      _accessToken(accessToken) {
   std::thread t(&Server::clearOldSessions, this);
   t.detach();
 }
@@ -94,14 +96,16 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
 
     if (cmd == "/") {
       a = handleIndexReq(params);
+    } else if (cmd == "/status") {
+      a = handleStatusReq(params, req.params);
     } else if (cmd == "/query") {
-      a = handleQueryReq(params);
+      a = handleQueryReq(params, req.params);
     } else if (cmd == "/geojson") {
       a = handleGeoJSONReq(params);
     } else if (cmd == "/clearsession") {
-      a = handleClearSessReq(params);
+      a = handleClearSessReq(params, req.params);
     } else if (cmd == "/clearsessions") {
-      a = handleClearSessReq(params);
+      a = handleClearSessReq(params, req.params);
     } else if (cmd == "/pos") {
       a = handlePosReq(params);
     } else if (cmd == "/export") {
@@ -878,10 +882,53 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleClearSessReq(const Params& pars) const {
+util::http::Answer Server::handleStatusReq(const Params& pars,
+                                    const HeaderParams& headerParams) const {
+  if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
+    throw std::invalid_argument("No backend (?backend=) specified.");
+
+  std::string accessToken;
+  if (headerParams.count("Authorization") != 0 &&
+      !headerParams.find("Authorization")->second.empty()) {
+    accessToken = headerParams.find("Authorization")->second;
+  }
+
+  if (accessToken != _accessToken)
+    throw std::invalid_argument("Invalid access token");
+
+  auto backendCfg =
+      getGeomCacheConfig(pars.find("backend")->second, accessToken);
+
+  createCache(backendCfg);
+  std::shared_ptr<GeomCache> cache = _caches[backendCfg.backend];
+
+  std::stringstream ss;
+  ss << "{\"config\":";
+  ss << backendCfg.toJSON();
+  ss << ", \"loaded\": " << cache->getLoadStatusPercent(true);
+  ss << "}";
+
+  auto answ = util::http::Answer("200 OK", ss.str());
+  answ.params["Content-Type"] = "application/json; charset=utf-8";
+
+  return answ;
+}
+
+// _____________________________________________________________________________
+util::http::Answer Server::handleClearSessReq(const Params& pars,
+                                    const HeaderParams& headerParams) const {
   std::string id;
   if (pars.count("id") != 0 && !pars.find("id")->second.empty())
     id = pars.find("id")->second;
+
+  std::string accessToken;
+  if (headerParams.count("Authorization") != 0 &&
+      !headerParams.find("Authorization")->second.empty()) {
+    accessToken = headerParams.find("Authorization")->second;
+  }
+
+  if (accessToken != _accessToken)
+    throw std::invalid_argument("Invalid access token");
 
   {
     std::lock_guard<std::mutex> guard(_m);
@@ -909,21 +956,20 @@ util::http::Answer Server::handleIndexReq(const Params& pars) const {
     w.val(param.second);
   }
   w.closeAll();
-  std::string html = std::string(index_html,
-                      index_html + sizeof index_html / sizeof index_html[0]);
+  std::string html = std::string(
+      index_html, index_html + sizeof index_html / sizeof index_html[0]);
 
   util::replace(html, "<!-- PETRIMAPS_INLINE_SCRIPT -->", ss.str());
 
-      auto a = util::http::Answer(
-          "200 OK", html
-          );
-      a.params["Content-Type"] = "text/html; charset=utf-8";
+  auto a = util::http::Answer("200 OK", html);
+  a.params["Content-Type"] = "text/html; charset=utf-8";
 
-      return a;
+  return a;
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleQueryReq(const Params& pars) const {
+util::http::Answer Server::handleQueryReq(
+    const Params& pars, const HeaderParams& headerParams) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
 
@@ -948,6 +994,12 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     }
   }
 
+  std::string accessToken;
+  if (headerParams.count("Authorization") != 0 &&
+      !headerParams.find("Authorization")->second.empty()) {
+    accessToken = headerParams.find("Authorization")->second;
+  }
+
   if (pars.count("cfg") != 0 && !pars.find("cfg")->second.empty()) {
     rcfg = getRequestorCfgFromJSON(pars.find("cfg")->second);
   }
@@ -959,7 +1011,8 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   if (rcfg.query.size() == 0)
     throw std::invalid_argument("No query specified.");
 
-  auto backendCfg = getGeomCacheConfig(pars.find("backend")->second);
+  auto backendCfg =
+      getGeomCacheConfig(pars.find("backend")->second, accessToken);
 
   LOG(INFO) << "[SERVER] Queried backend is " << backendCfg.backend;
   LOG(INFO) << "[SERVER] Query is:\n" << rcfg.query;
@@ -1348,7 +1401,7 @@ util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
 
-  auto backendCfg = getGeomCacheConfig(pars.find("backend")->second);
+  auto backendCfg = getGeomCacheConfig(pars.find("backend")->second, "");
 
   createCache(backendCfg);
   std::shared_ptr<GeomCache> cache = _caches[backendCfg.backend];
@@ -1523,7 +1576,8 @@ heatmap_stamp_t* Server::raster_stamp(double res, double w, double h,
 }
 
 // _____________________________________________________________________________
-RequestorConfig Server::getRequestorCfgFromJSON(const std::string& jsonStr) const {
+RequestorConfig Server::getRequestorCfgFromJSON(
+    const std::string& jsonStr) const {
   RequestorConfig ret;
 
   try {
@@ -1565,20 +1619,24 @@ RequestorConfig Server::getRequestorCfgFromJSON(const std::string& jsonStr) cons
 
 // _____________________________________________________________________________
 GeomCacheConfig Server::getGeomCacheConfig(
-    const std::string& backendUrl) const {
+    const std::string& backendUrl, const std::string& accessToken) const {
   auto canonizedBackend = canonizeURL(backendUrl);
 
   auto cfg = _cacheConfigs.find(canonizedBackend);
-
   if (cfg != _cacheConfigs.end()) return cfg->second;
 
-  // default fallback
-  return GeomCacheConfig{backendUrl,
-                         "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
-                         "SELECT ?geometry WHERE {"
-                         " ?subject geo:asWKT ?geometry "
-                         " FILTER (!ql:isGeoPoint(?geometry)) "
-                         "} INTERNAL SORT BY ?geometry"};
+  if (accessToken != _accessToken) {
+    std::stringstream ss;
+    ss << "Backend not configured: " << backendUrl;
+    throw std::runtime_error(ss.str());
+  }
+
+  {
+    std::lock_guard<std::mutex> guard(_m);
+    _cacheConfigs[canonizedBackend] = {
+        canonizedBackend, petrimaps::getFillQuery(canonizedBackend)};
+  }
+  return _cacheConfigs[canonizedBackend];
 }
 
 // _____________________________________________________________________________

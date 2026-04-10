@@ -10,10 +10,10 @@
 #include <atomic>
 #include <chrono>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <string>
-#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -22,6 +22,39 @@
 
 namespace petrimaps {
 
+const static std::string FILL_QUERY_DEFAULT =
+    "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
+    "SELECT ?geometry WHERE {"
+    " ?subject geo:asWKT ?geometry "
+    " FILTER (!ql:isGeoPoint(?geometry)) "
+    "} INTERNAL SORT BY ?geometry";
+
+const static std::string FILL_QUERY_WDTP625 =
+    "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
+    "SELECT ?geometry WHERE {"
+    " ?subject wdt:P625 ?geometry"
+    " FILTER (!ql:isGeoPoint(?geometry)) "
+    "} INTERNAL SORT BY ?geometry";
+
+const static std::string FILL_QUERY_WDTP625_SERVICE =
+    "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
+    "SELECT ?geometry WHERE {"
+    " SERVICE <https://qlever.cs.uni-freiburg.de/api/wikidata> {"
+    "  SELECT ?geometry WHERE {"
+    "   ?subject wdt:P625 ?geometry"
+    "   FILTER (!ql:isGeoPoint(?geometry)) "
+    " } INTERNAL SORT BY ?geometry"
+    " }"
+    "}";
+
+inline std::string getFillQuery(const std::string& backend) {
+  auto backendName = util::split(backend, '/').back();
+  if (backendName.rfind("wikidata", 0) == 0) return FILL_QUERY_WDTP625;
+  if (backendName.rfind("dblp-plus", 0) == 0) return FILL_QUERY_WDTP625;
+  if (backendName.rfind("dblp", 0) == 0) return FILL_QUERY_WDTP625_SERVICE;
+  return FILL_QUERY_DEFAULT;
+}
+
 struct GeomCacheConfig {
   std::string backend;
   std::string fillQuery;
@@ -29,6 +62,14 @@ struct GeomCacheConfig {
   std::string getHash() const {
     std::hash<std::string> hashF;
     return std::to_string(hashF(backend + fillQuery));
+  }
+
+  std::string toJSON() const {
+    std::stringstream ss;
+    ss << "{\"backend\": \"" << util::jsonStringEscape(backend) << "\"";
+    ss << ",\"fillQuery\": \"" << util::jsonStringEscape(fillQuery) << "\"";
+    ss << "}";
+    return ss.str();
   }
 };
 
