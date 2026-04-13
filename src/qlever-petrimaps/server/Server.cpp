@@ -33,8 +33,8 @@
 #include "3rdparty/colorschemes/gray.h"
 #include "3rdparty/json.hpp"
 #include "qlever-petrimaps/build.h"
-#include "qlever-petrimaps/index.h"
 #include "qlever-petrimaps/example.h"
+#include "qlever-petrimaps/index.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "qlever-petrimaps/server/Server.h"
 #include "qlever-petrimaps/style.h"
@@ -188,6 +188,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   double rasterWidth = 10;
   double rasterHeight = 10;
 
+  int objColorR = 0, objColorG = 0, objColorB = 0;
+
   if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
     auto parts = util::split(pars.find("styles")->second, '-');
 
@@ -200,6 +202,14 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
       if (xy.size() > 1) {
         rasterWidth = ::atof(xy[0].c_str());
         rasterHeight = ::atof(xy[1].c_str());
+      }
+    }
+
+    if (style == OBJECTS && parts.size() > 1) {
+      if (parts[1].size() == 6) {
+        objColorR = hexToInt(parts[1][0]) * 16 + hexToInt(parts[1][1]);
+        objColorG = hexToInt(parts[1][2]) * 16 + hexToInt(parts[1][3]);
+        objColorB = hexToInt(parts[1][4]) * 16 + hexToInt(parts[1][5]);
       }
     }
 
@@ -278,14 +288,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   double res = mercH / h;
 
   size_t lid = r->getLayerId(layer);
-
-  FieldConfig fieldCfg;
-  for (const auto& fld : r->getFields()) {
-    if (fld.geomField == layer) {
-      fieldCfg = fld;
-      break;
-    }
-  }
 
   checkMem(sizeof(float) * w * h, _maxMemory);
   heatmap_t* hm = heatmap_new(w, h);
@@ -445,59 +447,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
       for (size_t idx = 0; idx < ret.size(); idx++) {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
         auto lineId = r->getObjects(lid)[ret[idx]].first;
-        const auto& lbox = r->getLineBBox(lineId - I_OFFSET);
-        if (!intersects(lbox, bbox)) continue;
-
-        size_t gi = 0;
-
-        size_t start = r->getLine(lineId - I_OFFSET);
-        size_t end = r->getLineEnd(lineId - I_OFFSET);
-
-        // ___________________________________
-        bool isects = false;
-
-        DPoint curPa, curPb;
-        int s = 0;
-
-        double mainX = 0;
-        double mainY = 0;
-        for (size_t i = start; i < end; i++) {
-          // extract real geom
-          const auto& cur = r->getLinePoints()[i];
-
-          if (isMCoord(cur.getX())) {
-            mainX = rmCoord(cur.getX());
-            mainY = rmCoord(cur.getY());
-            continue;
-          }
-
-          // skip bounding box at beginning
-          gi++;
-          if (gi < 3) continue;
-
-          // extract real geometry
-          const DPoint curP((mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
-                            (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
-          if (s == 0) {
-            curPa = curP;
-            s++;
-          } else if (s == 1) {
-            curPb = curP;
-            s++;
-          }
-
-          if (s == 2) {
-            s = 1;
-            if (intersects(LineSegment<double>(curPa, curPb), bbox)) {
-              isects = true;
-              break;
-            }
-            curPa = curPb;
-          }
-        }
-        // ___________________________________
-
-        if (!isects) continue;
+        if (!r->lineIntersects(lineId, bbox)) continue;
 
         // the factor depends on the render thickness of the line, make
         // this configurable!
@@ -608,15 +558,14 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   if (style == RASTER) {
     heatmap_render_to(hm, colorScheme, &image[0]);
   } else if (style == OBJECTS) {
-    int r = 0, g = 0, b = 0;
-    if (fieldCfg.color.size() == 6) {
-      r = hexToInt(fieldCfg.color[0]) * 16 + hexToInt(fieldCfg.color[1]);
-      g = hexToInt(fieldCfg.color[2]) * 16 + hexToInt(fieldCfg.color[3]);
-      b = hexToInt(fieldCfg.color[4]) * 16 + hexToInt(fieldCfg.color[5]);
-    }
     unsigned char discrete_data[] = {
-        0, 0, 0, 0,   0, 0, 0, 0,   r, g, b, 16,  r, g, b, 32,  r, g, b, 64,
-        r, g, b, 128, r, g, b, 160, r, g, b, 192, r, g, b, 224, r, g, b, 255};
+        0,         0,         0,         0,         0,         0,
+        0,         0,         objColorR, objColorG, objColorB, 16,
+        objColorR, objColorG, objColorB, 32,        objColorR, objColorG,
+        objColorB, 64,        objColorR, objColorG, objColorB, 128,
+        objColorR, objColorG, objColorB, 160,       objColorR, objColorG,
+        objColorB, 192,       objColorR, objColorG, objColorB, 224,
+        objColorR, objColorG, objColorB, 255};
     heatmap_colorscheme_t discrete = {
         discrete_data, sizeof(discrete_data) / sizeof(discrete_data[0] / 4)};
 
@@ -885,8 +834,8 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleTouchReq(const Params& pars,
-                                    const HeaderParams& headerParams) const {
+util::http::Answer Server::handleTouchReq(
+    const Params& pars, const HeaderParams& headerParams) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
 
@@ -918,8 +867,8 @@ util::http::Answer Server::handleTouchReq(const Params& pars,
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleClearSessReq(const Params& pars,
-                                    const HeaderParams& headerParams) const {
+util::http::Answer Server::handleClearSessReq(
+    const Params& pars, const HeaderParams& headerParams) const {
   std::string id;
   if (pars.count("id") != 0 && !pars.find("id")->second.empty())
     id = pars.find("id")->second;
@@ -949,8 +898,9 @@ util::http::Answer Server::handleClearSessReq(const Params& pars,
 
 // _____________________________________________________________________________
 util::http::Answer Server::handleExamplePageReq(const Params& pars) const {
-  std::string html = std::string(
-      example_html, example_html + sizeof example_html / sizeof example_html[0]);
+  std::string html =
+      std::string(example_html,
+                  example_html + sizeof example_html / sizeof example_html[0]);
 
   auto a = util::http::Answer("200 OK", html);
   a.params["Content-Type"] = "text/html; charset=utf-8";
@@ -1094,19 +1044,25 @@ util::http::Answer Server::handleQueryReq(
   json << std::fixed << "{\"qid\" : \"" << sessionId << "\",\"bounds\":[["
        << llX << "," << llY << "],[" << urX << "," << urY << "]]"
        << ",\"numobjects\":" << numObjs
-       << ",\"autothreshold\":" << _autoThreshold << ",\"layers\": {";
+       << ",\"autothreshold\":" << _autoThreshold << ",\"layers\": [";
 
   bool first = false;
   for (const auto& fld : reqor->getFields()) {
     if (first) json << ",";
     first = true;
-    json << "\"" << fld.geomField << "\":{";
+    json << "{";
+    json << "\"id\":\"" << fld.id << "\",";
+    json << "\"geomfield\":\"" << fld.geomField << "\",";
+    json << "\"name\":\"" << fld.name << "\",";
+    json << "\"color\":\"" << fld.color << "\",";
+    json << "\"colorscheme\":\"" << fld.colorscheme << "\",";
+    json << "\"style\":\"" << fld.style << "\"";
     if (fld.rasterW != 0 && fld.rasterH != 0)
-      json << "\"rasterw\":" << fld.rasterW << ", \"rasterh\":" << fld.rasterH;
+      json << ",\"rasterw\":" << fld.rasterW << ", \"rasterh\":" << fld.rasterH;
     json << "}";
   }
 
-  json << "}}";
+  json << "]}";
 
   auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";
@@ -1482,6 +1438,16 @@ void Server::drawPoint(std::vector<uint32_t>& points,
 }
 
 // _____________________________________________________________________________
+std::string Server::getLayerId() const {
+  std::random_device dev;
+  std::mt19937 rng(dev());
+  std::uniform_int_distribution<std::mt19937::result_type> d(
+      1, std::numeric_limits<int>::max());
+
+  return std::to_string(d(rng));
+}
+
+// _____________________________________________________________________________
 std::string Server::getSessionId() const {
   std::random_device dev;
   std::mt19937 rng(dev());
@@ -1610,15 +1576,26 @@ RequestorConfig Server::getRequestorCfgFromJSON(
               throw std::runtime_error(ss.str());
             }
             FieldConfig curField;
-            curField.geomField = layer.key();
-            if (layer.value().contains("weightField"))
-              curField.valueField = layer.value()["weightField"];
+            if (layer.value().contains("id")) curField.id = layer.value()["id"];
+            if (layer.value().contains("geomfield"))
+              curField.geomField = layer.value()["geomfield"];
+            if (layer.value().contains("name"))
+              curField.name = layer.value()["name"];
+            if (layer.value().contains("weightfield"))
+              curField.valueField = layer.value()["weightfield"];
             if (layer.value().contains("rasterw"))
               curField.rasterW = layer.value()["rasterw"].get<double>();
             if (layer.value().contains("rasterh"))
               curField.rasterH = layer.value()["rasterh"].get<double>();
             if (layer.value().contains("color"))
               curField.color = layer.value()["color"].get<std::string>();
+            if (layer.value().contains("colorscheme"))
+              curField.colorscheme =
+                  layer.value()["colorscheme"].get<std::string>();
+            if (layer.value().contains("style"))
+              curField.style = layer.value()["style"].get<std::string>();
+            if (curField.name.size() == 0) curField.name = curField.geomField;
+            if (curField.id.size() == 0) curField.id = getLayerId();
             ret.fields.push_back(curField);
           }
         }

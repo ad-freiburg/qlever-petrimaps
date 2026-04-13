@@ -8,6 +8,9 @@ let qleverBackend = urlParams["backend"];
 let query = urlParams["query"];
 let mode = urlParams["mode"];
 
+const heatmapStyles = ["spectralexp", "spectral", "RdYlGn", "RdYlGnexp", "RdYlBu","RdYlBuexp", "w2b", "b2w", "RdGy","RdGyexp","YlOrRd","YlOrRdexp","Blues","Bluesexp","Greens","Greensexp","Greys","Greysexp","Oranges","Orangesexp","Reds", "Redsexp"];
+const rasterStyles = ["spectral", "RdYlGn", "RdYlBu","RdGy","YlOrRd","Blues","Greens","Greys","Oranges","Reds"];
+
 let fieldsRaw = (urlParams["fields"] || "").split(";");
 let fields = [];
 
@@ -148,7 +151,188 @@ function showError(msg) {
     clearInterval(loadStatusIntervalId);
 }
 
-function loadMap(id, bounds, numObjects, autoThreshold, layerName, rasterWidth, rasterHeight) {
+function loadLayers(id, bounds, numObjects, autoThreshold, layers) {
+    console.log(layers);
+    const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
+    const ur =  L.Projection.SphericalMercator.unproject({"x": bounds[1][0], "y":bounds[1][1]});
+    const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
+    map.fitBounds(boundsLatLng);
+    sessionId = id;
+    document.getElementById("stats").innerHTML = "<span>Showing " + numObjects.toLocaleString('en') + (numObjects > 1 ? " objects" : " object") + "</span>";
+
+    let themes = [];
+
+    for (layer of layers) {
+        let overlay = getOverlay(id, layer);
+        if (overlay) themes[layer["id"]] = overlay;
+    }
+
+	const themeControl = new L.Control.ThemeLayerSwitcher(themes, {
+	  position: 'topleft',
+	  defaultTheme: 'auto',
+	});
+
+	map.addControl(themeControl);
+    map.on('zoomend', function(e) {
+        if (curGeojsonId > -1) {
+            fetch('geojson?gid=' + curGeojsonId + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
+              .then(response => response.json())
+              .then(function(data) {
+                curGeojson.remove();
+                curGeojson = getGeoJsonLayer(data);
+                curGeojson.addTo(map);
+              })
+              .catch(error => showError(genError));
+        }
+    });
+
+    if (layers.length > 0) themeControl.applyTheme(layers[0]['id']);
+}
+
+function getOverlay(id, layer) {
+    if (layer["style"] == "auto") {
+        const autoHeatmapLayer = L.nonTiledLayer.wms('heatmap', {
+            minZoom: 0,
+            maxZoom: 15,
+            // opacity: numObjects > autoThreshold ? 0.8 : 0.9,
+            opacity: 0.9,
+            layers: id + "-" + layer["geomfield"],
+            styles: ["heatmap-spectralexp"],
+            format: 'image/png',
+            transparent: true,
+        });
+
+        const autoObjectLayer = L.nonTiledLayer.wms('heatmap', {
+            minZoom: 16,
+            maxZoom: 19,
+            opacity: 0.9,
+            layers: id + "-" + layer["geomfield"],
+            styles: ["objects"],
+            format: 'image/png'
+        });
+
+        autoHeatmapLayer.on('load', _onLayerLoad);
+        autoObjectLayer.on('load', _onLayerLoad);
+
+        const autoLayerGroup = L.layerGroup([autoHeatmapLayer, autoObjectLayer]);
+
+        return {
+            name: layer["name"],
+            overlays: [
+              {
+                name: "Style",
+                type: "radio",
+                layers: [
+                  { name: "Default", layer: autoLayerGroup },
+                ]
+              }
+            ]
+          };
+    }
+
+    if (layer["style"] == "raster") {
+        let rasterLayers = [];
+
+        for (const s of rasterStyles) {
+            rasterLayers.push({
+                name: s,
+                layer: L.nonTiledLayer.wms('heatmap', {
+                    minZoom: 0,
+                    maxZoom: 19,
+                    opacity: 0.8,
+                    layers: id + "-" + layers["geomfield"],
+                    styles: ["raster-" + rasterWidth + "x" + rasterHeight + "-" + s],
+                    format: 'image/png',
+                    transparent: true,
+                })
+            });
+            rasterLayers[rasterLayers.length - 1].layer.on('load', _onLayerLoad);
+        }
+
+        return {
+            name: layer["name"],
+            overlays: [
+              {
+                name: "Style",
+                type: "radio",
+                layers:rasterLayers
+              }
+            ]
+          };
+    }
+
+    if (layer["style"] == "heatmap") {
+        let heatmapLayers = [];
+
+        for (const s of heatmapStyles) {
+            heatmapLayers.push({
+                name: s,
+                layer: L.nonTiledLayer.wms('heatmap', {
+                    minZoom: 0,
+                    maxZoom: 19,
+                    opacity: 0.8,
+                    layers: id + "-" + layer["geomfield"],
+                    styles: ["heatmap-" + s],
+                    format: 'image/png',
+                    transparent: true,
+                })
+            });
+            heatmapLayers[heatmapLayers.length - 1].layer.on('load', _onLayerLoad);
+        }
+
+        return {
+            name: layer["name"],
+            overlays: [
+              {
+                name: "Style",
+                type: "radio",
+                layers: heatmapLayers
+              }
+            ]
+          };
+    }
+
+    if (layer["style"] == "objects") {
+        const autoHeatmapLayer = L.nonTiledLayer.wms('heatmap', {
+            minZoom: 0,
+            maxZoom: 15,
+            // opacity: numObjects > autoThreshold ? 0.8 : 0.9,
+            opacity: 0.9,
+            layers: id + "-" + layer["geomfield"],
+            styles: ["heatmap-spectralexp"],
+            format: 'image/png',
+            transparent: true,
+        });
+
+        const objectLayer = L.nonTiledLayer.wms('heatmap', {
+            minZoom: 0,
+            maxZoom: 19,
+            opacity: 0.9,
+            layers: id + "-" + layer["geomfield"],
+            styles: ["objects-" + layer["color"]],
+            format: 'image/png'
+        });
+
+        objectLayer.on('load', _onLayerLoad);
+
+        return {
+            name: layer["name"],
+            overlays: [
+              {
+                name: "Style",
+                type: "radio",
+                layers: [
+                  { name: "Default", layer: objectLayer },
+                ]
+              }
+            ]
+          };
+    }
+
+    return null;
+}
+
+function loadMap(id, bounds, numObjects, autoThreshold, layerName, rasterWidth, rasterHeight, color, colorscheme, defaultstyle) {
     const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
     const ur =  L.Projection.SphericalMercator.unproject({"x": bounds[1][0], "y":bounds[1][1]});
     const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
@@ -157,10 +341,7 @@ function loadMap(id, bounds, numObjects, autoThreshold, layerName, rasterWidth, 
 
     document.getElementById("stats").innerHTML = "<span>Showing " + numObjects.toLocaleString('en') + (numObjects > 1 ? " objects" : " object") + "</span>";
 
-	const heatmapStyles = ["spectralexp", "spectral", "RdYlGn", "RdYlGnexp", "RdYlBu","RdYlBuexp", "w2b", "b2w", "RdGy","RdGyexp","YlOrRd","YlOrRdexp","Blues","Bluesexp","Greens","Greensexp","Greys","Greysexp","Oranges","Orangesexp","Reds", "Redsexp"];
 	let heatmapLayers = [];
-
-	const rasterStyles = ["spectral", "RdYlGn", "RdYlBu","RdGy","YlOrRd","Blues","Greens","Greys","Oranges","Reds"];
 	let rasterLayers = [];
 
 
@@ -180,21 +361,23 @@ function loadMap(id, bounds, numObjects, autoThreshold, layerName, rasterWidth, 
     	heatmapLayers[heatmapLayers.length - 1].layer.on('load', _onLayerLoad);
 	}
 
-    for (const s of rasterStyles) {
-		rasterLayers.push({
-			name: s,
-			layer: L.nonTiledLayer.wms('heatmap', {
-				minZoom: 0,
-				maxZoom: 19,
-				opacity: 0.8,
-				layers: id + "-" + layerName,
-				styles: ["raster-" + rasterWidth + "x" + rasterHeight + "-" + s],
-				format: 'image/png',
-				transparent: true,
-			})
-		});
-    	rasterLayers[rasterLayers.length - 1].layer.on('load', _onLayerLoad);
-	}
+    if (rasterWidth > 0 && rasterHeight > 0) {
+        for (const s of rasterStyles) {
+            rasterLayers.push({
+                name: s,
+                layer: L.nonTiledLayer.wms('heatmap', {
+                    minZoom: 0,
+                    maxZoom: 19,
+                    opacity: 0.8,
+                    layers: id + "-" + layerName,
+                    styles: ["raster-" + rasterWidth + "x" + rasterHeight + "-" + s],
+                    format: 'image/png',
+                    transparent: true,
+                })
+            });
+            rasterLayers[rasterLayers.length - 1].layer.on('load', _onLayerLoad);
+        }
+    }
 
 	const objectsLayer = L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
@@ -366,9 +549,8 @@ function fetchResults() {
             showError("No layers specified in config");
             clearInterval(loadStatusIntervalId);
         }
-        for (let layer in data["layers"]) {
-            loadMap(data["qid"], data["bounds"], data["numobjects"], data["autothreshold"], layer, 0, 0);
-        }
+
+        loadLayers(data["qid"], data["bounds"], data["numobjects"], data["autothreshold"], data["layers"]);
 
         let id = data["qid"];
 

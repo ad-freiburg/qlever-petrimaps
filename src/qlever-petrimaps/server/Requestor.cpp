@@ -79,14 +79,6 @@ void Requestor::request() {
   }
   LOG(INFO) << "[REQUESTOR] ... done";
 
-  // print first 10 IDs for debugging purposes
-  LOG(INFO) << "[REQUESTOR] First 10 (sorted) IDs sent by qlever: ";
-  std::stringstream ss;
-  for (size_t i = 0; i < 10 && i < reader._ids[0].size(); i++) {
-    ss << reader._ids[0][i].qid << " ";
-  }
-  LOG(INFO) << ss.str();
-
   _objects.resize(_geomColumns.size());
   _dynamicPoints.resize(_geomColumns.size());
   _pgrid.resize(_geomColumns.size());
@@ -1075,6 +1067,58 @@ util::geo::DPoint Requestor::clusterGeom(size_t layerId, size_t cid,
 
     return util::geo::DPoint{x, y};
   }
+}
+
+// _____________________________________________________________________________
+bool Requestor::lineIntersects(size_t lineId,
+                               const util::geo::DBox& bbox) const {
+  const auto& lbox = getLineBBox(lineId - I_OFFSET);
+  if (!util::geo::intersects(lbox, bbox)) return false;
+  size_t start = getLine(lineId - I_OFFSET);
+  size_t end = getLineEnd(lineId - I_OFFSET);
+
+  util::geo::DPoint curPa, curPb;
+  int s = 0;
+  size_t gi = 0;
+
+  double mainX = 0;
+  double mainY = 0;
+  for (size_t i = start; i < end; i++) {
+    // extract real geom
+    const auto& cur = getLinePoints()[i];
+
+    if (isMCoord(cur.getX())) {
+      mainX = rmCoord(cur.getX());
+      mainY = rmCoord(cur.getY());
+      continue;
+    }
+
+    // skip bounding box at beginning
+    gi++;
+    if (gi < 3) continue;
+
+    // extract real geometry
+    const util::geo::DPoint curP(
+        (mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
+        (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
+    if (s == 0) {
+      curPa = curP;
+      s++;
+    } else if (s == 1) {
+      curPb = curP;
+      s++;
+    }
+
+    if (s == 2) {
+      s = 1;
+      if (util::geo::intersects(util::geo::LineSegment<double>(curPa, curPb),
+                                bbox)) {
+        return true;
+      }
+      curPa = curPb;
+    }
+  }
+  return false;
 }
 
 // _____________________________________________________________________________

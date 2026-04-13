@@ -17,15 +17,20 @@
 #include "qlever-petrimaps/Grid.h"
 #include "qlever-petrimaps/Misc.h"
 #include "util/geo/Geo.h"
+#include "util/log/Log.h"
 
 namespace petrimaps {
 
 struct FieldConfig {
-  std::string geomField;
+  std::string geomField = "";
+  std::string id = "";
+  std::string name = "";
   std::string valueField = "";
   double rasterW = 0;
   double rasterH = 0;
   std::string color = "3388ff";
+  std::string colorscheme = "";
+  std::string style = "auto";
 };
 
 struct RequestorConfig {
@@ -38,7 +43,7 @@ struct RequestorConfig {
     for (const auto& field : fields)
       fieldsStr += field.geomField + "|" + field.valueField + "|" +
                    std::to_string(field.rasterW) + "|" +
-                   std::to_string(field.rasterH) + "|" + field.color;
+                   std::to_string(field.rasterH) + "|" + field.color + "|" + field.id + "|" + field.name + "|" + field.style + "|" + field.colorscheme;
     return std::to_string(hashF(query + fieldsStr));
   }
 };
@@ -81,13 +86,14 @@ class Requestor {
       for (const auto& field : _rcfg.fields) {
         if (!_columnsMap.count(field.geomField)) continue;
         _geomColumns.push_back(field.geomField);
-        std::cout << field.valueField << std::endl;
         if (_columnsMap.count(field.valueField)) {
           _valueFlds[_geomColumns.size() - 1] = _columnsMap[field.valueField];
           _valueColumns.push_back(field.valueField);
         }
       }
     }
+
+    LOG(util::LogLevel::INFO) << "[REQUESTOR] " << _geomColumns.size() << " geom columns";
 
     for (size_t i = 0; i < _geomColumns.size(); i++) {
       _geoColToLid[_geomColumns[i]] = i;
@@ -179,9 +185,12 @@ class Requestor {
   double getVal(size_t lid, size_t oid) const;
 
   size_t getLayerId(const std::string& layer) {
-    return _geoColToLid.find(layer)->second;
+    auto it = _geoColToLid.find(layer);
+    if (it == _geoColToLid.end()) throw std::runtime_error("Layer not found");
+    return it->second;
   }
   size_t getNumLayers() const { return _pgrid.size(); }
+  bool lineIntersects(size_t lid, const util::geo::DBox& bbox) const;
 
   const std::vector<FieldConfig> getFields() const { return _rcfg.fields; }
   std::pair<double, double> getValRange() const;
@@ -222,7 +231,7 @@ class Requestor {
   std::vector<std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>>
       _clusterObjects;
   std::vector<double> _vals;
-  double _valMax, _valMin;
+  double _valMax = 0, _valMin = 1;
   size_t _numObjects = 0;
 
   std::vector<std::string> _geomColumns;
