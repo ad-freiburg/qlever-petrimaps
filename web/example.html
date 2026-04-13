@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Open Map</title>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+  <meta name='description' content=''>
+  <meta name="author" content="Patrick Brosi, University of Freiburg, Chair of Algorithms and Datastructures">
+  <meta name="contact" content="brosi[at]cs.uni-freiburg.de">
+  <meta name="viewport" content="initial-scale=1">
+  <meta name="theme-color" content="#EEE">
+  <meta property="og:title" content="QLever petrimaps">
+  <meta property="og:description" content="QLever petrimaps">
+  <link rel="stylesheet" href="build.css">
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+    }
+
+    .wrap {
+      border-radius: 12px;
+      width: 500px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    textarea {
+      height: 280px;
+    }
+
+    input[type="text"], textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+	  margin-bottom: 6px;
+      font-family: monospace;
+    }
+
+    button {
+	  margin-top: 15px;
+      width: 100%;
+      padding: 12px;
+      border: none;
+      background-color: default;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>petrimaps integration example</h2>
+
+    <form>
+      <label for="config">Requestor config JSON</label>
+      <textarea id="config" name="cfg">
+{
+  "query" : "PREFIX ogc: <http://www.opengis.net/rdf#>\nPREFIX geo: <http://www.opengis.net/ont/geosparql#>\nPREFIX osm2rdfkey: <https://osm2rdf.cs.uni-freiburg.de/rdf/key#>\nPREFIX wp: <https://en.wikipedia.org/wiki/>\nPREFIX osm2rdf: <https://osm2rdf.cs.uni-freiburg.de/rdf#>\nPREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>\nSELECT ?area ?geom2 ?geom WHERE {  ?empire osm2rdfkey:wikipedia wp:British%20Empire .  ?empire geo:hasGeometry/geo:asWKT ?geom .  ?empire ogc:sfContains ?a .  ?a osmkey:building \"university\" . ?a osm2rdf:area ?area .  ?a geo:hasGeometry/geo:asWKT ?geom2} LIMIT 10",
+  "layers" : [
+	{
+		"id" : "1",
+        "name" : "?geom in rot",
+		"geomfield" : "?geom",
+		"color" : "FF0000",
+        "style" : "objects"
+    },
+	{
+        "name" : "?geom in grün",
+		"geomfield" : "?geom",
+		"color" : "00FF00",
+        "style" : "objects"
+    },
+	{
+        "name" : "?geom als heatmap",
+		"geomfield" : "?geom",
+		"colorscheme" : "spectral",
+        "style" : "heatmap"
+    },
+	{
+		"id" : "2",
+        "name" : "?geom2 in blau",
+		"geomfield" : "?geom2",
+		"color" : "0000FF",
+        "style" : "objects"
+    }
+  ]
+}
+</textarea>
+
+      <label for="backend">QLever backend</label>
+      <input type="text" id="backend" name="backend" value="https://qlever.dev/api/ohm-planet" />
+
+      <div class="method">
+        <label>
+          <input type="radio" name="method" value="GET" checked /> GET
+        </label>
+        <label>
+          <input type="radio" name="method" value="POST" /> POST
+        </label>
+      </div>
+
+      <button type="button" onclick="submitForm()">Open Map</button>
+    </form>
+  </div>
+
+  <script>
+    function submitForm() {
+      const form = document.getElementsByTagName('form')[0];
+      const method = document.querySelector('input[name="method"]:checked').value;
+
+      if (method === 'GET') {
+		let pars = new URLSearchParams(new FormData(form));
+		pars.delete("method");
+        window.open('/' + '?' + pars.toString(), "_blank");
+      } else {
+        const tempForm = document.createElement('form');
+        tempForm.method = 'POST';
+        tempForm.action = '/';
+
+        const formData = new FormData(form);
+        formData.forEach((value, key) => {
+          if (key !== 'method') {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = key;
+            input.value = value;
+            tempForm.appendChild(input);
+          }
+        });
+
+        document.body.appendChild(tempForm);
+		tempForm.target = "_blank";
+        tempForm.submit();
+      }
+    }
+  </script>
+
+</html>
