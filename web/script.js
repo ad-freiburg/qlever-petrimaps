@@ -145,6 +145,7 @@ function showError(msg) {
     heading.innerHTML = msg.split("\n")[0];
     if (msg.search("\n") > 0) error.innerHTML = "<pre>" + msg.substring(msg.search("\n")) + "</pre>";
     else error.innerHTML = "";
+    clearInterval(loadStatusIntervalId);
 }
 
 function loadMap(id, bounds, numObjects, autoThreshold, layerName, rasterWidth, rasterHeight) {

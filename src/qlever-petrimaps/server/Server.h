@@ -39,7 +39,8 @@ class Server : public util::http::Handler {
   static std::string parseUrl(std::string u, std::string pl, Params* params);
 
   util::http::Answer handleIndexReq(const Params& pars) const;
-  util::http::Answer handleStatusReq(const Params& pars,
+  util::http::Answer handleExamplePageReq(const Params& pars) const;
+  util::http::Answer handleTouchReq(const Params& pars,
                                     const HeaderParams& headerPars) const;
   util::http::Answer handleHeatMapReq(const Params& pars, int sock) const;
   util::http::Answer handleQueryReq(const Params& pars,

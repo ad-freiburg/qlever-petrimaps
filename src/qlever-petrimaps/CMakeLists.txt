@@ -22,6 +22,13 @@ add_custom_command(
 )
 
 add_custom_command(
+	OUTPUT example.h
+	COMMAND cd ${PROJECT_BINARY_DIR}/../web/ && xxd -i example.html > ${CMAKE_CURRENT_BINARY_DIR}/example.h
+	DEPENDS "${PROJECT_BINARY_DIR}/../web/example.html"
+	VERBATIM
+)
+
+add_custom_command(
 	OUTPUT style.h
 	COMMAND cd ${PROJECT_BINARY_DIR}/../web/ && cat style.css | sed -e "s/^\\s*//g" -e "s/\\s\\+/ /g" | tr -d '\\n' > build.css && xxd -i build.css > ${CMAKE_CURRENT_BINARY_DIR}/style.h
 	DEPENDS "${PROJECT_BINARY_DIR}/../web/style.css"
@@ -35,7 +42,7 @@ add_custom_command(
 	VERBATIM
 )
 
-add_custom_target(htmlfiles DEPENDS index.h build.h style.h)
+add_custom_target(htmlfiles DEPENDS index.h example.h build.h style.h)
 
 add_dependencies(qlever_petrimaps_dep htmlfiles)
 

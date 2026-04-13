@@ -34,6 +34,7 @@
 #include "3rdparty/json.hpp"
 #include "qlever-petrimaps/build.h"
 #include "qlever-petrimaps/index.h"
+#include "qlever-petrimaps/example.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "qlever-petrimaps/server/Server.h"
 #include "qlever-petrimaps/style.h"
@@ -96,8 +97,10 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
 
     if (cmd == "/") {
       a = handleIndexReq(params);
-    } else if (cmd == "/status") {
-      a = handleStatusReq(params, req.params);
+    } else if (cmd == "/example") {
+      a = handleExamplePageReq(params);
+    } else if (cmd == "/touch") {
+      a = handleTouchReq(params, req.params);
     } else if (cmd == "/query") {
       a = handleQueryReq(params, req.params);
     } else if (cmd == "/geojson") {
@@ -882,7 +885,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleStatusReq(const Params& pars,
+util::http::Answer Server::handleTouchReq(const Params& pars,
                                     const HeaderParams& headerParams) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
@@ -942,6 +945,17 @@ util::http::Answer Server::handleClearSessReq(const Params& pars,
   answ.params["Content-Type"] = "application/json; charset=utf-8";
 
   return answ;
+}
+
+// _____________________________________________________________________________
+util::http::Answer Server::handleExamplePageReq(const Params& pars) const {
+  std::string html = std::string(
+      example_html, example_html + sizeof example_html / sizeof example_html[0]);
+
+  auto a = util::http::Answer("200 OK", html);
+  a.params["Content-Type"] = "text/html; charset=utf-8";
+
+  return a;
 }
 
 // _____________________________________________________________________________
