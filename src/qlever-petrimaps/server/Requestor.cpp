@@ -73,8 +73,8 @@ void Requestor::request() {
   // join with geoms from GeomCache
 
   // sort by qlever id
-  LOG(INFO) << "[REQUESTOR] Sorting results by qlever ID...";
   for (size_t i = 0; i < _geomColumns.size(); i++) {
+    LOG(INFO) << "[REQUESTOR] Sorting " << reader._ids[i].size() << " results for column " << _geomColumns[i] << " by qlever ID...";
     std::sort(reader._ids[i].begin(), reader._ids[i].end());
   }
   LOG(INFO) << "[REQUESTOR] ... done";
@@ -84,6 +84,7 @@ void Requestor::request() {
   _pgrid.resize(_geomColumns.size());
   _lgrid.resize(_geomColumns.size());
   _lpgrid.resize(_geomColumns.size());
+  _numObjects.resize(_geomColumns.size());
   _clusterObjects.resize(_geomColumns.size());
 
   for (size_t geomColId = 0; geomColId < _geomColumns.size(); geomColId++) {
@@ -93,7 +94,7 @@ void Requestor::request() {
     // (geom id, result row)
     const auto& ret = _cache->getRelObjects(reader._ids[geomColId]);
     _objects[geomColId] = ret.first;
-    _numObjects = ret.second;
+    _numObjects[geomColId] = ret.second;
 
     if (_valueFlds.count(geomColId)) {
       _vals = std::move(reader._vals[_valueFlds[geomColId]]);
@@ -114,9 +115,9 @@ void Requestor::request() {
 
     // dynamic points present in query
     _dynamicPoints[geomColId] = getDynamicPoints(reader._ids[geomColId]);
-    _numObjects += _dynamicPoints.back().size();
+    _numObjects[geomColId] += _dynamicPoints[geomColId].size();
 
-    LOG(INFO) << "[REQUESTOR] ... done, got " << _dynamicPoints.size()
+    LOG(INFO) << "[REQUESTOR] ... done, got " <<  _dynamicPoints[geomColId].size()
               << " points.";
 
     LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";

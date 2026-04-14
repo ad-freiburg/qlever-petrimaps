@@ -152,7 +152,6 @@ function showError(msg) {
 }
 
 function loadLayers(id, bounds, numObjects, autoThreshold, layers) {
-    console.log(layers);
     const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
     const ur =  L.Projection.SphericalMercator.unproject({"x": bounds[1][0], "y":bounds[1][1]});
     const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
@@ -160,10 +159,10 @@ function loadLayers(id, bounds, numObjects, autoThreshold, layers) {
     sessionId = id;
     document.getElementById("stats").innerHTML = "<span>Showing " + numObjects.toLocaleString('en') + (numObjects > 1 ? " objects" : " object") + "</span>";
 
-    let themes = [];
+    let themes = {};
 
     for (layer of layers) {
-        let overlay = getOverlay(id, layer);
+        let overlay = getOverlay(id, layer, autoThreshold);
         if (overlay) themes[layer["id"]] = overlay;
     }
 
@@ -186,18 +185,18 @@ function loadLayers(id, bounds, numObjects, autoThreshold, layers) {
         }
     });
 
-    if (layers.length > 0) themeControl.applyTheme(layers[0]['id']);
+    if (layers.length > 0 && layers[0]['id'] in themes) themeControl.applyTheme(layers[0]['id']);
+    else _onLayerLoad();
 }
 
-function getOverlay(id, layer) {
+function getOverlay(id, layer, autoThreshold) {
     if (layer["style"] == "auto") {
         const autoHeatmapLayer = L.nonTiledLayer.wms('heatmap', {
             minZoom: 0,
             maxZoom: 15,
-            // opacity: numObjects > autoThreshold ? 0.8 : 0.9,
-            opacity: 0.9,
+            opacity: layer["numobjects"] > autoThreshold ? 0.8 : 0.9,
             layers: id + "-" + layer["geomfield"],
-            styles: ["heatmap-spectralexp"],
+            styles: layer["numobjects"] > autoThreshold ? ["heatmap-spectralexp"] : ["objects-" + layer["color"]],
             format: 'image/png',
             transparent: true,
         });
@@ -207,7 +206,7 @@ function getOverlay(id, layer) {
             maxZoom: 19,
             opacity: 0.9,
             layers: id + "-" + layer["geomfield"],
-            styles: ["objects"],
+            styles: ["objects-" + layer["color"]],
             format: 'image/png'
         });
 
@@ -228,9 +227,7 @@ function getOverlay(id, layer) {
               }
             ]
           };
-    }
-
-    if (layer["style"] == "raster") {
+    } else if (layer["style"] == "raster") {
         let rasterLayers = [];
 
         for (const s of rasterStyles) {
@@ -259,9 +256,7 @@ function getOverlay(id, layer) {
               }
             ]
           };
-    }
-
-    if (layer["style"] == "heatmap") {
+    } else if (layer["style"] == "heatmap") {
         let heatmapLayers = [];
 
         for (const s of heatmapStyles) {
@@ -290,20 +285,7 @@ function getOverlay(id, layer) {
               }
             ]
           };
-    }
-
-    if (layer["style"] == "objects") {
-        const autoHeatmapLayer = L.nonTiledLayer.wms('heatmap', {
-            minZoom: 0,
-            maxZoom: 15,
-            // opacity: numObjects > autoThreshold ? 0.8 : 0.9,
-            opacity: 0.9,
-            layers: id + "-" + layer["geomfield"],
-            styles: ["heatmap-spectralexp"],
-            format: 'image/png',
-            transparent: true,
-        });
-
+    } else {
         const objectLayer = L.nonTiledLayer.wms('heatmap', {
             minZoom: 0,
             maxZoom: 19,
@@ -330,166 +312,6 @@ function getOverlay(id, layer) {
     }
 
     return null;
-}
-
-function loadMap(id, bounds, numObjects, autoThreshold, layerName, rasterWidth, rasterHeight, color, colorscheme, defaultstyle) {
-    const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
-    const ur =  L.Projection.SphericalMercator.unproject({"x": bounds[1][0], "y":bounds[1][1]});
-    const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
-    map.fitBounds(boundsLatLng);
-    sessionId = id;
-
-    document.getElementById("stats").innerHTML = "<span>Showing " + numObjects.toLocaleString('en') + (numObjects > 1 ? " objects" : " object") + "</span>";
-
-	let heatmapLayers = [];
-	let rasterLayers = [];
-
-
-    for (const s of heatmapStyles) {
-		heatmapLayers.push({
-			name: s,
-			layer: L.nonTiledLayer.wms('heatmap', {
-				minZoom: 0,
-				maxZoom: 19,
-				opacity: 0.8,
-				layers: id + "-" + layerName,
-				styles: ["heatmap-" + s],
-				format: 'image/png',
-				transparent: true,
-			})
-		});
-    	heatmapLayers[heatmapLayers.length - 1].layer.on('load', _onLayerLoad);
-	}
-
-    if (rasterWidth > 0 && rasterHeight > 0) {
-        for (const s of rasterStyles) {
-            rasterLayers.push({
-                name: s,
-                layer: L.nonTiledLayer.wms('heatmap', {
-                    minZoom: 0,
-                    maxZoom: 19,
-                    opacity: 0.8,
-                    layers: id + "-" + layerName,
-                    styles: ["raster-" + rasterWidth + "x" + rasterHeight + "-" + s],
-                    format: 'image/png',
-                    transparent: true,
-                })
-            });
-            rasterLayers[rasterLayers.length - 1].layer.on('load', _onLayerLoad);
-        }
-    }
-
-	const objectsLayer = L.nonTiledLayer.wms('heatmap', {
-        minZoom: 0,
-        maxZoom: 19,
-        opacity: 0.9,
-		layers: id + "-" + layerName,
-        styles: ["objects"],
-        format: 'image/png'
-    });
-
-    const autoHeatmapLayer = L.nonTiledLayer.wms('heatmap', {
-        minZoom: 0,
-        maxZoom: 15,
-        opacity: numObjects > autoThreshold ? 0.8 : 0.9,
-		layers: id + "-" + layerName,
-        styles: numObjects > autoThreshold ? ["heatmap-spectralexp"] : ["objects"],
-        format: 'image/png',
-        transparent: true,
-    });
-
-    const autoObjectLayer = L.nonTiledLayer.wms('heatmap', {
-        minZoom: 16,
-        maxZoom: 19,
-        opacity: 0.9,
-		layers: id + "-" + layerName,
-        styles: ["objects"],
-        format: 'image/png'
-    });
-	const autoLayerGroup = L.layerGroup([autoHeatmapLayer, autoObjectLayer]);
-
-    objectsLayer.on('load', _onLayerLoad);
-    autoHeatmapLayer.on('load', _onLayerLoad);
-    autoObjectLayer.on('load', _onLayerLoad);
-
-	const themes = {
-	  auto: {
-		name: "Auto",
-		overlays: [
-		  {
-			name: "Style",
-			type: "radio",
-			layers: [
-			  { name: "Default", layer: autoLayerGroup },
-			]
-		  }
-		]
-	  },
-
-	  heatmap: {
-		name: "Heatmap",
-		overlays: [
-		  {
-			name: "Style",
-			type: "radio",
-			layers: heatmapLayers
-		  }
-		]
-	  },
-
-	  objects: {
-		name: "Objects",
-		overlays: [
-		  {
-			name: "Layers",
-			type: "checkbox",
-			layers: [
-			  { name: "default", layer: objectsLayer },
-			]
-		  }
-		]
-	  }	};
-
-	if (!isNaN(rasterWidth) && !isNaN(rasterHeight)) {
-	  themes["raster"] ={
-		name: "Raster",
-		overlays: [
-		  {
-			name: "Style",
-			type: "radio",
-			layers: rasterLayers
-		  }
-		]
-	  }
-	}
-
-	const themeControl = new L.Control.ThemeLayerSwitcher(themes, {
-	  position: 'topleft',
-	  defaultTheme: 'auto',
-	});
-
-	map.addControl(themeControl);
-
-	if (mode == "heatmap") {
-		themeControl.applyTheme("heatmap");
-	} else if (mode == "objects") {
-		themeControl.applyTheme("objects");
-	} else if (mode == "raster") {
-		themeControl.applyTheme("raster");
-	}
-
-    map.on('zoomend', function(e) {
-        if (curGeojsonId > -1) {
-            fetch('geojson?gid=' + curGeojsonId + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
-              .then(response => response.json())
-              .then(function(data) {
-                curGeojson.remove();
-                curGeojson = getGeoJsonLayer(data);
-                curGeojson.addTo(map);
-              })
-              .catch(error => showError(genError));
-        }
-    });
 }
 
 function updateLoad(stage, percent, totalProgress, currentProgress) {

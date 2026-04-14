@@ -37,12 +37,12 @@
       padding: 10px;
       border: 1px solid #ccc;
       border-radius: 8px;
-	  margin-bottom: 6px;
+      margin-bottom: 6px;
       font-family: monospace;
     }
 
     button {
-	  margin-top: 15px;
+      margin-top: 15px;
       width: 100%;
       padding: 12px;
       border: none;
@@ -60,30 +60,30 @@
 {
   "query" : "PREFIX ogc: <http://www.opengis.net/rdf#>\nPREFIX geo: <http://www.opengis.net/ont/geosparql#>\nPREFIX osm2rdfkey: <https://osm2rdf.cs.uni-freiburg.de/rdf/key#>\nPREFIX wp: <https://en.wikipedia.org/wiki/>\nPREFIX osm2rdf: <https://osm2rdf.cs.uni-freiburg.de/rdf#>\nPREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>\nSELECT ?area ?geom2 ?geom WHERE {  ?empire osm2rdfkey:wikipedia wp:British%20Empire .  ?empire geo:hasGeometry/geo:asWKT ?geom .  ?empire ogc:sfContains ?a .  ?a osmkey:building \"university\" . ?a osm2rdf:area ?area .  ?a geo:hasGeometry/geo:asWKT ?geom2} LIMIT 10",
   "layers" : [
-	{
-		"id" : "1",
+    {
+        "id" : "1",
         "name" : "?geom in rot",
-		"geomfield" : "?geom",
-		"color" : "FF0000",
+        "geomfield" : "?geom",
+        "color" : "FF0000",
         "style" : "objects"
     },
-	{
+    {
         "name" : "?geom in grün",
-		"geomfield" : "?geom",
-		"color" : "00FF00",
+        "geomfield" : "?geom",
+        "color" : "00FF00",
         "style" : "objects"
     },
-	{
+    {
         "name" : "?geom als heatmap",
-		"geomfield" : "?geom",
-		"colorscheme" : "spectral",
+        "geomfield" : "?geom",
+        "colorscheme" : "spectral",
         "style" : "heatmap"
     },
-	{
-		"id" : "2",
+    {
+        "id" : "2",
         "name" : "?geom2 in blau",
-		"geomfield" : "?geom2",
-		"color" : "0000FF",
+        "geomfield" : "?geom2",
+        "color" : "0000FF",
         "style" : "objects"
     }
   ]
@@ -112,8 +112,8 @@
       const method = document.querySelector('input[name="method"]:checked').value;
 
       if (method === 'GET') {
-		let pars = new URLSearchParams(new FormData(form));
-		pars.delete("method");
+        let pars = new URLSearchParams(new FormData(form));
+        pars.delete("method");
         window.open('/' + '?' + pars.toString(), "_blank");
       } else {
         const tempForm = document.createElement('form');
@@ -132,7 +132,7 @@
         });
 
         document.body.appendChild(tempForm);
-		tempForm.target = "_blank";
+        tempForm.target = "_blank";
         tempForm.submit();
       }
     }

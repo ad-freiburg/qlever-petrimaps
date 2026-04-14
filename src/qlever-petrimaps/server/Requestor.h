@@ -177,7 +177,13 @@ class Requestor {
   util::geo::DLine extractLineGeom(size_t lineId) const;
   bool isArea(size_t lineId) const;
 
-  size_t getNumObjects() const { return _numObjects; }
+  size_t getNumObjects() const {
+    size_t ret = 0;
+    for (size_t lid = 0; lid < _numObjects.size(); lid++) ret += _numObjects[lid];
+
+    return ret;
+  }
+  size_t getNumObjects(size_t lid) const { return _numObjects[lid]; }
   util::geo::DPoint clusterGeom(size_t layerId, size_t cid, double res) const;
 
   std::vector<std::string> getColumns(std::string query) const;
@@ -232,7 +238,7 @@ class Requestor {
       _clusterObjects;
   std::vector<double> _vals;
   double _valMax = 0, _valMin = 1;
-  size_t _numObjects = 0;
+  std::vector<size_t> _numObjects;
 
   std::vector<std::string> _geomColumns;
   std::vector<std::string> _valueColumns;

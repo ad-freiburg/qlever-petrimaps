@@ -1056,6 +1056,7 @@ util::http::Answer Server::handleQueryReq(
     json << "\"name\":\"" << fld.name << "\",";
     json << "\"color\":\"" << fld.color << "\",";
     json << "\"colorscheme\":\"" << fld.colorscheme << "\",";
+    json << "\"numobjects\":\"" << reqor->getNumObjects(reqor->getLayerId(fld.geomField)) << "\",";
     json << "\"style\":\"" << fld.style << "\"";
     if (fld.rasterW != 0 && fld.rasterH != 0)
       json << ",\"rasterw\":" << fld.rasterW << ", \"rasterh\":" << fld.rasterH;
