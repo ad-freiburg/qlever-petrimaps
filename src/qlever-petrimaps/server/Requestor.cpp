@@ -46,7 +46,7 @@ void Requestor::request() {
   _clusterObjects.clear();
 
   RequestReader reader(_cache->getConfig().backend, _maxMemory,
-                       _geomColumns.size(), _valueFlds);
+                       _geomColumns.size(), _valueFlds.size());
 
   _sortColumn = "";
 
@@ -80,6 +80,7 @@ void Requestor::request() {
   LOG(INFO) << "[REQUESTOR] ... done";
 
   _objects.resize(_geomColumns.size());
+  _vals.resize(_geomColumns.size());
   _dynamicPoints.resize(_geomColumns.size());
   _pgrid.resize(_geomColumns.size());
   _lgrid.resize(_geomColumns.size());
@@ -97,12 +98,12 @@ void Requestor::request() {
     _numObjects[geomColId] = ret.second;
 
     if (_valueFlds.count(geomColId)) {
-      _vals = std::move(reader._vals[_valueFlds[geomColId]]);
+      _vals[geomColId] = std::move(reader._vals[_valueFlds[geomColId]]);
 
       _valMin = std::numeric_limits<double>::max();
       _valMax = 0;
 
-      for (auto v : _vals) {
+      for (auto v : _vals[geomColId]) {
         if (v < _valMin) _valMin = v;
         if (v > _valMax) _valMax = v;
       }
@@ -1131,14 +1132,14 @@ std::pair<double, double> Requestor::getValRange() const {
 // _____________________________________________________________________________
 double Requestor::getVal(size_t layerId, size_t oid) const {
   if (oid < _objects[layerId].size()) {
-    if (_objects[layerId][oid].second >= _vals.size()) return 1;
-    return _vals[_objects[layerId][oid].second];
+    if (_objects[layerId][oid].second >= _vals[layerId].size()) return 1;
+    return _vals[layerId][_objects[layerId][oid].second];
   }
   if (oid >= _objects[layerId].size()) {
     if (_dynamicPoints[layerId][oid - _objects[layerId].size()].second >=
-        _vals.size())
+        _vals[layerId].size())
       return 1;
-    return _vals[_dynamicPoints[layerId][oid - _objects[layerId].size()]
+    return _vals[layerId][_dynamicPoints[layerId][oid - _objects[layerId].size()]
                      .second];
   }
 

@@ -87,7 +87,7 @@ class Requestor {
         if (!_columnsMap.count(field.geomField)) continue;
         _geomColumns.push_back(field.geomField);
         if (_columnsMap.count(field.valueField)) {
-          _valueFlds[_geomColumns.size() - 1] = _columnsMap[field.valueField];
+          _valueFlds[_geomColumns.size() - 1] = _valueColumns.size();
           _valueColumns.push_back(field.valueField);
         }
       }
@@ -236,7 +236,7 @@ class Requestor {
       _dynamicPoints;
   std::vector<std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>>
       _clusterObjects;
-  std::vector<double> _vals;
+  std::vector<std::vector<double>> _vals;
   double _valMax = 0, _valMin = 1;
   std::vector<size_t> _numObjects;
 

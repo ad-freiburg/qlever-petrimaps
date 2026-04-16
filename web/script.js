@@ -136,8 +136,9 @@ function getGeoJsonLayer(geom) {
             });
 }
 
-function showError(msg) {
-    msg = msg.toString();
+function showError(err) {
+    console.error(err);
+    msg = err.toString();
     document.getElementById("msg").style.display = "block";
     document.getElementById("msg-info").style.display = "none";
     document.getElementById("load").style.display = "none";
@@ -237,8 +238,8 @@ function getOverlay(id, layer, autoThreshold) {
                     minZoom: 0,
                     maxZoom: 19,
                     opacity: 0.8,
-                    layers: id + "-" + layers["geomfield"],
-                    styles: ["raster-" + rasterWidth + "x" + rasterHeight + "-" + s],
+                    layers: id + "-" + layer["geomfield"],
+                    styles: ["raster-" + layer["rasterw"] + "x" + layer["rasterh"] + "-" + s],
                     format: 'image/png',
                     transparent: true,
                 })

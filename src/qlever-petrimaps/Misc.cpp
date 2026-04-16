@@ -215,7 +215,7 @@ void RequestReader::parseIds(const char* c, size_t size) {
     _curId.bytes[_curByte] = c[i];
     _curByte = (_curByte + 1) % 8;
 
-    _curIdCol = _curIdCol % (_geomFields + _valFields.size());
+    _curIdCol = _curIdCol % (_geomFields + _valFields);
 
     if (_curByte == 0) {
       if (_curIdCol < _geomFields) {

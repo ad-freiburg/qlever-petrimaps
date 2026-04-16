@@ -145,15 +145,15 @@ inline std::string httpRequest(const std::string& url) {
 
 struct RequestReader {
   explicit RequestReader(const std::string& backendUrl, size_t maxMemory,
-                         size_t geomFields, std::map<size_t, size_t> valFields)
+                         size_t geomFields, size_t valFields)
       : _backendUrl(backendUrl),
         _curl(curl_easy_init()),
         _maxMemory(maxMemory),
         _geomFields(geomFields),
         _valFields(valFields) {
-          _ids.resize(geomFields);
-          _vals.resize(valFields.size());
-        }
+    _ids.resize(geomFields);
+    _vals.resize(valFields);
+  }
   ~RequestReader() {
     if (_curl) curl_easy_cleanup(_curl);
   }
@@ -194,7 +194,7 @@ struct RequestReader {
   size_t _maxMemory;
 
   size_t _geomFields;
-  std::map<size_t, size_t> _valFields;
+  size_t _valFields;
 
   std::exception_ptr exceptionPtr;
 };
