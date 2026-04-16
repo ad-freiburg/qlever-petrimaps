@@ -1057,7 +1057,8 @@ util::http::Answer Server::handleQueryReq(
     json << "\"color\":\"" << fld.color << "\",";
     json << "\"colorscheme\":\"" << fld.colorscheme << "\",";
     json << "\"numobjects\":\"" << reqor->getNumObjects(reqor->getLayerId(fld.geomField)) << "\",";
-    json << "\"style\":\"" << fld.style << "\"";
+    json << "\"style\":\"" << fld.style << "\",";
+    json << "\"toggle\":\"" << fld.toggle << "\"";
     if (fld.rasterW != 0 && fld.rasterH != 0)
       json << ",\"rasterw\":" << fld.rasterW << ", \"rasterh\":" << fld.rasterH;
     json << "}";
@@ -1584,6 +1585,8 @@ RequestorConfig Server::getRequestorCfgFromJSON(
               curField.name = layer.value()["name"];
             if (layer.value().contains("weightfield"))
               curField.valueField = layer.value()["weightfield"];
+            if (layer.value().contains("toggle"))
+              curField.toggle = layer.value()["toggle"];
             if (layer.value().contains("rasterw"))
               curField.rasterW = layer.value()["rasterw"].get<double>();
             if (layer.value().contains("rasterh"))

@@ -15,9 +15,9 @@ let fieldsRaw = (urlParams["fields"] || "").split(";");
 let fields = [];
 
 for (let fieldRaw of fieldsRaw) {
-	let parts = fieldRaw.split(",");
-	if (parts.length == 0) continue;
-	fields.push({geo : parts[0], value : parts.length > 1 ? parts[1] : null});
+    let parts = fieldRaw.split(",");
+    if (parts.length == 0) continue;
+    fields.push({geo : parts[0], value : parts.length > 1 ? parts[1] : null});
 }
 
 // id of SetInterval to stop loadStatus requests on error or load finish
@@ -62,57 +62,57 @@ function openPopup(data) {
         // loop (it has to be the first cell of a table row).
         let image_cell = "";
         if (select_variables.length >= 2) {
-          let image_column = select_variables.length - 2;
-          if (select_variables[image_column] == "?image" ||
+            let image_column = select_variables.length - 2;
+            if (select_variables[image_column] == "?image" ||
                 select_variables[image_column] == "?flag" ||
                 select_variables[image_column].endsWith("_image")) {
-            let num_table_rows = select_variables.length - 2;
-            let image_url = row[image_column];
-            if (image_url != null)
-              image_cell = "<td rowspan=\"" + num_table_rows + "\"><a target=\"_blank\" href=\"" + image_url.replace(/^[<"]/, "").replace(/[>"]$/, "") + "\"><img src=\""
-                           + image_url.replace(/^[<"]/, "").replace(/[>"]$/, "")
-                           + "\"></a></td>";
-          }
+                let num_table_rows = select_variables.length - 2;
+                let image_url = row[image_column];
+                if (image_url != null)
+                image_cell = "<td rowspan=\"" + num_table_rows + "\"><a target=\"_blank\" href=\"" + image_url.replace(/^[<"]/, "").replace(/[>"]$/, "") + "\"><img src=\""
+                    + image_url.replace(/^[<"]/, "").replace(/[>"]$/, "")
+                    + "\"></a></td>";
+            }
         }
 
         // Now compute the table rows in an array.
         let popup_content_strings = [];
         select_variables.forEach(function(variable, i) {
-          // Skip the last column (WKT literal) and the ?image column (if it
-          // exists).
-          if (i == geometry_column ||
-            variable == "?image" || variable == "?flag" || variable.endsWith("_image")) return;
+            // Skip the last column (WKT literal) and the ?image column (if it
+            // exists).
+            if (i == geometry_column ||
+                variable == "?image" || variable == "?flag" || variable.endsWith("_image")) return;
 
-          // Take the variable name as one table column and the result value as
-          // another. Reformat a bit, so that it looks nice in an HTML table. and
-          // the result value as another. Reformat a bit, so that it looks nice in
-          // an HTML table.
-          let key = variable.substring(1);
-          if (row[i] == null) { row[i] = "---" }
-          let value = row[i].replace(/\\([()])/g, "$1")
-                        .replace(/<((.*)\/(.*))>/,
-                         "<a class=\"link\" href=\"$1\" target=\"_blank\">$3</a>")
-                        .replace(/\^\^.*$/, "")
-                        .replace(/\"(.*)\"(@[a-z]+)?$/, "$1");
+            // Take the variable name as one table column and the result value as
+            // another. Reformat a bit, so that it looks nice in an HTML table. and
+            // the result value as another. Reformat a bit, so that it looks nice in
+            // an HTML table.
+            let key = variable.substring(1);
+            if (row[i] == null) { row[i] = "---" }
+            let value = row[i].replace(/\\([()])/g, "$1")
+                .replace(/<((.*)\/(.*))>/,
+                    "<a class=\"link\" href=\"$1\" target=\"_blank\">$3</a>")
+                .replace(/\^\^.*$/, "")
+                .replace(/\"(.*)\"(@[a-z]+)?$/, "$1");
 
-          popup_content_strings.push(
-            "<tr>" + (i == 0 ? image_cell : "") +
-            "<td>" + key.replace(/_/g, " ") + "</td>" +
-            "<td>" + value + "</td></tr>");
+                    popup_content_strings.push(
+                        "<tr>" + (i == 0 ? image_cell : "") +
+                        "<td>" + key.replace(/_/g, " ") + "</td>" +
+                        "<td>" + value + "</td></tr>");
         })
-        let popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
-        popup_html += '<a class="export-link" href="geojson?gid=' + data[0].id + "&id=" + sessionId + '&rad=0&export=1">Export as GeoJSON</a>';
+            let popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
+            popup_html += '<a class="export-link" href="geojson?gid=' + data[0].id + "&id=" + sessionId + '&rad=0&export=1">Export as GeoJSON</a>';
 
-        if (curGeojson) curGeojson.remove();
+            if (curGeojson) curGeojson.remove();
 
-        L.popup({"maxWidth" : 600})
-            .setLatLng(data[0]["ll"])
-            .setContent(popup_html)
-            .openOn(map)
-            .on('remove', function() {
-                curGeojson.remove();
-                curGeojsonId = -1;
-            });
+            L.popup({"maxWidth" : 600})
+                .setLatLng(data[0]["ll"])
+                .setContent(popup_html)
+                .openOn(map)
+                .on('remove', function() {
+                    curGeojson.remove();
+                    curGeojsonId = -1;
+                });
 
         curGeojson = getGeoJsonLayer(data[0].geom);
         curGeojsonId = data[0].id;
@@ -121,19 +121,19 @@ function openPopup(data) {
 }
 
 function getGeoJsonLayer(geom) {
-	const color = "#e6930e";
+    const color = "#e6930e";
     return L.geoJSON(geom, {
-			style: {color : color, fillColor: color, weight: 7, fillOpacity: 0.2},
-            pointToLayer: function (feature, latlng) {
-                return L.circleMarker(latlng, {
-                    radius: 8,
-                    fillColor: color,
-                    color: color,
-                    weight: 4,
-                    opacity: 1,
-                    fillOpacity: 0.2
-                });}
-            });
+        style: {color : color, fillColor: color, weight: 7, fillOpacity: 0.2},
+        pointToLayer: function (feature, latlng) {
+            return L.circleMarker(latlng, {
+                radius: 8,
+                fillColor: color,
+                color: color,
+                weight: 4,
+                opacity: 1,
+                fillOpacity: 0.2
+            });}
+    });
 }
 
 function showError(err) {
@@ -160,37 +160,48 @@ function loadLayers(id, bounds, numObjects, autoThreshold, layers) {
     sessionId = id;
     document.getElementById("stats").innerHTML = "<span>Showing " + numObjects.toLocaleString('en') + (numObjects > 1 ? " objects" : " object") + "</span>";
 
-    let themes = {};
+    let themes = {"custom" : {
+        name: "Layers",
+        overlays: [{name:"", type:"radio", layers: []}, {name:"", type:"checkbox", layers: []}]
+    }};
 
     for (layer of layers) {
-        let overlay = getOverlay(id, layer, autoThreshold);
-        if (overlay) themes[layer["id"]] = overlay;
+        let prepedLayer = getLayer(id, layer, autoThreshold);
+        if (prepedLayer) {
+            prepedLayer.layer.on('load', _onLayerLoad);
+            if (layer["toggle"] == "checkbox") {
+                themes["custom"].overlays[1].layers.push(prepedLayer);
+            } else {
+                themes["custom"].overlays[0].layers.push(prepedLayer);
+            }
+        }
     }
 
-	const themeControl = new L.Control.ThemeLayerSwitcher(themes, {
-	  position: 'topleft',
-	  defaultTheme: 'auto',
-	});
+    const themeControl = new L.Control.ThemeLayerSwitcher(themes, {
+        position: 'topleft',
+        defaultTheme: 'auto',
+    });
 
-	map.addControl(themeControl);
+    map.addControl(themeControl);
     map.on('zoomend', function(e) {
         if (curGeojsonId > -1) {
             fetch('geojson?gid=' + curGeojsonId + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
-              .then(response => response.json())
-              .then(function(data) {
-                curGeojson.remove();
-                curGeojson = getGeoJsonLayer(data);
-                curGeojson.addTo(map);
-              })
-              .catch(error => showError(genError));
+                .then(response => response.json())
+                .then(function(data) {
+                    curGeojson.remove();
+                    curGeojson = getGeoJsonLayer(data);
+                    curGeojson.addTo(map);
+                })
+                .catch(error => showError(genError));
         }
     });
 
-    if (layers.length > 0 && layers[0]['id'] in themes) themeControl.applyTheme(layers[0]['id']);
+    console.log(themes["custom"].overlays[0].layers.length);
+    if (themes["custom"].overlays[0].layers.length > 0 || themes["custom"].overlays[1].layers.length > 0) themeControl.applyTheme("custom");
     else _onLayerLoad();
 }
 
-function getOverlay(id, layer, autoThreshold) {
+function getLayer(id, layer, autoThreshold) {
     if (layer["style"] == "auto") {
         const autoHeatmapLayer = L.nonTiledLayer.wms('heatmap', {
             minZoom: 0,
@@ -211,105 +222,36 @@ function getOverlay(id, layer, autoThreshold) {
             format: 'image/png'
         });
 
-        autoHeatmapLayer.on('load', _onLayerLoad);
-        autoObjectLayer.on('load', _onLayerLoad);
-
-        const autoLayerGroup = L.layerGroup([autoHeatmapLayer, autoObjectLayer]);
-
-        return {
-            name: layer["name"],
-            overlays: [
-              {
-                name: "Style",
-                type: "radio",
-                layers: [
-                  { name: "Default", layer: autoLayerGroup },
-                ]
-              }
-            ]
-          };
+        return  { name: layer["name"], layer: L.layerGroup([autoHeatmapLayer, autoObjectLayer])};
     } else if (layer["style"] == "raster") {
-        let rasterLayers = [];
-
-        for (const s of rasterStyles) {
-            rasterLayers.push({
-                name: s,
-                layer: L.nonTiledLayer.wms('heatmap', {
-                    minZoom: 0,
-                    maxZoom: 19,
-                    opacity: 0.8,
-                    layers: id + "-" + layer["geomfield"],
-                    styles: ["raster-" + layer["rasterw"] + "x" + layer["rasterh"] + "-" + s],
-                    format: 'image/png',
-                    transparent: true,
-                })
-            });
-            rasterLayers[rasterLayers.length - 1].layer.on('load', _onLayerLoad);
-        }
-
-        return {
-            name: layer["name"],
-            overlays: [
-              {
-                name: "Style",
-                type: "radio",
-                layers:rasterLayers
-              }
-            ]
-          };
+        return  { name: layer["name"], layer: L.nonTiledLayer.wms('heatmap', {
+            minZoom: 0,
+            maxZoom: 19,
+            opacity: 0.8,
+            layers: id + "-" + layer["geomfield"],
+            styles: ["raster-" + layer["rasterw"] + "x" + layer["rasterh"] + "-" + "spectral"],
+            format: 'image/png',
+            transparent: true
+        })};
     } else if (layer["style"] == "heatmap") {
-        let heatmapLayers = [];
-
-        for (const s of heatmapStyles) {
-            heatmapLayers.push({
-                name: s,
-                layer: L.nonTiledLayer.wms('heatmap', {
-                    minZoom: 0,
-                    maxZoom: 19,
-                    opacity: 0.8,
-                    layers: id + "-" + layer["geomfield"],
-                    styles: ["heatmap-" + s],
-                    format: 'image/png',
-                    transparent: true,
-                })
-            });
-            heatmapLayers[heatmapLayers.length - 1].layer.on('load', _onLayerLoad);
-        }
-
-        return {
-            name: layer["name"],
-            overlays: [
-              {
-                name: "Style",
-                type: "radio",
-                layers: heatmapLayers
-              }
-            ]
-          };
+        return { name: layer["name"], layer: L.nonTiledLayer.wms('heatmap', {
+            minZoom: 0,
+            maxZoom: 19,
+            opacity: 0.8,
+            layers: id + "-" + layer["geomfield"],
+            styles: ["heatmap-" + "spectral"],
+            format: 'image/png',
+            transparent: true
+        }) };
     } else {
-        const objectLayer = L.nonTiledLayer.wms('heatmap', {
+        return { name: layer["name"], layer: L.nonTiledLayer.wms('heatmap', {
             minZoom: 0,
             maxZoom: 19,
             opacity: 0.9,
             layers: id + "-" + layer["geomfield"],
             styles: ["objects-" + layer["color"]],
             format: 'image/png'
-        });
-
-        objectLayer.on('load', _onLayerLoad);
-
-        return {
-            name: layer["name"],
-            overlays: [
-              {
-                name: "Style",
-                type: "radio",
-                layers: [
-                  { name: "Default", layer: objectLayer },
-                ]
-              }
-            ]
-          };
+        })};
     }
 
     return null;
@@ -356,45 +298,45 @@ function updateLoad(stage, percent, totalProgress, currentProgress) {
 function fetchResults() {
     fetch('query',
         {
-          method: "POST",
-          headers: {
-                  "Content-Type": "application/x-www-form-urlencoded"
-                },
-          body: new URLSearchParams(urlParams).toString()
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: new URLSearchParams(urlParams).toString()
         })
-    .then(response => {
-        if (!response.ok) return response.text().then(text => {throw new Error(text)});
-        return response;
+        .then(response => {
+            if (!response.ok) return response.text().then(text => {throw new Error(text)});
+            return response;
         })
-    .then(response => response.json())
-    .then(data => {
-        if (Object.keys(data["layers"]).length == 0) {
-            showError("No layers specified in config");
-            clearInterval(loadStatusIntervalId);
-        }
+        .then(response => response.json())
+        .then(data => {
+            if (Object.keys(data["layers"]).length == 0) {
+                showError("No layers specified in config");
+                clearInterval(loadStatusIntervalId);
+            }
 
-        loadLayers(data["qid"], data["bounds"], data["numobjects"], data["autothreshold"], data["layers"]);
+            loadLayers(data["qid"], data["bounds"], data["numobjects"], data["autothreshold"], data["layers"]);
 
-        let id = data["qid"];
+            let id = data["qid"];
 
-        map.on('click', function(e) {
-            const pos = L.Projection.SphericalMercator.project(e.latlng);
+            map.on('click', function(e) {
+                const pos = L.Projection.SphericalMercator.project(e.latlng);
 
-            const w = map.getPixelBounds().max.x - map.getPixelBounds().min.x;
-            const h = map.getPixelBounds().max.y - map.getPixelBounds().min.y;
+                const w = map.getPixelBounds().max.x - map.getPixelBounds().min.x;
+                const h = map.getPixelBounds().max.y - map.getPixelBounds().min.y;
 
-            const sw = L.Projection.SphericalMercator.project((map.getBounds().getSouthWest()));
-            const ne = L.Projection.SphericalMercator.project((map.getBounds().getNorthEast()));
+                const sw = L.Projection.SphericalMercator.project((map.getBounds().getSouthWest()));
+                const ne = L.Projection.SphericalMercator.project((map.getBounds().getNorthEast()));
 
-            const bounds = [sw.x, sw.y, ne.x, ne.y];
+                const bounds = [sw.x, sw.y, ne.x, ne.y];
 
-            fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=' + bounds.join(','))
-              .then(response => {
-                  if (!response.ok) return response.text().then(text => {throw new Error(text)});
-                  return response.json();
-                })
-              .then(data => openPopup(data))
-              .catch(error => showError(error));
+                fetch('pos?x=' + pos.x + "&y=" + pos.y + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())) + '&width=' + w + '&height=' + h + '&bbox=' + bounds.join(','))
+                    .then(response => {
+                        if (!response.ok) return response.text().then(text => {throw new Error(text)});
+                        return response.json();
+                    })
+                    .then(data => openPopup(data))
+                    .catch(error => showError(error));
             });
         })
         .catch(error => showError(error));
@@ -407,22 +349,22 @@ function fetchLoadStatusInterval(interval) {
 
 async function fetchLoadStatus() {
     fetch('loadstatus?backend=' + qleverBackend)
-    .then(response => {
-        if (!response.ok) return response.text().then(text => {throw new Error(text)});
-        return response;
-    })
-    .then(response => response.json())
-    .then(data => {
-        var stage = data["stage"];
-        var percent = parseFloat(data["percent"]).toFixed(2);
-        var totalProgress = data["totalProgress"].toLocaleString('en');
-        var currentProgress = data["currentProgress"].toLocaleString('en');
-        updateLoad(stage, percent, totalProgress, currentProgress);
-    })
-    .catch(error => {
-        showError(error);
-        clearInterval(loadStatusIntervalId);
-    });
+        .then(response => {
+            if (!response.ok) return response.text().then(text => {throw new Error(text)});
+            return response;
+        })
+        .then(response => response.json())
+        .then(data => {
+            var stage = data["stage"];
+            var percent = parseFloat(data["percent"]).toFixed(2);
+            var totalProgress = data["totalProgress"].toLocaleString('en');
+            var currentProgress = data["currentProgress"].toLocaleString('en');
+            updateLoad(stage, percent, totalProgress, currentProgress);
+        })
+        .catch(error => {
+            showError(error);
+            clearInterval(loadStatusIntervalId);
+        });
 }
 
 fetchResults();

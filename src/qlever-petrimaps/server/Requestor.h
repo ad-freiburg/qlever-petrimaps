@@ -26,6 +26,7 @@ struct FieldConfig {
   std::string id = "";
   std::string name = "";
   std::string valueField = "";
+  std::string toggle = "";
   double rasterW = 0;
   double rasterH = 0;
   std::string color = "3388ff";
@@ -43,7 +44,7 @@ struct RequestorConfig {
     for (const auto& field : fields)
       fieldsStr += field.geomField + "|" + field.valueField + "|" +
                    std::to_string(field.rasterW) + "|" +
-                   std::to_string(field.rasterH) + "|" + field.color + "|" + field.id + "|" + field.name + "|" + field.style + "|" + field.colorscheme;
+                   std::to_string(field.rasterH) + "|" + field.color + "|" + field.id + "|" + field.name + "|" + field.style + "|" + field.colorscheme + "|" + field.toggle;
     return std::to_string(hashF(query + fieldsStr));
   }
 };
