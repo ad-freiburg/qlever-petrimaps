@@ -61,7 +61,7 @@ add_subdirectory(src)
 
 # install target
 install(
-  TARGETS petrimaps DESTINATION bin
+  TARGETS qlever-petrimaps DESTINATION bin
   PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
               GROUP_READ GROUP_WRITE GROUP_EXECUTE
               WORLD_READ WORLD_EXECUTE
