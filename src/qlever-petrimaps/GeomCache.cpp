@@ -37,7 +37,7 @@ using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
 // change on each index-breaking change to the code base
-const static std::string INDEX_HASH_PREFIX = "_4_";
+const static std::string INDEX_HASH_PREFIX = "_5_";
 
 // Different SPAQRL queries to obtain the WKT geometries from an endpoint.
 // It depends on the endpoint which query is used, see `getQuery`.
@@ -1145,6 +1145,21 @@ std::string GeomCache::indexHashFromDisk(const std::string &fname) {
 }
 
 // _____________________________________________________________________________
+std::string GeomCache::fillQueryFromDisk(const std::string &fname) {
+  std::ifstream f(fname, std::ios::binary);
+  size_t fillQuerySize;
+  std::string fillQuery;
+
+  // skip hash
+  f.ignore(100);
+  f.read(reinterpret_cast<char *>(&fillQuerySize), sizeof(size_t));
+  fillQuery.resize(fillQuerySize);
+  f.read(reinterpret_cast<char *>(&fillQuery[0]), fillQuerySize);
+
+  return fillQuery;
+}
+
+// _____________________________________________________________________________
 void GeomCache::fromDisk(const std::string &fname) {
   _loadStatusStage = _LoadStatusStages::FromFile;
   _points.clear();
@@ -1158,6 +1173,15 @@ void GeomCache::fromDisk(const std::string &fname) {
   f.read(tmp, 100);
   tmp[99] = 0;
   _indexHash = util::trim(tmp);
+
+  LOG(INFO) << " Disk cache (" << fname << ") hash is " << _indexHash;
+  size_t fillQuerySize;
+  std::string fillQuery;
+  f.read(reinterpret_cast<char *>(&fillQuerySize), sizeof(size_t));
+  fillQuery.resize(fillQuerySize);
+  f.read(reinterpret_cast<char *>(&fillQuery[0]), fillQuerySize);
+
+  LOG(INFO) << " Disk cache (" << fname << ") fill query is " << fillQuery;
 
   size_t numPoints;
   size_t numLinePoints;
@@ -1246,6 +1270,11 @@ void GeomCache::serializeToDisk(const std::string &fname) const {
   assert(h.size() == 99);
   f.write(h.c_str(), 100);
 
+  // fill query
+  size_t fillQuerySize = _config.fillQuery.size();
+  f.write(reinterpret_cast<const char *>(&fillQuerySize), sizeof(size_t));
+  f.write(_config.fillQuery.c_str(), _config.fillQuery.size());
+
   size_t num = _points.size();
   f.write(reinterpret_cast<const char *>(&num), sizeof(size_t));
   f.write(reinterpret_cast<const char *>(&_points[0]),
@@ -1331,10 +1360,12 @@ std::string GeomCache::load(const std::string &cacheDir) {
     util::replaceAll(backend, "/", "#");
     std::string cacheFile = cacheDir + "/" + backend;
     auto indexHash = requestIndexHash();
+
     // if the hash size is 0, we could not obtain an index hash from
     // qlever. In this case, just assume they matched
     if (access(cacheFile.c_str(), F_OK) != -1 &&
-        (indexHash.size() == 0 || indexHash == indexHashFromDisk(cacheFile))) {
+        (indexHash.size() == 0 || indexHash == indexHashFromDisk(cacheFile)) &&
+        _config.fillQuery == fillQueryFromDisk(cacheFile)) {
       LOG(INFO) << "Reading from cache file " << cacheFile << "...";
       fromDisk(cacheFile);
       LOG(INFO) << "done ...";

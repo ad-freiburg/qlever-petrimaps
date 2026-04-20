@@ -10,12 +10,14 @@
 
 #include "3rdparty/json.hpp"
 #include "qlever-petrimaps/server/Server.h"
+#include "qlever-petrimaps/GeomCache.h"
 #include "util/Misc.h"
 #include "util/http/Server.h"
 #include "util/log/Log.h"
 
 using nlohmann::json;
 using petrimaps::Server;
+using petrimaps::GeomCache;
 using util::LogLevel::ERROR;
 using util::LogLevel::INFO;
 using util::LogLevel::WARN;
@@ -42,6 +44,15 @@ petrimaps::GeomCacheConfig cacheConfigFromDisk(const std::string& fname) {
   std::string url = util::split(fname, '/').back();
   util::replaceAll(url, "#", "/");
   auto canonized = petrimaps::canonizeURL(url);
+
+  auto fillQuery = GeomCache::fillQueryFromDisk(fname);
+
+  if (fillQuery.size() == 0) {
+    LOG(WARN) << "Empty fill query for index cache file " << fname
+              << ", using default";
+    fillQuery = petrimaps::getFillQuery(canonized);
+  }
+
   return {canonized, petrimaps::getFillQuery(canonized)};
 }
 
@@ -131,6 +142,7 @@ int main(int argc, char** argv) {
             auto cfg = cacheConfigFromDisk(fullpath);
             geomCacheConfigs[cfg.backend] = cfg;
             LOG(INFO) << "Configured backend " << cfg.backend;
+            LOG(INFO) << "  with fill query " << cfg.fillQuery;
           }
         }
       }

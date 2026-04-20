@@ -145,6 +145,9 @@ class GeomCache {
     return id + 1 < _lines.size() ? _lines[id + 1] : _linePoints.size();
   }
 
+  static std::string indexHashFromDisk(const std::string& fname);
+  static std::string fillQueryFromDisk(const std::string& fname);
+
   double getLoadStatusPercent(bool total);
   double getLoadStatusPercent() { return getLoadStatusPercent(false); };
   int getLoadStatusStage();
@@ -196,8 +199,6 @@ class GeomCache {
   void insertLine(const util::geo::DLine& l, bool isArea);
 
   static std::vector<size_t> getGeomStarts(const std::string& str, size_t a);
-
-  std::string indexHashFromDisk(const std::string& fname);
 
   static util::geo::DPoint projD(const util::geo::DPoint& p) {
     return util::geo::latLngToWebMerc<double>(p);
