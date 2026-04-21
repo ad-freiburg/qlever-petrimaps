@@ -11,7 +11,7 @@ include_directories(
 	${PNG_INCLUDE_DIRS}_
 )
 
-add_executable(petrimaps ${qlever_petrimaps_main})
+add_executable(qlever-petrimaps ${qlever_petrimaps_main})
 add_library(qlever_petrimaps_dep ${QLEVER_PETRIMAPS_SRC})
 
 add_custom_command(
@@ -46,4 +46,4 @@ add_custom_target(htmlfiles DEPENDS index.h example.h build.h style.h)
 
 add_dependencies(qlever_petrimaps_dep htmlfiles)
 
-target_link_libraries(petrimaps qlever_petrimaps_dep 3rdparty_dep pb_util pb_util_geo pb_util_json pb_util_http ${PNG_LIBRARIES} -lpthread -lcurl)
+target_link_libraries(qlever-petrimaps qlever_petrimaps_dep 3rdparty_dep pb_util pb_util_geo pb_util_json pb_util_http ${PNG_LIBRARIES} -lpthread -lcurl)

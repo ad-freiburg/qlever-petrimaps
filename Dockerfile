@@ -18,7 +18,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /
 RUN apt update && apt install -y --no-install-recommends ca-certificates xxd libgomp1 libpng-dev libcurl4-gnutls-dev dumb-init && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /build/petrimaps /petrimaps
+COPY --from=builder /build/qlever-petrimaps /qlever-petrimaps
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
-CMD ["/petrimaps"]
+CMD ["/qlever-petrimaps"]
