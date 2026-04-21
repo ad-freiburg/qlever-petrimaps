@@ -34,7 +34,7 @@ via Docker:
 
 To start:
 
-    $ petrimaps [-p <port=9090>] [-m <memory limit] [-c <cache dir>]
+    $ qlever-petrimaps [-p <port=9090>] [-m <memory limit] [-c <cache dir>]
 
 Requests can be send via the `?query` get parameter.
 The QLever backend to use must be specified via the `?backend` get parameter.
