@@ -52,7 +52,9 @@ The QLever backend to use must be specified via the `?backend` get parameter.
 
 The tool caches query results and memory usage will thus slowly build up. There is a primitive memory limit which can be set via the `-m` parameter (in GB). By default, 90% of the available system memory are used.
 
-If a query runs out of memory, you can clear all existing caches by requesting
+Query results are evicted from the cache after `-t` minutes (default: 360).
+
+If a query still runs out of memory, you can clear all existing caches by requesting
 
     /clearsession
 

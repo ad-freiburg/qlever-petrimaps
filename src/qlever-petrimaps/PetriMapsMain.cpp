@@ -9,29 +9,31 @@
 #include <iostream>
 
 #include "3rdparty/json.hpp"
-#include "qlever-petrimaps/server/Server.h"
 #include "qlever-petrimaps/GeomCache.h"
+#include "qlever-petrimaps/server/Server.h"
 #include "util/Misc.h"
 #include "util/http/Server.h"
 #include "util/log/Log.h"
 
 using nlohmann::json;
-using petrimaps::Server;
 using petrimaps::GeomCache;
+using petrimaps::Server;
 using util::LogLevel::ERROR;
 using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
 // _____________________________________________________________________________
-void printHelp(int argc, char** argv) {
-  UNUSED(argc);
+void printHelp(int, char** argv) {
+  double maxMemoryGB =
+      (sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE) * 0.9) / 1000000000;
+
   std::cout << "Usage: " << argv[0]
             << " [-p <port>] [-m <maxmemory>] [-c <cachedir>] [--help] [-h]"
             << "\n";
   std::cout
       << "\nAllowed arguments:\n    -p <port>    Port for server to listen to "
          "(default: 9090)"
-      << "\n    -m <memory>  Max memory in GB (default: 90% of system RAM)"
+      << "\n    -m <memory>  Max memory in GB (default: " << maxMemoryGB << ")"
       << "\n    -c <dir>     cache dir (default: none)"
       << "\n    -x <token>   access token (default: none)"
       << "\n    -t <minutes> request cache lifetime (default: 360)"
@@ -148,6 +150,9 @@ int main(int argc, char** argv) {
       }
       closedir(dir);
     }
+
+    if (accessToken.size() == 0)
+      LOG(WARN) << "No access token (-x) specified, this is a security risk.";
 
     LOG(INFO) << "Starting server...";
     LOG(INFO) << "Max memory is " << maxMemoryGB << " GB...";

@@ -29,8 +29,6 @@ let map = L.map('m', {
 }).setView([47.9965, 7.8469], 13);
 map.attributionControl.setPrefix('University of Freiburg');
 
-// let layerControl = L.control.layers([], [], {collapsed:true, position: 'topleft'}).addTo(map);
-
 let osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a rel="noreferrer" target="_blank" href="#">OpenStreetMap</a>',
     maxZoom: 19,
@@ -152,13 +150,7 @@ function showError(err) {
     clearInterval(loadStatusIntervalId);
 }
 
-function loadLayers(id, bounds, numObjects, autoThreshold, layers) {
-    const ll = L.Projection.SphericalMercator.unproject({"x": bounds[0][0], "y":bounds[0][1]});
-    const ur =  L.Projection.SphericalMercator.unproject({"x": bounds[1][0], "y":bounds[1][1]});
-    const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
-    map.fitBounds(boundsLatLng);
-    sessionId = id;
-    document.getElementById("stats").innerHTML = "<span>Showing " + numObjects.toLocaleString('en') + (numObjects > 1 ? " objects" : " object") + "</span>";
+function loadLayers(id, numObjects, autoThreshold, layers) {
 
     let themes = {"custom" : {
         name: "Layers",
@@ -183,20 +175,7 @@ function loadLayers(id, bounds, numObjects, autoThreshold, layers) {
     });
 
     map.addControl(themeControl);
-    map.on('zoomend', function(e) {
-        if (curGeojsonId > -1) {
-            fetch('geojson?gid=' + curGeojsonId + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
-                .then(response => response.json())
-                .then(function(data) {
-                    curGeojson.remove();
-                    curGeojson = getGeoJsonLayer(data);
-                    curGeojson.addTo(map);
-                })
-                .catch(error => showError(genError));
-        }
-    });
 
-    console.log(themes["custom"].overlays[0].layers.length);
     if (themes["custom"].overlays[0].layers.length > 0 || themes["custom"].overlays[1].layers.length > 0) themeControl.applyTheme("custom");
     else _onLayerLoad();
 }
@@ -310,12 +289,22 @@ function fetchResults() {
         })
         .then(response => response.json())
         .then(data => {
-            if (Object.keys(data["layers"]).length == 0) {
+            if (data["layers"].length == 0) {
                 showError("No layers specified in config");
                 clearInterval(loadStatusIntervalId);
+            } else if (data["layers"].length == 1 && data["layers"][0].style == "auto") {
+				loadSimpleMap(data["qid"], data["numobjects"], data["autothreshold"], data["layers"][0]);
+            } else {
+                loadLayers(data["qid"], data["numobjects"], data["autothreshold"], data["layers"]);
             }
 
-            loadLayers(data["qid"], data["bounds"], data["numobjects"], data["autothreshold"], data["layers"]);
+			const ll = L.Projection.SphericalMercator.unproject({"x": data["bounds"][0][0], "y":data["bounds"][0][1]});
+			const ur =  L.Projection.SphericalMercator.unproject({"x": data["bounds"][1][0], "y":data["bounds"][1][1]});
+			const boundsLatLng = [[ll.lat, ll.lng], [ur.lat, ur.lng]];
+			map.fitBounds(boundsLatLng);
+			sessionId = data["qid"];
+
+			document.getElementById("stats").innerHTML = "<span>Showing " + data["numobjects"].toLocaleString('en') + (data["numobjects"] > 1 ? " objects" : " object") + "</span>";
 
             let id = data["qid"];
 
@@ -338,8 +327,129 @@ function fetchResults() {
                     .then(data => openPopup(data))
                     .catch(error => showError(error));
             });
+
+            map.on('zoomend', function(e) {
+                if (curGeojsonId > -1) {
+                    fetch('geojson?gid=' + curGeojsonId + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
+                        .then(response => response.json())
+                        .then(function(data) {
+                            curGeojson.remove();
+                            curGeojson = getGeoJsonLayer(data);
+                            curGeojson.addTo(map);
+                        })
+                        .catch(error => showError(genError));
+                }
+            });
         })
         .catch(error => showError(error));
+}
+
+function loadSimpleMap(id, numObjects, autoThreshold, layer) {
+  const heatmapStyles = ["spectralexp", "spectral", "RdYlGn", "RdYlGnexp", "RdYlBu","RdYlBuexp", "w2b", "b2w", "RdGy","RdGyexp","YlOrRd","YlOrRdexp","Blues","Bluesexp","Greens","Greensexp","Greys","Greysexp","Oranges","Orangesexp","Reds", "Redsexp"];
+	let heatmapLayers = [];
+
+    for (const s of heatmapStyles) {
+		heatmapLayers.push({
+			name: s,
+			layer: L.nonTiledLayer.wms('heatmap', {
+				minZoom: 0,
+				maxZoom: 19,
+				opacity: 0.8,
+				layers: id + "-" + layer["geomfield"],
+				styles: ["heatmap-" + s],
+				format: 'image/png',
+				transparent: true,
+			})
+		});
+    	heatmapLayers[heatmapLayers.length - 1].layer.on('load', _onLayerLoad);
+	}
+
+	const objectsLayer = L.nonTiledLayer.wms('heatmap', {
+        minZoom: 0,
+        maxZoom: 19,
+        opacity: 0.9,
+        layers: id + "-" + layer["geomfield"],
+        styles: ["objects-" + layer["color"]],
+        format: 'image/png'
+    });
+
+    const autoHeatmapLayer = L.nonTiledLayer.wms('heatmap', {
+        minZoom: 0,
+        maxZoom: 15,
+        opacity: numObjects > autoThreshold ? 0.8 : 0.9,
+        layers: id + "-" + layer["geomfield"],
+        styles: numObjects > autoThreshold ? ["heatmap-spectralexp"] : ["objects-" + layer["color"]],
+        format: 'image/png',
+        transparent: true,
+    });
+
+    const autoObjectLayer = L.nonTiledLayer.wms('heatmap', {
+        minZoom: 16,
+        maxZoom: 19,
+        opacity: 0.9,
+        layers: id + "-" + layer["geomfield"],
+        styles: ["objects-" + layer["color"]],
+        format: 'image/png'
+    });
+	const autoLayerGroup = L.layerGroup([autoHeatmapLayer, autoObjectLayer]);
+
+    objectsLayer.on('load', _onLayerLoad);
+    autoHeatmapLayer.on('load', _onLayerLoad);
+    autoObjectLayer.on('load', _onLayerLoad);
+
+	const themes = {
+	  auto: {
+		name: "Auto",
+		overlays: [
+		  {
+			name: "Style",
+			type: "radio",
+			layers: [
+			  { name: "Default", layer: autoLayerGroup },
+			]
+		  }
+		]
+	  },
+
+	  heatmap: {
+		name: "Heatmap",
+		overlays: [
+		  {
+			name: "Style",
+			type: "radio",
+			layers: heatmapLayers
+		  }
+		]
+	  },
+
+	  objects: {
+		name: "Objects",
+		overlays: [
+		  {
+			name: "Layers",
+			type: "checkbox",
+			layers: [
+			  { name: "default", layer: objectsLayer },
+			]
+		  }
+		]
+	  }
+    };
+
+	const themeControl = new L.Control.ThemeLayerSwitcher(themes, {
+	  position: 'topleft',
+	  defaultTheme: 'auto',
+	});
+
+	map.addControl(themeControl);
+
+	if (mode == "heatmap") {
+		themeControl.applyTheme("heatmap");
+	} else if (mode == "objects") {
+		themeControl.applyTheme("objects");
+	} else if (mode == "raster") {
+		themeControl.applyTheme("raster");
+	}
 }
 
 function fetchLoadStatusInterval(interval) {
