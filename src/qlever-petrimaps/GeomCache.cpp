@@ -73,24 +73,6 @@ const static std::string QUERY_WDTP625_SERVICE =
 
 // _____________________________________________________________________________
 const std::string &GeomCache::getFillQuery() const {
-  // Helper lambda that returns true if the backend name (the part after the
-  // final slash) starts with the given prefix.
-  // size_t backendPos = backendUrl.find_last_of('/');
-  // backendPos = backendPos != std::string::npos ? backendPos + 1 : 0;
-  // auto backendStartsWith = [&backendPos,
-  // &backendUrl](const std::string &prefix) {
-  // return backendUrl.find(prefix, backendPos) == backendPos;
-  // };
-
-  // // Return query depending on the backend name.
-  // if (backendStartsWith("wikidata") || backendStartsWith("dblp-plus")) {
-  // return QUERY_WDTP625;
-  // } else if (backendStartsWith("dblp")) {
-  // return QUERY_WDTP625_SERVICE;
-  // } else {
-  // return QUERY_ASWKT;
-  // }
-
   return _config.fillQuery;
 }
 

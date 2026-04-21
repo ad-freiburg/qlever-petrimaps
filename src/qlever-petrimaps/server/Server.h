@@ -47,15 +47,17 @@ class Server : public util::http::Handler {
                                     const HeaderParams& headerPars) const;
   util::http::Answer handleGeoJSONReq(const Params& pars) const;
   util::http::Answer handleClearSessReq(const Params& pars,
-                                    const HeaderParams& headerPars) const;
+                                        const HeaderParams& headerPars) const;
   util::http::Answer handlePosReq(const Params& pars) const;
   util::http::Answer handleLoadReq(const Params& pars) const;
 
   util::http::Answer handleExportReq(const Params& pars, int sock) const;
   util::http::Answer handleLoadStatusReq(const Params& pars) const;
 
-  void createCache(const GeomCacheConfig& cfg) const;
-  std::string loadCache(const GeomCacheConfig& cfg) const;
+  void createCache(const std::string& backend,
+                   const GeomCacheConfig& cfg) const;
+  std::string loadCache(const std::string& backend,
+                        const GeomCacheConfig& cfg) const;
 
   void clearSession(const std::string& id) const;
   void clearSessions() const;
@@ -67,8 +69,11 @@ class Server : public util::http::Handler {
   double getLoadStatusPercent() const;
 
   GeomCacheConfig getGeomCacheConfig(const std::string& backendUrl,
-                                     const std::string& access) const;
+                                     const std::string& access,
+                                     const std::string& configJson) const;
   RequestorConfig getRequestorCfgFromJSON(const std::string& json) const;
+  GeomCacheConfig getGeomCacheCfgFromJSON(const std::string& backend,
+                                          const std::string& json) const;
 
   static void pngWriteRowCb(png_structp png_ptr, png_uint_32 row, int pass);
   void writePNG(const unsigned char* data, size_t w, size_t h, int sock) const;

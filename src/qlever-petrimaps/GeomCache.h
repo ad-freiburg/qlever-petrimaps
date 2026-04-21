@@ -19,6 +19,7 @@
 
 #include "qlever-petrimaps/Misc.h"
 #include "util/geo/Geo.h"
+#include "util/log/Log.h"
 
 namespace petrimaps {
 
@@ -72,6 +73,14 @@ struct GeomCacheConfig {
     return ss.str();
   }
 };
+
+inline bool operator==(const GeomCacheConfig& l, const GeomCacheConfig& r) {
+  return l.backend == r.backend && l.fillQuery == r.fillQuery;
+}
+
+inline bool operator!=(const GeomCacheConfig& l, const GeomCacheConfig& r) {
+  return !(l == r);
+}
 
 class GeomCache {
  public:
@@ -140,6 +149,13 @@ class GeomCache {
   void fromDisk(const std::string& fname);
 
   size_t getLine(ID_TYPE id) const { return _lines[id]; }
+  bool setConfig(const GeomCacheConfig& cfg) {
+    if (_config.fillQuery != cfg.fillQuery) {
+      _config = cfg;
+      return true;
+    }
+    return false;
+  }
 
   size_t getLineEnd(ID_TYPE id) const {
     return id + 1 < _lines.size() ? _lines[id + 1] : _linePoints.size();

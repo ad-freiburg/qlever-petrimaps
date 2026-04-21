@@ -839,20 +839,23 @@ util::http::Answer Server::handleTouchReq(
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
 
+  const std::string& backend = pars.find("backend")->second;
+
   std::string accessToken;
   if (headerParams.count("Authorization") != 0 &&
       !headerParams.find("Authorization")->second.empty()) {
     accessToken = headerParams.find("Authorization")->second;
   }
 
-  if (accessToken != _accessToken)
-    throw std::invalid_argument("Invalid access token");
+  std::string configJson;
+  if (pars.find("cfg") != pars.end()) {
+    configJson = pars.find("cfg")->second;
+  }
 
-  auto backendCfg =
-      getGeomCacheConfig(pars.find("backend")->second, accessToken);
+  auto backendCfg = getGeomCacheConfig(backend, accessToken, configJson);
 
-  createCache(backendCfg);
-  std::shared_ptr<GeomCache> cache = _caches[backendCfg.backend];
+  createCache(backend, backendCfg);
+  std::shared_ptr<GeomCache> cache = _caches[backend];
 
   std::stringstream ss;
   ss << "{\"config\":";
@@ -958,12 +961,6 @@ util::http::Answer Server::handleQueryReq(
     }
   }
 
-  std::string accessToken;
-  if (headerParams.count("Authorization") != 0 &&
-      !headerParams.find("Authorization")->second.empty()) {
-    accessToken = headerParams.find("Authorization")->second;
-  }
-
   if (pars.count("cfg") != 0 && !pars.find("cfg")->second.empty()) {
     rcfg = getRequestorCfgFromJSON(pars.find("cfg")->second);
   }
@@ -975,17 +972,17 @@ util::http::Answer Server::handleQueryReq(
   if (rcfg.query.size() == 0)
     throw std::invalid_argument("No query specified.");
 
-  auto backendCfg =
-      getGeomCacheConfig(pars.find("backend")->second, accessToken);
+  const std::string& backend = pars.find("backend")->second;
 
-  LOG(INFO) << "[SERVER] Queried backend is " << backendCfg.backend;
+  auto backendCfg = getGeomCacheConfig(backend, "", "");
+
+  LOG(INFO) << "[SERVER] Queried backend is " << backend;
   LOG(INFO) << "[SERVER] Query is:\n" << rcfg.query;
 
-  createCache(backendCfg);
-  std::string indexHash = loadCache(backendCfg);
+  createCache(backend, backendCfg);
+  std::string indexHash = loadCache(backend, backendCfg);
 
-  std::string queryId =
-      backendCfg.backend + "$" + indexHash + "$" + rcfg.getHash();
+  std::string queryId = backend + "$" + indexHash + "$" + rcfg.getHash();
 
   std::shared_ptr<Requestor> reqor;
   std::string sessionId;
@@ -1056,7 +1053,8 @@ util::http::Answer Server::handleQueryReq(
     json << "\"name\":\"" << fld.name << "\",";
     json << "\"color\":\"" << fld.color << "\",";
     json << "\"colorscheme\":\"" << fld.colorscheme << "\",";
-    json << "\"numobjects\":\"" << reqor->getNumObjects(reqor->getLayerId(fld.geomField)) << "\",";
+    json << "\"numobjects\":\""
+         << reqor->getNumObjects(reqor->getLayerId(fld.geomField)) << "\",";
     json << "\"style\":\"" << fld.style << "\",";
     json << "\"toggle\":\"" << fld.toggle << "\"";
     if (fld.rasterW != 0 && fld.rasterH != 0)
@@ -1373,9 +1371,11 @@ util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
 
-  auto backendCfg = getGeomCacheConfig(pars.find("backend")->second, "");
+  const std::string& backend = pars.find("backend")->second;
 
-  createCache(backendCfg);
+  auto backendCfg = getGeomCacheConfig(backend, "", "");
+
+  createCache(backend, backendCfg);
   std::shared_ptr<GeomCache> cache = _caches[backendCfg.backend];
 
   // We have 3 loading stages:
@@ -1469,30 +1469,38 @@ double Server::getLoadStatusPercent() const {
 }
 
 // _____________________________________________________________________________
-void Server::createCache(const GeomCacheConfig& cfg) const {
+void Server::createCache(const std::string& backend,
+                         const GeomCacheConfig& cfg) const {
   std::shared_ptr<GeomCache> cache;
 
   {
     std::lock_guard<std::mutex> guard(_m);
-    if (_caches.count(cfg.backend)) {
-      cache = _caches[cfg.backend];
+    if (_caches.count(backend)) {
+      cache = _caches[backend];
+      // always set config
+      if (cache->setConfig(cfg)) {
+        LOG(INFO) << "Updating config for backend '" << backend
+                  << "', new fill query is:\n"
+                  << cfg.fillQuery;
+      }
     } else {
       cache = std::shared_ptr<GeomCache>(new GeomCache(cfg, _maxMemory));
-      _caches[cfg.backend] = cache;
+      _caches[backend] = cache;
     }
   }
 }
 
 // _____________________________________________________________________________
-std::string Server::loadCache(const GeomCacheConfig& cfg) const {
-  std::shared_ptr<GeomCache> cache = _caches[cfg.backend];
+std::string Server::loadCache(const std::string& backend,
+                              const GeomCacheConfig& cfg) const {
+  std::shared_ptr<GeomCache> cache = _caches[backend];
 
   try {
     return cache->load(_cacheDir);
   } catch (...) {
     std::lock_guard<std::mutex> guard(_m);
 
-    auto it = _caches.find(cfg.backend);
+    auto it = _caches.find(backend);
     if (it != _caches.end()) _caches.erase(it);
 
     throw;
@@ -1613,12 +1621,50 @@ RequestorConfig Server::getRequestorCfgFromJSON(
 }
 
 // _____________________________________________________________________________
+GeomCacheConfig Server::getGeomCacheCfgFromJSON(
+    const std::string& backend, const std::string& jsonStr) const {
+  GeomCacheConfig ret;
+
+  try {
+    nlohmann::json data = nlohmann::json::parse(jsonStr);
+
+    if (data.is_object()) {
+      for (const auto& i : data.items()) {
+        if (i.key() == "fillQuery") {
+          ret.fillQuery = i.value().get<std::string>();
+        }
+      }
+    }
+  } catch (const std::runtime_error& e) {
+    LOG(ERROR) << "[SERVER] " << e.what();
+  }
+
+  ret.backend = backend;
+
+  return ret;
+}
+// _____________________________________________________________________________
 GeomCacheConfig Server::getGeomCacheConfig(
-    const std::string& backendUrl, const std::string& accessToken) const {
+    const std::string& backendUrl, const std::string& accessToken,
+    const std::string& configJson) const {
   auto canonizedBackend = canonizeURL(backendUrl);
 
+  std::lock_guard<std::mutex> guard(_m);
+
   auto cfg = _cacheConfigs.find(canonizedBackend);
-  if (cfg != _cacheConfigs.end()) return cfg->second;
+  if (cfg != _cacheConfigs.end()) {
+    if (configJson.size()) {
+      // always update, is no-op if already set
+      auto backendCfg = getGeomCacheCfgFromJSON(canonizedBackend, configJson);
+      if (_cacheConfigs[canonizedBackend] != backendCfg) {
+        if (accessToken != _accessToken)
+          throw std::invalid_argument("Invalid access token");
+        _cacheConfigs[canonizedBackend] = backendCfg;
+      }
+    }
+
+    return cfg->second;
+  }
 
   if (accessToken != _accessToken) {
     std::stringstream ss;
@@ -1626,8 +1672,10 @@ GeomCacheConfig Server::getGeomCacheConfig(
     throw std::runtime_error(ss.str());
   }
 
-  {
-    std::lock_guard<std::mutex> guard(_m);
+  if (configJson.size()) {
+    _cacheConfigs[canonizedBackend] =
+        getGeomCacheCfgFromJSON(canonizedBackend, configJson);
+  } else {
     _cacheConfigs[canonizedBackend] = {
         canonizedBackend, petrimaps::getFillQuery(canonizedBackend)};
   }
