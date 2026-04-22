@@ -1,7 +1,7 @@
 L.Control.ThemeLayerSwitcher = L.Control.extend({
   options: {
     position: 'topright',
-    collapsed: true,
+    collapsed: false,
     defaultTheme: null
   },
 
@@ -63,11 +63,11 @@ L.Control.ThemeLayerSwitcher = L.Control.extend({
       this.options.defaultTheme || Object.keys(this.themes)[0];
     this.applyTheme(initial);
 
-    this._initToggleBehavior();
-    this._initHoverBehavior();
-
     if (!this.options.collapsed) {
       this._expand();
+    } else {
+      this._initToggleBehavior();
+      this._initHoverBehavior();
     }
 
     return container;
@@ -82,12 +82,6 @@ L.Control.ThemeLayerSwitcher = L.Control.extend({
 
 	this._map.on('click', this._collapse, this);
   },
-
-	_initHoverBehavior: function () {
-	  L.DomEvent
-		.on(this._toggleButton, 'mouseenter', this._expand, this)
-		.on(this._container, 'mouseleave', this._collapse, this);
-	},
 
   _toggle: function () {
     if (L.DomUtil.hasClass(this._container, 'leaflet-control-layers-expanded')) {

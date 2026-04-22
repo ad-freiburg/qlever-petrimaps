@@ -44,7 +44,9 @@ struct RequestorConfig {
     for (const auto& field : fields)
       fieldsStr += field.geomField + "|" + field.valueField + "|" +
                    std::to_string(field.rasterW) + "|" +
-                   std::to_string(field.rasterH) + "|" + field.color + "|" + field.id + "|" + field.name + "|" + field.style + "|" + field.colorscheme + "|" + field.toggle;
+                   std::to_string(field.rasterH) + "|" + field.color + "|" +
+                   field.id + "|" + field.name + "|" + field.style + "|" +
+                   field.colorscheme + "|" + field.toggle;
     return std::to_string(hashF(query + fieldsStr));
   }
 };
@@ -52,6 +54,7 @@ struct RequestorConfig {
 struct ResObj {
   bool has;
   size_t id;
+  size_t fieldId;
   util::geo::DPoint pos;
   std::vector<std::pair<std::string, std::string>> cols;
 
@@ -94,7 +97,8 @@ class Requestor {
       }
     }
 
-    LOG(util::LogLevel::INFO) << "[REQUESTOR] " << _geomColumns.size() << " geom columns";
+    LOG(util::LogLevel::INFO)
+        << "[REQUESTOR] " << _geomColumns.size() << " geom columns";
 
     for (size_t i = 0; i < _geomColumns.size(); i++) {
       _geoColToLid[_geomColumns[i]] = i;
@@ -111,40 +115,40 @@ class Requestor {
           void(std::vector<std::vector<std::pair<std::string, std::string>>>)>
           cb) const;
 
-  const petrimaps::Grid<ID_TYPE, float>& getPointGrid(size_t layerId) const {
-    return _pgrid[layerId];
+  const petrimaps::Grid<ID_TYPE, float>& getPointGrid(size_t fieldId) const {
+    return _pgrid[fieldId];
   }
 
-  const petrimaps::Grid<ID_TYPE, float>& getLineGrid(size_t layerId) const {
-    return _lgrid[layerId];
+  const petrimaps::Grid<ID_TYPE, float>& getLineGrid(size_t fieldId) const {
+    return _lgrid[fieldId];
   }
 
   const petrimaps::Grid<util::geo::Point<uint8_t>, float>& getLinePointGrid(
-      size_t layerId) const {
-    return _lpgrid[layerId];
+      size_t fieldId) const {
+    return _lpgrid[fieldId];
   }
 
   const std::vector<std::pair<ID_TYPE, ID_TYPE>>& getObjects(
-      size_t layerId) const {
-    return _objects[layerId];
+      size_t fieldId) const {
+    return _objects[fieldId];
   }
 
   const std::vector<std::pair<util::geo::FPoint, ID_TYPE>>& getDynamicPoints(
-      size_t layerId) const {
-    return _dynamicPoints[layerId];
+      size_t fieldId) const {
+    return _dynamicPoints[fieldId];
   }
 
   const std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>& getClusters(
-      size_t layerId) const {
-    return _clusterObjects[layerId];
+      size_t fieldId) const {
+    return _clusterObjects[fieldId];
   }
 
   const util::geo::FPoint& getPoint(ID_TYPE id) const {
     return _cache->getPoints()[id];
   }
 
-  const util::geo::FPoint& getDPoint(size_t layerId, ID_TYPE id) const {
-    return _dynamicPoints[layerId][id].first;
+  const util::geo::FPoint& getDPoint(size_t fieldId, ID_TYPE id) const {
+    return _dynamicPoints[fieldId][id].first;
   }
 
   size_t getLine(ID_TYPE id) const { return _cache->getLine(id); }
@@ -180,23 +184,24 @@ class Requestor {
 
   size_t getNumObjects() const {
     size_t ret = 0;
-    for (size_t lid = 0; lid < _numObjects.size(); lid++) ret += _numObjects[lid];
+    for (size_t lid = 0; lid < _numObjects.size(); lid++)
+      ret += _numObjects[lid];
 
     return ret;
   }
   size_t getNumObjects(size_t lid) const { return _numObjects[lid]; }
-  util::geo::DPoint clusterGeom(size_t layerId, size_t cid, double res) const;
+  util::geo::DPoint clusterGeom(size_t fieldId, size_t cid, double res) const;
 
   std::vector<std::string> getColumns(std::string query) const;
 
   double getVal(size_t lid, size_t oid) const;
 
-  size_t getLayerId(const std::string& layer) {
-    auto it = _geoColToLid.find(layer);
-    if (it == _geoColToLid.end()) throw std::runtime_error("Layer not found");
+  size_t getFieldId(const std::string& field) {
+    auto it = _geoColToLid.find(field);
+    if (it == _geoColToLid.end()) throw std::runtime_error("Field not found");
     return it->second;
   }
-  size_t getNumLayers() const { return _pgrid.size(); }
+  size_t getNumFields() const { return _pgrid.size(); }
   bool lineIntersects(size_t lid, const util::geo::DBox& bbox) const;
 
   const std::vector<FieldConfig> getFields() const { return _rcfg.fields; }

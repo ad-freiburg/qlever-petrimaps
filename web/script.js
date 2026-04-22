@@ -1,6 +1,7 @@
 let sessionId;
 let curGeojson;
 let curGeojsonId = -1;
+let curGeojsonLayer = "";
 
 let urlParams = window.postParams;
 console.log(urlParams);
@@ -114,6 +115,7 @@ function openPopup(data) {
 
         curGeojson = getGeoJsonLayer(data[0].geom);
         curGeojsonId = data[0].id;
+        curGeojsonLayer = data[0].geomfield;
         curGeojson.addTo(map);
     }
 }
@@ -306,6 +308,8 @@ function fetchResults() {
 
 			document.getElementById("stats").innerHTML = "<span>Showing " + data["numobjects"].toLocaleString('en') + (data["numobjects"] > 1 ? " objects" : " object") + "</span>";
 
+			console.log(data);
+
             let id = data["qid"];
 
             map.on('click', function(e) {
@@ -330,7 +334,7 @@ function fetchResults() {
 
             map.on('zoomend', function(e) {
                 if (curGeojsonId > -1) {
-                    fetch('geojson?gid=' + curGeojsonId + "&id=" + id + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
+                    fetch('geojson?gid=' + curGeojsonId + "&id=" + id + "&layer=" + curGeojsonLayer + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
                         .then(response => response.json())
                         .then(function(data) {
                             curGeojson.remove();

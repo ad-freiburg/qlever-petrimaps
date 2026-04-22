@@ -287,7 +287,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   double res = mercH / h;
 
-  size_t lid = r->getLayerId(layer);
+  size_t lid = r->getFieldId(layer);
 
   checkMem(sizeof(float) * w * h, _maxMemory);
   heatmap_t* hm = heatmap_new(w, h);
@@ -656,7 +656,7 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
   if (!reqor->ready()) {
     throw std::invalid_argument("Session not ready.");
   }
-  size_t lid = reqor->getLayerId(layer);
+  size_t lid = reqor->getFieldId(layer);
 
   // as soon as we are ready, the reqor can be read concurrently
   auto res = reqor->getGeom(lid, gid, rad);
@@ -777,6 +777,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
 
   if (res.has) {
     json << "{\"id\" :" << res.id;
+    json << ",\"geomfield\" :\"" << reqor->getFields()[res.fieldId].geomField << "\"";
     json << ",\"attrs\" : [";
 
     bool first = true;
@@ -1022,7 +1023,7 @@ util::http::Answer Server::handleQueryReq(
 
   util::geo::FBox bbox;
 
-  for (size_t lid = 0; lid < reqor->getNumLayers(); lid++) {
+  for (size_t lid = 0; lid < reqor->getNumFields(); lid++) {
     bbox = extendBox(reqor->getPointGrid(lid).getBBox(), bbox);
     bbox = extendBox(reqor->getLineGrid(lid).getBBox(), bbox);
   }
@@ -1054,7 +1055,7 @@ util::http::Answer Server::handleQueryReq(
     json << "\"color\":\"" << fld.color << "\",";
     json << "\"colorscheme\":\"" << fld.colorscheme << "\",";
     json << "\"numobjects\":\""
-         << reqor->getNumObjects(reqor->getLayerId(fld.geomField)) << "\",";
+         << reqor->getNumObjects(reqor->getFieldId(fld.geomField)) << "\",";
     json << "\"style\":\"" << fld.style << "\",";
     json << "\"toggle\":\"" << fld.toggle << "\"";
     if (fld.rasterW != 0 && fld.rasterH != 0)
