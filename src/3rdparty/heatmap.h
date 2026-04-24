@@ -79,6 +79,7 @@ void heatmap_add_point_with_stamp(heatmap_t* h, unsigned x, unsigned y, const he
 void heatmap_add_weighted_point(heatmap_t* h, unsigned x, unsigned y, float w);
 /* Adds a single weighted point to the heatmap using a given stamp. */
 void heatmap_add_weighted_point_with_stamp(heatmap_t* h, unsigned x, unsigned y, float w, const heatmap_stamp_t* stamp);
+void heatmap_add_weighted_point_with_stamp_no_aggreg(heatmap_t* h, unsigned x, unsigned y, float w, const heatmap_stamp_t* stamp);
 
 /* Renders an image of the heatmap into the given colorbuf.
  *
@@ -163,6 +164,8 @@ heatmap_colorscheme_t* heatmap_colorscheme_load(const unsigned char* colors, siz
 
 /* Frees up all memory taken by the colorscheme. */
 void heatmap_colorscheme_free(heatmap_colorscheme_t* cs);
+
+heatmap_stamp_t* heatmap_stamp_new_with(unsigned w, unsigned h, float* data);
 
 extern const heatmap_colorscheme_t* heatmap_cs_default;
 

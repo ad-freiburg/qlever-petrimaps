@@ -34,12 +34,17 @@ via Docker:
 
 To start:
 
-    $ qlever-petrimaps [-p <port=9090>] [-m <memory limit] [-c <cache dir>]
+    $ qlever-petrimaps [-p <port=9090>] [-m <memory limit] [-c <cache dir>] [-x <access token>]
 
 Requests can be send via the `?query` get parameter.
 The QLever backend to use must be specified via the `?backend` get parameter.
+If an access token was given, and if no cache existed for the requested backend, the backend must first be created by calling
 
-**IMPORTANT**: the tool currently expects the geometry to be the last selected column.
+    /touch?backend=<backend>
+
+with the value of the `Authorization` header set to `<access token>`. Optionally, a parameter `cfg` can be set to a JSON dict containing a backend config. Currently, the only config field supported is `fillQuery`, which can be set to the query used to fill the geometry cache for that backend. The query must return a list of all geometries. If no config is given, a default fill query will be used.
+
+**IMPORTANT**: by default, the tool currently expects the geometry to be the last selected column.
 
     PREFIX geo: <http://www.opengis.net/ont/geosparql#>
     PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>
@@ -48,11 +53,19 @@ The QLever backend to use must be specified via the `?backend` get parameter.
       ?osm_id geo:hasGeometry ?geometry .
     }
 
+To use other columns, they must be configured during query time. See the example integration page below for how to use different layers.
+
+## Example integration page
+
+After start, an example integration page can be found at `/example`
+
 ## Cache + Memory Management
 
 The tool caches query results and memory usage will thus slowly build up. There is a primitive memory limit which can be set via the `-m` parameter (in GB). By default, 90% of the available system memory are used.
 
-If a query runs out of memory, you can clear all existing caches by requesting
+Query results are evicted from the cache after `-t` minutes (default: 360).
+
+If a query still runs out of memory, you can clear all existing caches by requesting
 
     /clearsession
 

@@ -12,13 +12,28 @@
 #include <locale>
 #include <memory>
 #include <random>
+#include <regex>
 #include <set>
+#include <string>
 #include <unordered_set>
 #include <vector>
 
 #include "3rdparty/heatmap.h"
+#include "3rdparty/colorschemes/Blues.h"
+#include "3rdparty/colorschemes/Greens.h"
+#include "3rdparty/colorschemes/Greys.h"
+#include "3rdparty/colorschemes/Oranges.h"
+#include "3rdparty/colorschemes/Purples.h"
+#include "3rdparty/colorschemes/RdGy.h"
+#include "3rdparty/colorschemes/RdYlBu.h"
+#include "3rdparty/colorschemes/RdYlGn.h"
+#include "3rdparty/colorschemes/Reds.h"
 #include "3rdparty/colorschemes/Spectral.h"
+#include "3rdparty/colorschemes/YlOrRd.h"
+#include "3rdparty/colorschemes/gray.h"
+#include "3rdparty/json.hpp"
 #include "qlever-petrimaps/build.h"
+#include "qlever-petrimaps/example.h"
 #include "qlever-petrimaps/index.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "qlever-petrimaps/server/Server.h"
@@ -35,7 +50,10 @@
 #define omp_get_thread_num() 0
 #endif
 
+using nlohmann::json;
+using petrimaps::GeomCacheConfig;
 using petrimaps::Params;
+using petrimaps::RequestorConfig;
 using petrimaps::Server;
 using util::geo::contains;
 using util::geo::densify;
@@ -52,11 +70,15 @@ static std::atomic<size_t> _curRow;
 
 // _____________________________________________________________________________
 Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime,
-               size_t autoThreshold)
+               size_t autoThreshold,
+               std::map<std::string, GeomCacheConfig> cacheConfigs,
+               const std::string& accessToken)
     : _maxMemory(maxMemory),
       _cacheDir(cacheDir),
       _cacheLifetime(cacheLifetime),
-      _autoThreshold(autoThreshold) {
+      _autoThreshold(autoThreshold),
+      _cacheConfigs(cacheConfigs),
+      _accessToken(accessToken) {
   std::thread t(&Server::clearOldSessions, this);
   t.detach();
 }
@@ -74,21 +96,19 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
     auto cmd = parseUrl(req.url, req.payload, &params);
 
     if (cmd == "/") {
-      a = util::http::Answer(
-          "200 OK",
-          std::string(index_html,
-                      index_html + sizeof index_html / sizeof index_html[0]));
-      a.params["Content-Type"] = "text/html; charset=utf-8";
+      a = handleIndexReq(params);
+    } else if (cmd == "/example") {
+      a = handleExamplePageReq(params);
+    } else if (cmd == "/touch") {
+      a = handleTouchReq(params, req.params);
     } else if (cmd == "/query") {
-      a = handleQueryReq(params);
+      a = handleQueryReq(params, req.params);
     } else if (cmd == "/geojson") {
       a = handleGeoJSONReq(params);
     } else if (cmd == "/clearsession") {
-      a = handleClearSessReq(params);
+      a = handleClearSessReq(params, req.params);
     } else if (cmd == "/clearsessions") {
-      a = handleClearSessReq(params);
-    } else if (cmd == "/load") {
-      a = handleLoadReq(params);
+      a = handleClearSessReq(params, req.params);
     } else if (cmd == "/pos") {
       a = handlePosReq(params);
     } else if (cmd == "/export") {
@@ -118,6 +138,9 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
     LOG(ERROR) << e.what();
   } catch (const std::invalid_argument& e) {
     a = util::http::Answer("400 Bad Request", e.what());
+    LOG(ERROR) << e.what();
+  } catch (const OutOfMemoryError& e) {
+    a = util::http::Answer("507 Insufficient Storage", e.what());
     LOG(ERROR) << e.what();
   } catch (const std::exception& e) {
     a = util::http::Answer("500 Internal Server Error", e.what());
@@ -150,12 +173,85 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   auto box = util::split(pars.find("bbox")->second, ',');
 
   if (pars.count("layers") == 0 || pars.find("layers")->second.empty())
-    throw std::invalid_argument("No bbox specified.");
-  std::string id = pars.find("layers")->second;
+    throw std::invalid_argument("No layer specified.");
+  std::string layers = pars.find("layers")->second;
+
+  std::string id;
+  std::string field;
+
+  auto parts = util::split(layers, '-');
+  if (parts.size()) id = parts[0];
+  if (parts.size() > 1) field = parts[1];
 
   MapStyle style = HEATMAP;
+  auto colorScheme = heatmap_cs_Spectral_mixed_exp;
+  double rasterWidth = 10;
+  double rasterHeight = 10;
+
+  int objColorR = 0, objColorG = 0, objColorB = 0;
+
   if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
-    if (pars.find("styles")->second == "objects") style = OBJECTS;
+    auto parts = util::split(pars.find("styles")->second, '-');
+
+    if (parts[0] == "objects") style = OBJECTS;
+    if (parts[0] == "raster") style = RASTER;
+
+    if (style == RASTER && parts.size() > 1) {
+      // in web mercator units (pseudometers)!
+      auto xy = util::split(parts[1], 'x');
+      if (xy.size() > 1) {
+        rasterWidth = ::atof(xy[0].c_str());
+        rasterHeight = ::atof(xy[1].c_str());
+      }
+    }
+
+    if (style == OBJECTS && parts.size() > 1) {
+      if (parts[1].size() == 6) {
+        objColorR = hexToInt(parts[1][0]) * 16 + hexToInt(parts[1][1]);
+        objColorG = hexToInt(parts[1][2]) * 16 + hexToInt(parts[1][3]);
+        objColorB = hexToInt(parts[1][4]) * 16 + hexToInt(parts[1][5]);
+      }
+    }
+
+    if (style == HEATMAP && parts.size() > 1) {
+      if (parts[1] == "spectralexp")
+        colorScheme = heatmap_cs_Spectral_mixed_exp;
+      if (parts[1] == "spectral") colorScheme = heatmap_cs_Spectral_mixed;
+      if (parts[1] == "RdYlGn") colorScheme = heatmap_cs_RdYlGn_mixed;
+      if (parts[1] == "RdYlGnexp") colorScheme = heatmap_cs_RdYlGn_mixed_exp;
+      if (parts[1] == "w2b") colorScheme = heatmap_cs_w2b_opaque;
+      if (parts[1] == "b2w") colorScheme = heatmap_cs_b2w_opaque;
+      if (parts[1] == "RdYlBu") colorScheme = heatmap_cs_RdYlBu_mixed;
+      if (parts[1] == "RdGy") colorScheme = heatmap_cs_RdGy_mixed;
+      if (parts[1] == "YlOrRd") colorScheme = heatmap_cs_YlOrRd_mixed;
+      if (parts[1] == "Blues") colorScheme = heatmap_cs_Blues_mixed;
+      if (parts[1] == "Greens") colorScheme = heatmap_cs_Greens_mixed;
+      if (parts[1] == "Greys") colorScheme = heatmap_cs_Greys_mixed;
+      if (parts[1] == "Oranges") colorScheme = heatmap_cs_Oranges_mixed;
+      if (parts[1] == "Reds") colorScheme = heatmap_cs_Reds_mixed;
+
+      if (parts[1] == "RdYlBuexp") colorScheme = heatmap_cs_RdYlBu_mixed_exp;
+      if (parts[1] == "RdGyexp") colorScheme = heatmap_cs_RdGy_mixed_exp;
+      if (parts[1] == "YlOrRdexp") colorScheme = heatmap_cs_YlOrRd_mixed_exp;
+      if (parts[1] == "Bluesexp") colorScheme = heatmap_cs_Blues_mixed_exp;
+      if (parts[1] == "Greensexp") colorScheme = heatmap_cs_Greens_mixed_exp;
+      if (parts[1] == "Greysexp") colorScheme = heatmap_cs_Greys_mixed_exp;
+      if (parts[1] == "Orangesexp") colorScheme = heatmap_cs_Oranges_mixed_exp;
+      if (parts[1] == "Redsexp") colorScheme = heatmap_cs_Reds_mixed_exp;
+    }
+
+    if (style == RASTER && parts.size() > 2) {
+      if (parts[2] == "spectral") colorScheme = heatmap_cs_Spectral_discrete;
+      if (parts[2] == "RdYlGn") colorScheme = heatmap_cs_RdYlGn_discrete;
+      if (parts[2] == "RdYlBu") colorScheme = heatmap_cs_RdYlBu_discrete;
+      if (parts[2] == "RdGy") colorScheme = heatmap_cs_RdGy_discrete;
+      if (parts[2] == "YlOrRd") colorScheme = heatmap_cs_YlOrRd_discrete;
+      if (parts[2] == "Blues") colorScheme = heatmap_cs_Blues_discrete;
+      if (parts[2] == "Greens") colorScheme = heatmap_cs_Greens_discrete;
+      if (parts[2] == "Greys") colorScheme = heatmap_cs_Greys_discrete;
+      if (parts[2] == "Oranges") colorScheme = heatmap_cs_Oranges_discrete;
+      if (parts[2] == "Reds") colorScheme = heatmap_cs_Reds_discrete;
+    }
   }
 
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
@@ -186,11 +282,18 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   int w = atoi(pars.find("width")->second.c_str());
   int h = atoi(pars.find("height")->second.c_str());
 
+  if (w < 0 || w > 3000) throw std::invalid_argument("Invalid request");
+  if (h < 0 || h > 3000) throw std::invalid_argument("Invalid request");
+
   double res = mercH / h;
 
-  heatmap_t* hm = heatmap_new(w, h);
+  size_t fid = r->getFieldId(field);
 
-  double realCellSize = r->getPointGrid().getCellWidth();
+  checkMem(sizeof(float) * w * h, _maxMemory);
+  heatmap_t* hm = heatmap_new(w, h);
+  hm->max = r->getValRange().second;
+
+  double realCellSize = r->getPointGrid(fid).getCellWidth();
   double virtCellSize = res * 2.5;
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
@@ -201,33 +304,35 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   LOG(INFO) << "[SERVER] Virt cell size: " << virtCellSize;
   LOG(INFO) << "[SERVER] Num virt cells: " << subCellSize * subCellSize;
 
+  checkMem(sizeof(unsigned char) * w * h * 4, _maxMemory);
   std::vector<unsigned char> image(w * h * 4);
 
   std::vector<std::vector<uint32_t>> points(NUM_THREADS);
   std::vector<std::vector<double>> points2(NUM_THREADS);
 
   // initialize vectors to 0
+  checkMem(sizeof(unsigned char) * w * h * 4, _maxMemory);
   for (size_t i = 0; i < NUM_THREADS; i++) points2[i].resize(w * h, 0);
 
   // POINTS
-  if (intersects(r->getPointGrid().getBBox(), fbbox)) {
+  if (intersects(r->getPointGrid(fid).getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display points...";
     if (res < THRESHOLD) {
       std::vector<ID_TYPE> ret;
 
       // duplicates are not possible with points
-      r->getPointGrid().get(fbbox, &ret);
+      r->getPointGrid(fid).get(fbbox, &ret);
 
       for (size_t j = 0; j < ret.size(); j++) {
         size_t i = ret[j];
 
-        const auto& objs = r->getObjects();
-        const auto& dynPoints = r->getDynamicPoints();
+        const auto& objs = r->getObjects(fid);
+        const auto& dynPoints = r->getDynamicPoints(fid);
 
         if (i >= objs.size() + dynPoints.size() && style == OBJECTS) {
           size_t cid = i - objs.size() - dynPoints.size();
           FPoint p;
-          size_t oid = r->getClusters()[cid].first;
+          size_t oid = r->getClusters(fid)[cid].first;
 
           if (oid >= objs.size())
             p = dynPoints[oid - objs.size()].first;
@@ -236,7 +341,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
           if (!contains(p, fbbox)) continue;
 
-          const auto& cp = r->clusterGeom(cid, res);
+          const auto& cp = r->clusterGeom(fid, cid, res);
 
           int px = ((cp.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int py = h - ((cp.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
@@ -244,39 +349,39 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           int ppx = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int ppy = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-          drawPoint(points[0], points2[0], px, py, w, h, style, 1);
+          drawPoint(points[0], points2[0], px, py, w, h, style,
+                    r->getVal(fid, oid));
           drawLine(image.data(), ppx, ppy, px, py, w, h);
         } else {
           if (i >= objs.size() + dynPoints.size())
-            i = r->getClusters()[i - objs.size() - dynPoints.size()].first;
+            i = r->getClusters(fid)[i - objs.size() - dynPoints.size()].first;
 
           FPoint p;
           if (i < objs.size())
             p = r->getPoint(objs[i].first);
           else
-            p = r->getDPoint(i - objs.size());
+            p = r->getDPoint(fid, i - objs.size());
 
           if (!contains(p, fbbox)) continue;
 
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
-          drawPoint(points[0], points2[0], px, py, w, h, style, 1);
+          drawPoint(points[0], points2[0], px, py, w, h, style,
+                    r->getVal(fid, i));
         }
       }
     } else {
       // they intersect, we checked this above
-      auto iBox = intersection(r->getPointGrid().getBBox(), fbbox);
-      const auto& grid = r->getPointGrid();
+      auto iBox = intersection(r->getPointGrid(fid).getBBox(), fbbox);
+      const auto& grid = r->getPointGrid(fid);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t x = grid.getCellXFromX(iBox.getLowerLeft().getX());
            x <= grid.getCellXFromX(iBox.getUpperRight().getX()); x++) {
         for (size_t y = grid.getCellYFromY(iBox.getLowerLeft().getY());
              y <= grid.getCellYFromY(iBox.getUpperRight().getY()); y++) {
-          if (x >= grid.getXWidth() || y >= grid.getYHeight()) {
-            continue;
-          }
+          if (x >= grid.getXWidth() || y >= grid.getYHeight()) continue;
 
           auto cell = grid.getCell(x, y);
           if (!cell || cell->size() == 0) continue;
@@ -298,23 +403,25 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                       cell->size());
           } else {
             for (auto i : *cell) {
-              if (i >= r->getObjects().size() + r->getDynamicPoints().size()) {
-                i = r->getClusters()[i - r->getObjects().size() -
-                                     r->getDynamicPoints().size()]
+              if (i >=
+                  r->getObjects(fid).size() + r->getDynamicPoints(fid).size()) {
+                i = r->getClusters(fid)[i - r->getObjects(fid).size() -
+                                        r->getDynamicPoints(fid).size()]
                         .first;
               }
 
               FPoint p;
-              if (i < r->getObjects().size())
-                p = r->getPoint(r->getObjects()[i].first);
+              if (i < r->getObjects(fid).size())
+                p = r->getPoint(r->getObjects(fid)[i].first);
               else
-                p = r->getDPoint(i - r->getObjects().size());
+                p = r->getDPoint(fid, i - r->getObjects(fid).size());
 
               int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
               int py =
                   h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
               drawPoint(points[omp_get_thread_num()],
-                        points2[omp_get_thread_num()], px, py, w, h, style, 1);
+                        points2[omp_get_thread_num()], px, py, w, h, style,
+                        r->getVal(fid, i));
             }
           }
         }
@@ -323,7 +430,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   }
 
   // LINES
-  const auto& lgrid = r->getLineGrid();
+  const auto& lgrid = r->getLineGrid(fid);
 
   if (intersects(lgrid.getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display lines...";
@@ -337,65 +444,12 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
       for (size_t idx = 0; idx < ret.size(); idx++) {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
-        auto lid = r->getObjects()[ret[idx]].first;
-        const auto& lbox = r->getLineBBox(lid - I_OFFSET);
-        if (!intersects(lbox, bbox)) continue;
+        auto lineId = r->getObjects(fid)[ret[idx]].first;
+        auto oid = r->getObjects(fid)[ret[idx]].second;
+        if (!r->lineIntersects(lineId, bbox)) continue;
 
-        size_t gi = 0;
-
-        size_t start = r->getLine(lid - I_OFFSET);
-        size_t end = r->getLineEnd(lid - I_OFFSET);
-
-        // ___________________________________
-        bool isects = false;
-
-        DPoint curPa, curPb;
-        int s = 0;
-
-        double mainX = 0;
-        double mainY = 0;
-        for (size_t i = start; i < end; i++) {
-          // extract real geom
-          const auto& cur = r->getLinePoints()[i];
-
-          if (isMCoord(cur.getX())) {
-            mainX = rmCoord(cur.getX());
-            mainY = rmCoord(cur.getY());
-            continue;
-          }
-
-          // skip bounding box at beginning
-          gi++;
-          if (gi < 3) continue;
-
-          // extract real geometry
-          const DPoint curP((mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
-                            (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
-          if (s == 0) {
-            curPa = curP;
-            s++;
-          } else if (s == 1) {
-            curPb = curP;
-            s++;
-          }
-
-          if (s == 2) {
-            s = 1;
-            if (intersects(LineSegment<double>(curPa, curPb), bbox)) {
-              isects = true;
-              break;
-            }
-            curPa = curPb;
-          }
-        }
-        // ___________________________________
-
-        if (!isects) continue;
-
-        // the factor depends on the render thickness of the line, make
-        // this configurable!
         const auto& denseLine =
-            densify(r->extractLineGeom(lid - I_OFFSET), res);
+            densify(r->extractLineGeom(lineId - I_OFFSET), res);
 
         for (const auto& p : denseLine) {
           int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
@@ -403,12 +457,12 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
           if (px >= 0 && py >= 0 && px < w && py < h) {
             if (points2[0][w * py + px] == 0) points[0].push_back(w * py + px);
-            points2[0][py * w + px] += 1;
+            points2[0][py * w + px] += r->getVal(fid, oid);
           }
         }
       }
     } else {
-      const auto& lpgrid = r->getLinePointGrid();
+      const auto& lpgrid = r->getLinePointGrid(fid);
       auto iBox = intersection(lpgrid.getBBox(), fbbox);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
@@ -461,7 +515,19 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   LOG(INFO) << "[SERVER] Adding points to heatmap...";
 
-  if (style == OBJECTS) {
+  if (style == RASTER) {
+    auto stamp = raster_stamp(res, rasterWidth, rasterHeight, w, h);
+    for (size_t i = 0; i < NUM_THREADS; i++) {
+      for (const auto& p : points[i]) {
+        size_t y = p / w;
+        size_t x = p - (y * w);
+        if (points2[i][p] > 0)
+          heatmap_add_weighted_point_with_stamp_no_aggreg(hm, x, y,
+                                                          points2[i][p], stamp);
+      }
+    }
+    heatmap_stamp_free(stamp);
+  } else if (style == OBJECTS) {
     auto stamp = heatmap_stamp_gen(3);
     for (size_t i = 0; i < NUM_THREADS; i++) {
       for (const auto& p : points[i]) {
@@ -486,17 +552,23 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   LOG(INFO) << "[SERVER] ...done";
   LOG(INFO) << "[SERVER] Rendering heatmap...";
 
-  if (style == OBJECTS) {
-    static const unsigned char discrete_data[] = {
-        0,   0,   0,   0,   0,   0,   0,   0,   51,  136, 255, 16,  51,  136,
-        255, 32,  51,  136, 255, 64,  51,  136, 255, 128, 51,  136, 255, 160,
-        51,  136, 255, 192, 51,  136, 255, 224, 51,  136, 255, 255};
-    static const heatmap_colorscheme_t discrete = {
+  if (style == RASTER) {
+    heatmap_render_to(hm, colorScheme, &image[0]);
+  } else if (style == OBJECTS) {
+    unsigned char discrete_data[] = {
+        0,         0,         0,         0,         0,         0,
+        0,         0,         objColorR, objColorG, objColorB, 16,
+        objColorR, objColorG, objColorB, 32,        objColorR, objColorG,
+        objColorB, 64,        objColorR, objColorG, objColorB, 128,
+        objColorR, objColorG, objColorB, 160,       objColorR, objColorG,
+        objColorB, 192,       objColorR, objColorG, objColorB, 224,
+        objColorR, objColorG, objColorB, 255};
+    heatmap_colorscheme_t discrete = {
         discrete_data, sizeof(discrete_data) / sizeof(discrete_data[0] / 4)};
 
     heatmap_render_saturated_to(hm, &discrete, 1, &image[0]);
   } else {
-    heatmap_render_to(hm, heatmap_cs_Spectral_mixed_exp, &image[0]);
+    heatmap_render_to(hm, colorScheme, &image[0]);
   }
 
   heatmap_free(hm);
@@ -557,6 +629,10 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
     throw std::invalid_argument("No geom id (?gid=) specified.");
   size_t gid = std::atoi(pars.find("gid")->second.c_str());
 
+  if (pars.count("layer") == 0 || pars.find("layer")->second.empty())
+    throw std::invalid_argument("No layer (?layer=) specified.");
+  std::string layer = pars.find("layer")->second.c_str();
+
   bool noExport = pars.count("export") == 0 ||
                   pars.find("export")->second.empty() ||
                   !std::atoi(pars.find("export")->second.c_str());
@@ -577,18 +653,19 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
   if (!reqor->ready()) {
     throw std::invalid_argument("Session not ready.");
   }
-  // as soon as we are ready, the reqor can be read concurrently
+  size_t fid = reqor->getFieldId(layer);
 
-  auto res = reqor->getGeom(gid, rad);
+  // as soon as we are ready, the reqor can be read concurrently
+  auto res = reqor->getGeom(fid, gid, rad);
 
   util::json::Val dict;
 
   if (!noExport) {
     size_t row;
-    if (gid < reqor->getObjects().size())
-      row = reqor->getObjects()[gid].second;
+    if (gid < reqor->getObjects(fid).size())
+      row = reqor->getObjects(fid)[gid].second;
     else
-      row = reqor->getDynamicPoints()[gid].second;
+      row = reqor->getDynamicPoints(fid)[gid].second;
 
     for (auto col : reqor->requestRow(row)) {
       dict.dict[col.first] = col.second;
@@ -655,11 +732,6 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
     throw std::invalid_argument("No bbox specified.");
   auto box = util::split(pars.find("bbox")->second, ',');
 
-  MapStyle style = HEATMAP;
-  if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
-    if (pars.find("styles")->second == "objects") style = OBJECTS;
-  }
-
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
 
   double x1 = std::atof(box[0].c_str());
@@ -675,7 +747,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   double reso = mercH / h;
 
   // res of -1 means dont render clusters
-  if (style == HEATMAP || reso >= THRESHOLD) reso = -1;
+  if (reso >= THRESHOLD) reso = -1;
 
   LOG(DEBUG) << "[SERVER] Click at " << x << ", " << y;
 
@@ -702,6 +774,8 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
 
   if (res.has) {
     json << "{\"id\" :" << res.id;
+    json << ",\"geomfield\" :\"" << reqor->getFields()[res.fieldId].geomField
+         << "\"";
     json << ",\"attrs\" : [";
 
     bool first = true;
@@ -759,10 +833,56 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleClearSessReq(const Params& pars) const {
+util::http::Answer Server::handleTouchReq(
+    const Params& pars, const HeaderParams& headerParams) const {
+  if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
+    throw std::invalid_argument("No backend (?backend=) specified.");
+
+  const std::string& backend = pars.find("backend")->second;
+
+  std::string accessToken;
+  if (headerParams.count("Authorization") != 0 &&
+      !headerParams.find("Authorization")->second.empty()) {
+    accessToken = headerParams.find("Authorization")->second;
+  }
+
+  std::string configJson;
+  if (pars.find("cfg") != pars.end()) {
+    configJson = pars.find("cfg")->second;
+  }
+
+  auto backendCfg = getGeomCacheConfig(backend, accessToken, configJson);
+
+  createCache(backend, backendCfg);
+  std::shared_ptr<GeomCache> cache = _caches[backend];
+
+  std::stringstream ss;
+  ss << "{\"config\":";
+  ss << backendCfg.toJSON();
+  ss << ", \"loaded\": " << cache->getLoadStatusPercent(true);
+  ss << "}";
+
+  auto answ = util::http::Answer("200 OK", ss.str());
+  answ.params["Content-Type"] = "application/json; charset=utf-8";
+
+  return answ;
+}
+
+// _____________________________________________________________________________
+util::http::Answer Server::handleClearSessReq(
+    const Params& pars, const HeaderParams& headerParams) const {
   std::string id;
   if (pars.count("id") != 0 && !pars.find("id")->second.empty())
     id = pars.find("id")->second;
+
+  std::string accessToken;
+  if (headerParams.count("Authorization") != 0 &&
+      !headerParams.find("Authorization")->second.empty()) {
+    accessToken = headerParams.find("Authorization")->second;
+  }
+
+  if (accessToken != _accessToken)
+    throw std::invalid_argument("Invalid access token");
 
   {
     std::lock_guard<std::mutex> guard(_m);
@@ -779,37 +899,89 @@ util::http::Answer Server::handleClearSessReq(const Params& pars) const {
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleLoadReq(const Params& pars) const {
-  if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
-    throw std::invalid_argument("No backend (?backend=) specified.");
-  auto backend = pars.find("backend")->second;
+util::http::Answer Server::handleExamplePageReq(const Params& pars) const {
+  std::string html =
+      std::string(example_html,
+                  example_html + sizeof example_html / sizeof example_html[0]);
 
-  LOG(INFO) << "[SERVER] Queried backend is " << backend;
+  auto a = util::http::Answer("200 OK", html);
+  a.params["Content-Type"] = "text/html; charset=utf-8";
 
-  createCache(backend);
-  loadCache(backend);
-
-  auto answ = util::http::Answer("200 OK", "{}");
-  answ.params["Content-Type"] = "application/json; charset=utf-8";
-  return answ;
+  return a;
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleQueryReq(const Params& pars) const {
-  if (pars.count("query") == 0 || pars.find("query")->second.empty())
-    throw std::invalid_argument("No query (?q=) specified.");
+util::http::Answer Server::handleIndexReq(const Params& pars) const {
+  std::stringstream ss;
+  ss << "window.postParams =";
+
+  util::json::Writer w(&ss);
+  w.obj();
+  for (const auto& param : pars) {
+    w.key(param.first);
+    w.val(param.second);
+  }
+  w.closeAll();
+  std::string html = std::string(
+      index_html, index_html + sizeof index_html / sizeof index_html[0]);
+
+  util::replace(html, "<!-- PETRIMAPS_INLINE_SCRIPT -->", ss.str());
+
+  auto a = util::http::Answer("200 OK", html);
+  a.params["Content-Type"] = "text/html; charset=utf-8";
+
+  return a;
+}
+
+// _____________________________________________________________________________
+util::http::Answer Server::handleQueryReq(
+    const Params& pars, const HeaderParams& headerParams) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
-  auto query = pars.find("query")->second;
-  auto backend = pars.find("backend")->second;
+
+  RequestorConfig rcfg;
+
+  if (pars.count("fields") != 0) {
+    for (auto raw : util::split(pars.find("fields")->second, ';')) {
+      auto parts = util::split(raw, ',');
+      if (parts.size() == 0) continue;
+      rcfg.fields.push_back({parts[0], parts.size() > 1 ? parts[1] : "", 0, 0});
+    }
+  }
+
+  if (pars.count("rasterw") != 0 && pars.count("rasterh") != 0) {
+    double rasterW = ::atof(pars.find("rasterw")->second.c_str());
+    double rasterH = ::atof(pars.find("rasterh")->second.c_str());
+
+    // set the same rasterw and rasterh for all fields
+    for (auto& fld : rcfg.fields) {
+      fld.rasterW = rasterW;
+      fld.rasterH = rasterH;
+    }
+  }
+
+  if (pars.count("cfg") != 0 && !pars.find("cfg")->second.empty()) {
+    rcfg = getRequestorCfgFromJSON(pars.find("cfg")->second);
+  }
+
+  if (pars.count("query") != 0 && !pars.find("query")->second.empty()) {
+    rcfg.query = pars.find("query")->second;
+  }
+
+  if (rcfg.query.size() == 0)
+    throw std::invalid_argument("No query specified.");
+
+  const std::string& backend = pars.find("backend")->second;
+
+  auto backendCfg = getGeomCacheConfig(backend, "", "");
 
   LOG(INFO) << "[SERVER] Queried backend is " << backend;
-  LOG(INFO) << "[SERVER] Query is:\n" << query;
+  LOG(INFO) << "[SERVER] Query is:\n" << rcfg.query;
 
-  createCache(backend);
-  std::string indexHash = loadCache(backend);
+  createCache(backend, backendCfg);
+  std::string indexHash = loadCache(backend, backendCfg);
 
-  std::string queryId = backend + "$" + indexHash + "$" + query;
+  std::string queryId = backend + "$" + indexHash + "$" + rcfg.getHash();
 
   std::shared_ptr<Requestor> reqor;
   std::string sessionId;
@@ -821,20 +993,20 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
       reqor = _rs[sessionId];
     } else {
       reqor = std::shared_ptr<Requestor>(
-          new Requestor(_caches[backend], _maxMemory));
+          new Requestor(_caches[backendCfg.backend], rcfg, _maxMemory));
 
       sessionId = getSessionId();
 
       _rs[sessionId] = reqor;
-      if (util::toLower(query).find("rand()") == std::string::npos)
+      if (util::toLower(rcfg.query).find("rand()") == std::string::npos)
         _queryCache[queryId] = sessionId;
     }
   }
 
   try {
-    reqor->request(query);
+    reqor->request();
   } catch (OutOfMemoryError& ex) {
-    LOG(ERROR) << ex.what() << backend;
+    LOG(ERROR) << ex.what() << backendCfg.backend;
 
     // delete cache, is now in unready state
     {
@@ -847,8 +1019,12 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
     return answ;
   }
 
-  auto bbox = reqor->getPointGrid().getBBox();
-  bbox = extendBox(reqor->getLineGrid().getBBox(), bbox);
+  util::geo::FBox bbox;
+
+  for (size_t fid = 0; fid < reqor->getNumFields(); fid++) {
+    bbox = extendBox(reqor->getPointGrid(fid).getBBox(), bbox);
+    bbox = extendBox(reqor->getLineGrid(fid).getBBox(), bbox);
+  }
 
   size_t numObjs = reqor->getNumObjects();
 
@@ -864,7 +1040,28 @@ util::http::Answer Server::handleQueryReq(const Params& pars) const {
   json << std::fixed << "{\"qid\" : \"" << sessionId << "\",\"bounds\":[["
        << llX << "," << llY << "],[" << urX << "," << urY << "]]"
        << ",\"numobjects\":" << numObjs
-       << ",\"autothreshold\":" << _autoThreshold << "}";
+       << ",\"autothreshold\":" << _autoThreshold << ",\"layers\": [";
+
+  bool first = false;
+  for (const auto& fld : reqor->getFields()) {
+    if (first) json << ",";
+    first = true;
+    json << "{";
+    json << "\"id\":\"" << fld.id << "\",";
+    json << "\"geomfield\":\"" << fld.geomField << "\",";
+    json << "\"name\":\"" << fld.name << "\",";
+    json << "\"color\":\"" << fld.color << "\",";
+    json << "\"colorscheme\":\"" << fld.colorscheme << "\",";
+    json << "\"numobjects\":\""
+         << reqor->getNumObjects(reqor->getFieldId(fld.geomField)) << "\",";
+    json << "\"style\":\"" << fld.style << "\",";
+    json << "\"toggle\":\"" << fld.toggle << "\"";
+    if (fld.rasterW != 0 && fld.rasterH != 0)
+      json << ",\"rasterw\":" << fld.rasterW << ", \"rasterh\":" << fld.rasterH;
+    json << "}";
+  }
+
+  json << "]}";
 
   auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";
@@ -962,6 +1159,7 @@ void Server::writePNG(const unsigned char* data, size_t w, size_t h,
   png_set_IHDR(png_ptr, info_ptr, w, h, bit_depth, color_type, interlace_type,
                PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
 
+  checkMem(h * sizeof(png_bytep), _maxMemory);
   png_bytep* row_pointers =
       (png_byte**)png_malloc(png_ptr, h * sizeof(png_bytep));
 
@@ -1113,7 +1311,8 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
             geoJsonOut.print(util::geo::polygonFromWKT<double>(s, 0), dict);
           }
           if (wktType == util::geo::WKTType::MULTIPOLYGON) {
-            geoJsonOut.print(util::geo::multiPolygonFromWKT<double>(s, 0), dict);
+            geoJsonOut.print(util::geo::multiPolygonFromWKT<double>(s, 0),
+                             dict);
           }
           if (wktType == util::geo::WKTType::POINT) {
             geoJsonOut.print(util::geo::pointFromWKT<double>(s, 0), dict);
@@ -1170,9 +1369,13 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
 util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
-  auto backend = pars.find("backend")->second;
-  createCache(backend);
-  std::shared_ptr<GeomCache> cache = _caches[backend];
+
+  const std::string& backend = pars.find("backend")->second;
+
+  auto backendCfg = getGeomCacheConfig(backend, "", "");
+
+  createCache(backend, backendCfg);
+  std::shared_ptr<GeomCache> cache = _caches[backendCfg.backend];
 
   // We have 3 loading stages:
   // 1) Filling geometry cache / reading cache from disk
@@ -1205,23 +1408,44 @@ util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
 // _____________________________________________________________________________
 void Server::drawPoint(std::vector<uint32_t>& points,
                        std::vector<double>& points2, int px, int py, int w,
-                       int h, MapStyle style, size_t num) const {
-  if (style == OBJECTS) {
+                       int h, MapStyle style, double weight) const {
+  if (style == RASTER) {
+    if (px >= 0 && py >= 0 && px < w && py < h) {
+      if (points2[w * py + px] == 0) {
+        points.push_back(w * py + px);
+        points2[w * py + px] = weight;
+      } else {
+        // not entirely correct, but looks good on very low zoom levels
+        // where many raster cells are rendered onto the same pixel
+        points2[w * py + px] = (points2[w * py + px] + weight) / 2.0;
+      }
+    }
+  } else if (style == OBJECTS) {
     // for the raw style, increase the size of the points a bit
     for (int x = px - 2; x < px + 2; x++) {
       for (int y = py - 2; y < py + 2; y++) {
         if (x >= 0 && y >= 0 && x < w && y < h) {
           if (points2[w * y + x] == 0) points.push_back(w * y + x);
-          points2[w * y + x] += num;
+          points2[w * y + x] += weight;
         }
       }
     }
   } else {
     if (px >= 0 && py >= 0 && px < w && py < h) {
       if (points2[w * py + px] == 0) points.push_back(w * py + px);
-      points2[w * py + px] += num;
+      points2[w * py + px] += weight;
     }
   }
+}
+
+// _____________________________________________________________________________
+std::string Server::getLayerId() const {
+  std::random_device dev;
+  std::mt19937 rng(dev());
+  std::uniform_int_distribution<std::mt19937::result_type> d(
+      1, std::numeric_limits<int>::max());
+
+  return std::to_string(d(rng));
 }
 
 // _____________________________________________________________________________
@@ -1236,33 +1460,38 @@ std::string Server::getSessionId() const {
 
 // _____________________________________________________________________________
 double Server::getLoadStatusPercent() const {
-  if (_totalSize == 0) {
-    return 0.0;
-  }
+  if (_totalSize == 0) return 0.0;
 
   double percent = _curRow / static_cast<double>(_totalSize) * 100.0;
-  assert(percent <= 100.0);
 
   return percent;
 }
 
 // _____________________________________________________________________________
-void Server::createCache(const std::string& backend) const {
+void Server::createCache(const std::string& backend,
+                         const GeomCacheConfig& cfg) const {
   std::shared_ptr<GeomCache> cache;
 
   {
     std::lock_guard<std::mutex> guard(_m);
     if (_caches.count(backend)) {
       cache = _caches[backend];
+      // always set config
+      if (cache->setConfig(cfg)) {
+        LOG(INFO) << "Updating config for backend '" << backend
+                  << "', new fill query is:\n"
+                  << cfg.fillQuery;
+      }
     } else {
-      cache = std::shared_ptr<GeomCache>(new GeomCache(backend));
+      cache = std::shared_ptr<GeomCache>(new GeomCache(cfg, _maxMemory));
       _caches[backend] = cache;
     }
   }
 }
 
 // _____________________________________________________________________________
-std::string Server::loadCache(const std::string& backend) const {
+std::string Server::loadCache(const std::string& backend,
+                              const GeomCacheConfig& cfg) const {
   std::shared_ptr<GeomCache> cache = _caches[backend];
 
   try {
@@ -1309,4 +1538,164 @@ void Server::drawLine(unsigned char* image, int x0, int y0, int x1, int y1,
       y0 += sy;
     }
   }
+}
+
+// _____________________________________________________________________________
+heatmap_stamp_t* Server::raster_stamp(double res, double w, double h,
+                                      double screenW, double screenH) const {
+  if (w < 0) w = 0;
+  if (h < 0) h = 0;
+  if (isnan(w)) w = 0;  // NaN
+  if (isnan(h)) h = 0;  // NaN
+
+  int width = std::min(screenW * 2, (ceil(w / res)));
+  int height = std::min(screenH * 2, (ceil(h / res)));
+
+  checkMem(sizeof(float) * width * height, _maxMemory);
+  float* stamp = (float*)calloc(width * height, sizeof(float));
+  if (!stamp) return 0;
+
+  for (int x = 0; x < width; x++) {
+    for (int y = 0; y < height; y++) {
+      stamp[x * height + y] = 1.0;
+    }
+  }
+
+  return heatmap_stamp_new_with(width, height, stamp);
+}
+
+// _____________________________________________________________________________
+RequestorConfig Server::getRequestorCfgFromJSON(
+    const std::string& jsonStr) const {
+  RequestorConfig ret;
+
+  std::multiset<std::string> geomFields;
+
+  try {
+    nlohmann::json data = nlohmann::json::parse(jsonStr);
+
+    if (data.is_object()) {
+      for (const auto& cfg : data.items()) {
+        if (cfg.key() == "query") {
+          ret.query = cfg.value().get<std::string>();
+        }
+        if (cfg.key() == "layers") {
+          for (const auto& layer : cfg.value().items()) {
+            if (!layer.value().is_object()) {
+              std::stringstream ss;
+              ss << "Could not parse requestor config '" << jsonStr << "'";
+              throw std::runtime_error(ss.str());
+            }
+            FieldConfig curField;
+            if (layer.value().contains("id")) curField.id = layer.value()["id"];
+            if (layer.value().contains("geomfield")) {
+              curField.geomField = layer.value()["geomfield"];
+              if (geomFields.count(curField.geomField)) {
+                geomFields.insert(curField.geomField);
+                curField.geomField =
+                    std::string(layer.value()["geomfield"]) + ":" +
+                    std::to_string(geomFields.count(curField.geomField));
+              } else {
+                geomFields.insert(curField.geomField);
+              }
+            }
+            if (layer.value().contains("name"))
+              curField.name = layer.value()["name"];
+            if (layer.value().contains("weightfield"))
+              curField.valueField = layer.value()["weightfield"];
+            if (layer.value().contains("toggle"))
+              curField.toggle = layer.value()["toggle"];
+            if (layer.value().contains("rasterw"))
+              curField.rasterW = layer.value()["rasterw"].get<double>();
+            if (layer.value().contains("rasterh"))
+              curField.rasterH = layer.value()["rasterh"].get<double>();
+            if (layer.value().contains("color"))
+              curField.color = layer.value()["color"].get<std::string>();
+            if (layer.value().contains("colorscheme"))
+              curField.colorscheme =
+                  layer.value()["colorscheme"].get<std::string>();
+            if (layer.value().contains("style"))
+              curField.style = layer.value()["style"].get<std::string>();
+            if (curField.name.size() == 0) curField.name = curField.geomField;
+            if (curField.id.size() == 0) curField.id = getLayerId();
+            ret.fields.push_back(curField);
+          }
+        }
+      }
+    }
+  } catch (const std::runtime_error& e) {
+    LOG(ERROR) << "[SERVER] " << e.what();
+  }
+
+  return ret;
+}
+
+// _____________________________________________________________________________
+GeomCacheConfig Server::getGeomCacheCfgFromJSON(
+    const std::string& backend, const std::string& jsonStr) const {
+  GeomCacheConfig ret;
+
+  try {
+    nlohmann::json data = nlohmann::json::parse(jsonStr);
+
+    if (data.is_object()) {
+      for (const auto& i : data.items()) {
+        if (i.key() == "fillQuery") {
+          ret.fillQuery = i.value().get<std::string>();
+        }
+      }
+    }
+  } catch (const std::runtime_error& e) {
+    LOG(ERROR) << "[SERVER] " << e.what();
+  }
+
+  ret.backend = backend;
+
+  return ret;
+}
+// _____________________________________________________________________________
+GeomCacheConfig Server::getGeomCacheConfig(
+    const std::string& backendUrl, const std::string& accessToken,
+    const std::string& configJson) const {
+  auto canonizedBackend = canonizeURL(backendUrl);
+
+  std::lock_guard<std::mutex> guard(_m);
+
+  auto cfg = _cacheConfigs.find(canonizedBackend);
+  if (cfg != _cacheConfigs.end()) {
+    if (configJson.size()) {
+      // always update, is no-op if already set
+      auto backendCfg = getGeomCacheCfgFromJSON(canonizedBackend, configJson);
+      if (_cacheConfigs[canonizedBackend] != backendCfg) {
+        if (accessToken != _accessToken)
+          throw std::invalid_argument("Invalid access token");
+        _cacheConfigs[canonizedBackend] = backendCfg;
+      }
+    }
+
+    return cfg->second;
+  }
+
+  if (accessToken != _accessToken) {
+    std::stringstream ss;
+    ss << "Backend not configured: " << backendUrl;
+    throw std::runtime_error(ss.str());
+  }
+
+  if (configJson.size()) {
+    _cacheConfigs[canonizedBackend] =
+        getGeomCacheCfgFromJSON(canonizedBackend, configJson);
+  } else {
+    _cacheConfigs[canonizedBackend] = {
+        canonizedBackend, petrimaps::getFillQuery(canonizedBackend)};
+  }
+  return _cacheConfigs[canonizedBackend];
+}
+
+// _____________________________________________________________________________
+int Server::hexToInt(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  return 0;
 }

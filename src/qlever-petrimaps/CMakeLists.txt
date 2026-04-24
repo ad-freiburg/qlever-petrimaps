@@ -22,20 +22,27 @@ add_custom_command(
 )
 
 add_custom_command(
+	OUTPUT example.h
+	COMMAND cd ${PROJECT_BINARY_DIR}/../web/ && xxd -i example.html > ${CMAKE_CURRENT_BINARY_DIR}/example.h
+	DEPENDS "${PROJECT_BINARY_DIR}/../web/example.html"
+	VERBATIM
+)
+
+add_custom_command(
 	OUTPUT style.h
-	COMMAND cd ${PROJECT_BINARY_DIR}/../web/ && sed -e "s/^\\s*//g" -e "s/\\s\\+/ /g" style.css | tr -d '\\n' > build.css && xxd -i build.css > ${CMAKE_CURRENT_BINARY_DIR}/style.h
+	COMMAND cd ${PROJECT_BINARY_DIR}/../web/ && cat style.css | sed -e "s/^\\s*//g" -e "s/\\s\\+/ /g" | tr -d '\\n' > build.css && xxd -i build.css > ${CMAKE_CURRENT_BINARY_DIR}/style.h
 	DEPENDS "${PROJECT_BINARY_DIR}/../web/style.css"
 	VERBATIM
 )
 
 add_custom_command(
 	OUTPUT build.h
-	COMMAND cd ${PROJECT_BINARY_DIR}/../web/ && java -jar closurec/compiler.jar -W QUIET -O SIMPLE leaflet.js NonTiledLayer.js script.js > build.js && xxd -i build.js > ${CMAKE_CURRENT_BINARY_DIR}/build.h && rm build.js
-	DEPENDS "${PROJECT_BINARY_DIR}/../web/script.js" "${PROJECT_BINARY_DIR}/../web/leaflet.js" "${PROJECT_BINARY_DIR}/../web/leaflet-heat.js"
+	COMMAND cd ${PROJECT_BINARY_DIR}/../web/ && java -jar closurec/compiler.jar -W QUIET -O SIMPLE leaflet.js NonTiledLayer.js themelayer.js script.js > build.js && xxd -i build.js > ${CMAKE_CURRENT_BINARY_DIR}/build.h && rm build.js
+	DEPENDS "${PROJECT_BINARY_DIR}/../web/themelayer.js" "${PROJECT_BINARY_DIR}/../web/script.js" "${PROJECT_BINARY_DIR}/../web/leaflet.js" "${PROJECT_BINARY_DIR}/../web/leaflet-heat.js"
 	VERBATIM
 )
 
-add_custom_target(htmlfiles DEPENDS index.h build.h style.h)
+add_custom_target(htmlfiles DEPENDS index.h example.h build.h style.h)
 
 add_dependencies(qlever_petrimaps_dep htmlfiles)
 

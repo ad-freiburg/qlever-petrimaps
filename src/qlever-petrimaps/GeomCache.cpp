@@ -37,7 +37,7 @@ using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
 // change on each index-breaking change to the code base
-const static std::string INDEX_HASH_PREFIX = "_3_";
+const static std::string INDEX_HASH_PREFIX = "_5_";
 
 // Different SPAQRL queries to obtain the WKT geometries from an endpoint.
 // It depends on the endpoint which query is used, see `getQuery`.
@@ -72,30 +72,14 @@ const static std::string QUERY_WDTP625_SERVICE =
     "}";
 
 // _____________________________________________________________________________
-const std::string &GeomCache::getQuery(const std::string &backendUrl) const {
-  // Helper lambda that returns true if the backend name (the part after the
-  // final slash) starts with the given prefix.
-  size_t backendPos = backendUrl.find_last_of('/');
-  backendPos = backendPos != std::string::npos ? backendPos + 1 : 0;
-  auto backendStartsWith = [&backendPos,
-                            &backendUrl](const std::string &prefix) {
-    return backendUrl.find(prefix, backendPos) == backendPos;
-  };
-
-  // Return query depending on the backend name.
-  if (backendStartsWith("wikidata") || backendStartsWith("dblp-plus")) {
-    return QUERY_WDTP625;
-  } else if (backendStartsWith("dblp")) {
-    return QUERY_WDTP625_SERVICE;
-  } else {
-    return QUERY_ASWKT;
-  }
+const std::string &GeomCache::getFillQuery() const {
+  return _config.fillQuery;
 }
 
 // _____________________________________________________________________________
-std::string GeomCache::getCountQuery(const std::string &backendUrl) const {
-  // Modify the query from `getQuery` to count the number of geometries.
-  std::string query = getQuery(backendUrl);
+std::string GeomCache::getCountQuery() const {
+  // Modify the query from `getFillQuery` to count the number of geometries.
+  std::string query = getFillQuery();
   auto pos = query.find("SELECT");
   if (pos == std::string::npos) {
     LOG(ERROR) << "Could not find SELECT in query: " << query;
@@ -410,26 +394,24 @@ size_t GeomCache::requestSize() {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    const std::string &countQuery = getCountQuery(_backendUrl);
+    const std::string &countQuery = getCountQuery();
     LOG(INFO) << "[GEOMCACHE] Count query to obtain the number of geometries:"
               << std::endl
               << countQuery;
-    auto qUrl = queryUrl(countQuery, 0, 1);
-    curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
+    auto flds = queryFields(countQuery, 0, 1);
+    petrimapsCurlSetup(_curl);
+    curl_easy_setopt(_curl, CURLOPT_URL, _config.backend.c_str());
+    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbCount);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
     // set headers
     struct curl_slist *headers = 0;
     headers = curl_slist_append(headers, "Accept: text/tab-separated-values");
     curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
 
-    // accept any compression supported
-    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     res = curl_easy_perform(_curl);
 
     long httpCode = 0;
@@ -439,17 +421,15 @@ size_t GeomCache::requestSize() {
 
     if (httpCode != 200) {
       std::stringstream ss;
-      ss << "QLever backend returned status code " << httpCode
-         << " during count query";
-      ss << "\n";
-      ss << _raw;
-      throw std::runtime_error(ss.str());
+      LOG(ERROR) << "[GEOMCACHE] QLever backend returned status code "
+                 << httpCode << " during count query";
+      return 0;
     }
 
     if (_exceptionPtr) std::rethrow_exception(_exceptionPtr);
   } else {
     LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request.";
-    return -1;
+    return 0;
   }
 
   // check if there was an error
@@ -460,6 +440,7 @@ size_t GeomCache::requestSize() {
     } else {
       LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
     }
+    return 0;
   }
 
   std::istringstream iss(_dangling);
@@ -482,14 +463,14 @@ void GeomCache::requestPart(size_t offset) {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 10000000);
-    curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
+    auto flds = queryFields(getFillQuery(), offset, 10000000);
+    petrimapsCurlSetup(_curl);
+    curl_easy_setopt(_curl, CURLOPT_URL, _config.backend.c_str());
+    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
     // set headers
     struct curl_slist *headers = 0;
@@ -596,7 +577,7 @@ void GeomCache::request() {
   size_t lastNum = -1;
 
   LOG(INFO) << "[GEOMCACHE] Total request size: " << _totalSize;
-  LOG(INFO) << "[GEOMCACHE] Query is:\n" << getQuery(_backendUrl);
+  LOG(INFO) << "[GEOMCACHE] Query is:\n" << getFillQuery();
 
   while (lastNum != 0) {
     size_t offset = _curRow;
@@ -616,24 +597,28 @@ void GeomCache::request() {
 
   LOG(INFO) << "[GEOMCACHE] Building vectors...";
 
+  checkMem(sizeof(util::geo::FPoint) * _pointsFSize, _maxMemory);
   _points.resize(_pointsFSize);
   _pointsF.seekg(0);
   _pointsF.read(reinterpret_cast<char *>(&_points[0]),
                 sizeof(util::geo::FPoint) * _pointsFSize);
   _pointsF.close();
 
+  checkMem(sizeof(util::geo::Point<int16_t>) * _linePointsFSize, _maxMemory);
   _linePoints.resize(_linePointsFSize);
   _linePointsF.seekg(0);
   _linePointsF.read(reinterpret_cast<char *>(&_linePoints[0]),
                     sizeof(util::geo::Point<int16_t>) * _linePointsFSize);
   _linePointsF.close();
 
+  checkMem(sizeof(size_t) * _linesFSize, _maxMemory);
   _lines.resize(_linesFSize);
   _linesF.seekg(0);
   _linesF.read(reinterpret_cast<char *>(&_lines[0]),
                sizeof(size_t) * _linesFSize);
   _linesF.close();
 
+  checkMem(sizeof(IdMapping) * _qidToIdFSize, _maxMemory);
   _qidToId.resize(_qidToIdFSize);
   _qidToIdF.seekg(0);
   _qidToIdF.read(reinterpret_cast<char *>(&_qidToId[0]),
@@ -659,7 +644,7 @@ void GeomCache::requestIds() {
   _lastQid = -1;
   _exceptionPtr = 0;
 
-  LOG(INFO) << "[GEOMCACHE] Query is " << getQuery(_backendUrl);
+  LOG(INFO) << "[GEOMCACHE] Query is " << getFillQuery();
 
   size_t lastNum = -1;
 
@@ -690,22 +675,20 @@ void GeomCache::requestIdPart(size_t offset) {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    auto qUrl = queryUrl(getQuery(_backendUrl), offset, 100000000);
-    curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
+    auto flds = queryFields(getFillQuery(), offset, 100000000);
+    petrimapsCurlSetup(_curl);
+    curl_easy_setopt(_curl, CURLOPT_URL, _config.backend.c_str());
+    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbIds);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
     // set headers
     struct curl_slist *headers = 0;
     headers = curl_slist_append(headers, "Accept: application/octet-stream");
     curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
 
-    // accept any compression supported
-    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     res = curl_easy_perform(_curl);
 
     long httpCode = 0;
@@ -739,7 +722,7 @@ void GeomCache::requestIdPart(size_t offset) {
 }
 
 // _____________________________________________________________________________
-std::string GeomCache::queryUrl(std::string query, size_t offset,
+std::string GeomCache::queryFields(std::string query, size_t offset,
                                 size_t limit) const {
   std::stringstream ss;
 
@@ -753,7 +736,8 @@ std::string GeomCache::queryUrl(std::string query, size_t offset,
 
   auto esc = curl_easy_escape(_curl, query.c_str(), query.size());
 
-  ss << _backendUrl << "/?send=" << std::to_string(MAXROWS) << "&query=" << esc;
+  ss << "send=" << std::to_string(MAXROWS)
+     << "&query=" << esc;
 
   curl_free(esc);
 
@@ -762,10 +746,10 @@ std::string GeomCache::queryUrl(std::string query, size_t offset,
 
 // _____________________________________________________________________________
 bool GeomCache::pointValid(const DPoint &p) {
-  if (p.getY() > std::numeric_limits<double>::max()) return false;
-  if (p.getY() < std::numeric_limits<double>::lowest()) return false;
-  if (p.getX() > std::numeric_limits<double>::max()) return false;
-  if (p.getX() < std::numeric_limits<double>::lowest()) return false;
+  if (p.getY() > 90.0) return false;
+  if (p.getY() < -90.0) return false;
+  if (p.getX() > 180.0) return false;
+  if (p.getX() < -180.0) return false;
 
   return true;
 }
@@ -992,10 +976,16 @@ GeomCache::getRelObjects(const std::vector<IdMapping> &ids) const {
 }
 
 // _____________________________________________________________________________
-void GeomCache::insertLine(const util::geo::DLine &l, bool isArea) {
+void GeomCache::insertLine(const util::geo::DLine &lR, bool isArea) {
   // we also add the line's bounding box here to also
   // compress that
-  const auto &bbox = util::geo::getBoundingBox(l);
+  const auto &bbox = util::geo::getBoundingBox(lR);
+
+  // this is the THRESHOLD from Server.cpp
+  auto l = lR;
+  if (isArea)
+    if (l.size()) l.push_back(l.front());
+  l = util::geo::densify(l, 500);
 
   int16_t mainX = (bbox.getLowerLeft().getX() * 10.0) / M_COORD_GRANULARITY;
   int16_t mainY = (bbox.getLowerLeft().getY() * 10.0) / M_COORD_GRANULARITY;
@@ -1065,7 +1055,7 @@ void GeomCache::insertLine(const util::geo::DLine &l, bool isArea) {
 
   // add closing point for area
   if (isArea && l.size()) {
-    const auto& p = l.front();
+    const auto &p = l.front();
     mainXLoc = (p.getX() * 10.0) / M_COORD_GRANULARITY;
     mainYLoc = (p.getY() * 10.0) / M_COORD_GRANULARITY;
 
@@ -1143,6 +1133,21 @@ std::string GeomCache::indexHashFromDisk(const std::string &fname) {
 }
 
 // _____________________________________________________________________________
+std::string GeomCache::fillQueryFromDisk(const std::string &fname) {
+  std::ifstream f(fname, std::ios::binary);
+  size_t fillQuerySize;
+  std::string fillQuery;
+
+  // skip hash
+  f.ignore(100);
+  f.read(reinterpret_cast<char *>(&fillQuerySize), sizeof(size_t));
+  fillQuery.resize(fillQuerySize);
+  f.read(reinterpret_cast<char *>(&fillQuery[0]), fillQuerySize);
+
+  return fillQuery;
+}
+
+// _____________________________________________________________________________
 void GeomCache::fromDisk(const std::string &fname) {
   _loadStatusStage = _LoadStatusStages::FromFile;
   _points.clear();
@@ -1157,6 +1162,15 @@ void GeomCache::fromDisk(const std::string &fname) {
   tmp[99] = 0;
   _indexHash = util::trim(tmp);
 
+  LOG(INFO) << " Disk cache (" << fname << ") hash is " << _indexHash;
+  size_t fillQuerySize;
+  std::string fillQuery;
+  f.read(reinterpret_cast<char *>(&fillQuerySize), sizeof(size_t));
+  fillQuery.resize(fillQuerySize);
+  f.read(reinterpret_cast<char *>(&fillQuery[0]), fillQuerySize);
+
+  LOG(INFO) << " Disk cache (" << fname << ") fill query is " << fillQuery;
+
   size_t numPoints;
   size_t numLinePoints;
   size_t numLines;
@@ -1170,24 +1184,28 @@ void GeomCache::fromDisk(const std::string &fname) {
   // points
   f.read(reinterpret_cast<char *>(&numPoints), sizeof(size_t));
 
+  checkMem(sizeof(util::geo::FPoint) * numPoints, _maxMemory);
   _points.resize(numPoints);
   posPoints = f.tellg();
   f.seekg(sizeof(util::geo::FPoint) * numPoints, f.cur);
 
   // linePoints
   f.read(reinterpret_cast<char *>(&numLinePoints), sizeof(size_t));
+  checkMem(sizeof(util::geo::Point<int16_t>) * numLinePoints, _maxMemory);
   _linePoints.resize(numLinePoints);
   posLinePoints = f.tellg();
   f.seekg(sizeof(util::geo::Point<int16_t>) * numLinePoints, f.cur);
 
   // lines
   f.read(reinterpret_cast<char *>(&numLines), sizeof(size_t));
+  checkMem(sizeof(size_t) * numLines, _maxMemory);
   _lines.resize(numLines);
   posLines = f.tellg();
   f.seekg(sizeof(size_t) * numLines, f.cur);
 
   // qidToId
   f.read(reinterpret_cast<char *>(&numQidToId), sizeof(size_t));
+  checkMem(sizeof(IdMapping) * numQidToId, _maxMemory);
   _qidToId.resize(numQidToId);
   posQidToId = f.tellg();
   f.seekg(sizeof(IdMapping) * numQidToId, f.cur);
@@ -1240,6 +1258,11 @@ void GeomCache::serializeToDisk(const std::string &fname) const {
   assert(h.size() == 99);
   f.write(h.c_str(), 100);
 
+  // fill query
+  size_t fillQuerySize = _config.fillQuery.size();
+  f.write(reinterpret_cast<const char *>(&fillQuerySize), sizeof(size_t));
+  f.write(_config.fillQuery.c_str(), _config.fillQuery.size());
+
   size_t num = _points.size();
   f.write(reinterpret_cast<const char *>(&num), sizeof(size_t));
   f.write(reinterpret_cast<const char *>(&_points[0]),
@@ -1269,17 +1292,13 @@ std::string GeomCache::requestIndexHash() {
   std::string response;
 
   if (_curl) {
-    std::string url = _backendUrl + "/?cmd=get-index-id";
+    std::string url = _config.backend + "/?cmd=get-index-id";
+    petrimapsCurlSetup(_curl);
     curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbString);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, false);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, false);
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, 0);
 
-    // accept any compression supported
-    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
     res = curl_easy_perform(_curl);
 
     if (res != CURLE_OK) {
@@ -1302,7 +1321,7 @@ std::string GeomCache::requestIndexHash() {
       return "";
     }
 
-    return INDEX_HASH_PREFIX + response;
+    return INDEX_HASH_PREFIX + "|" + _config.getHash() + "|" + response;
   } else {
     LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request for index hash.";
     return "";
@@ -1315,19 +1334,26 @@ std::string GeomCache::load(const std::string &cacheDir) {
 
   if (_ready) {
     auto indexHash = requestIndexHash();
-    if (_indexHash == indexHash) return _indexHash;
+
+    // if the hash size is 0, we could not obtain an index hash from
+    // qlever. In this case, just assume they matched
+    if (indexHash.size() == 0 || _indexHash == indexHash) return _indexHash;
     LOG(INFO) << "Loaded index hash (" << _indexHash
               << ") and remote index hash (" << indexHash << ") dont match.";
     _ready = false;
   }
 
   if (cacheDir.size()) {
-    std::string backend = getBackendURL();
-    util::replaceAll(backend, "/", "_");
+    std::string backend = getConfig().backend;
+    util::replaceAll(backend, "/", "#");
     std::string cacheFile = cacheDir + "/" + backend;
     auto indexHash = requestIndexHash();
+
+    // if the hash size is 0, we could not obtain an index hash from
+    // qlever. In this case, just assume they matched
     if (access(cacheFile.c_str(), F_OK) != -1 &&
-        indexHash == indexHashFromDisk(cacheFile)) {
+        (indexHash.size() == 0 || indexHash == indexHashFromDisk(cacheFile)) &&
+        _config.fillQuery == fillQueryFromDisk(cacheFile)) {
       LOG(INFO) << "Reading from cache file " << cacheFile << "...";
       fromDisk(cacheFile);
       LOG(INFO) << "done ...";

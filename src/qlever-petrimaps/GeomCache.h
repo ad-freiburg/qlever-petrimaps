@@ -8,27 +8,91 @@
 #include <curl/curl.h>
 
 #include <atomic>
+#include <chrono>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <chrono>
 
 #include "qlever-petrimaps/Misc.h"
 #include "util/geo/Geo.h"
+#include "util/log/Log.h"
 
 namespace petrimaps {
 
+const static std::string FILL_QUERY_DEFAULT =
+    "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
+    "SELECT ?geometry WHERE {"
+    " ?subject geo:asWKT ?geometry "
+    " FILTER (!ql:isGeoPoint(?geometry)) "
+    "} INTERNAL SORT BY ?geometry";
+
+const static std::string FILL_QUERY_WDTP625 =
+    "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
+    "SELECT ?geometry WHERE {"
+    " ?subject wdt:P625 ?geometry"
+    " FILTER (!ql:isGeoPoint(?geometry)) "
+    "} INTERNAL SORT BY ?geometry";
+
+const static std::string FILL_QUERY_WDTP625_SERVICE =
+    "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
+    "SELECT ?geometry WHERE {"
+    " SERVICE <https://qlever.cs.uni-freiburg.de/api/wikidata> {"
+    "  SELECT ?geometry WHERE {"
+    "   ?subject wdt:P625 ?geometry"
+    "   FILTER (!ql:isGeoPoint(?geometry)) "
+    " } INTERNAL SORT BY ?geometry"
+    " }"
+    "}";
+
+inline std::string getFillQuery(const std::string& backend) {
+  auto backendName = util::split(backend, '/').back();
+  if (backendName.rfind("wikidata", 0) == 0) return FILL_QUERY_WDTP625;
+  if (backendName.rfind("dblp-plus", 0) == 0) return FILL_QUERY_WDTP625;
+  if (backendName.rfind("dblp", 0) == 0) return FILL_QUERY_WDTP625_SERVICE;
+  return FILL_QUERY_DEFAULT;
+}
+
+struct GeomCacheConfig {
+  std::string backend;
+  std::string fillQuery;
+
+  std::string getHash() const {
+    std::hash<std::string> hashF;
+    return std::to_string(hashF(backend + fillQuery));
+  }
+
+  std::string toJSON() const {
+    std::stringstream ss;
+    ss << "{\"backend\": \"" << util::jsonStringEscape(backend) << "\"";
+    ss << ",\"fillQuery\": \"" << util::jsonStringEscape(fillQuery) << "\"";
+    ss << "}";
+    return ss.str();
+  }
+};
+
+inline bool operator==(const GeomCacheConfig& l, const GeomCacheConfig& r) {
+  return l.backend == r.backend && l.fillQuery == r.fillQuery;
+}
+
+inline bool operator!=(const GeomCacheConfig& l, const GeomCacheConfig& r) {
+  return !(l == r);
+}
+
 class GeomCache {
  public:
-  GeomCache() : _backendUrl(""), _curl(0) {}
-  explicit GeomCache(const std::string& backendUrl)
-      : _backendUrl(backendUrl), _curl(curl_easy_init()) {}
+  GeomCache() : _config(), _curl(0), _curRow(0), _maxMemory(-1) {}
+  explicit GeomCache(const GeomCacheConfig& config, size_t maxMemory)
+      : _config(config),
+        _curl(curl_easy_init()),
+        _curRow(0),
+        _maxMemory(maxMemory) {}
 
   GeomCache& operator=(GeomCache&& o) {
-    _backendUrl = o._backendUrl;
+    _config = o._config;
     _curl = curl_easy_init();
     _lines = std::move(o._lines);
     _linePoints = std::move(o._linePoints);
@@ -65,7 +129,7 @@ class GeomCache {
   std::pair<std::vector<std::pair<ID_TYPE, ID_TYPE>>, size_t> getRelObjects(
       const std::vector<IdMapping>& id) const;
 
-  const std::string& getBackendURL() const { return _backendUrl; }
+  const GeomCacheConfig& getConfig() const { return _config; }
 
   const std::vector<util::geo::FPoint>& getPoints() const { return _points; }
 
@@ -85,10 +149,20 @@ class GeomCache {
   void fromDisk(const std::string& fname);
 
   size_t getLine(ID_TYPE id) const { return _lines[id]; }
+  bool setConfig(const GeomCacheConfig& cfg) {
+    if (_config.fillQuery != cfg.fillQuery) {
+      _config = cfg;
+      return true;
+    }
+    return false;
+  }
 
   size_t getLineEnd(ID_TYPE id) const {
     return id + 1 < _lines.size() ? _lines[id + 1] : _linePoints.size();
   }
+
+  static std::string indexHashFromDisk(const std::string& fname);
+  static std::string fillQueryFromDisk(const std::string& fname);
 
   double getLoadStatusPercent(bool total);
   double getLoadStatusPercent() { return getLoadStatusPercent(false); };
@@ -97,7 +171,7 @@ class GeomCache {
   size_t getCurrentProgress();
 
  private:
-  std::string _backendUrl;
+  GeomCacheConfig _config;
   CURL* _curl;
 
   uint8_t _curByte;
@@ -107,6 +181,7 @@ class GeomCache {
   std::atomic<size_t> _curRow;
   std::atomic<size_t> _curIdRow;
   size_t _curUniqueGeom;
+  size_t _maxMemory;
 
   enum _LoadStatusStages { Parse = 1, ParseIds, FromFile, Finished };
   _LoadStatusStages _loadStatusStage = Parse;
@@ -120,28 +195,26 @@ class GeomCache {
                               void* userp);
 
   // Get the right SPARQL query for the given backend.
-  const std::string& getQuery(const std::string& backendUrl) const;
-  std::string getCountQuery(const std::string& backendUrl) const;
+  const std::string& getFillQuery() const;
+  std::string getCountQuery() const;
 
   std::string requestIndexHash();
 
-  std::string queryUrl(std::string query, size_t offset, size_t limit) const;
+  std::string queryFields(std::string query, size_t offset, size_t limit) const;
 
   static bool pointValid(const util::geo::DPoint& p);
 
   static util::geo::DLine createLineString(const std::string& a, size_t p);
 
-	void addPolygon(const util::geo::Polygon<double>& p, size_t* i);
-	void addMultiPoint(const util::geo::MultiPoint<double>& mp, size_t *i);
-	void addMultiLineString(const util::geo::MultiLine<double>& ml, size_t* i);
-	void addLineString(const util::geo::Line<double>& l, size_t* i);
+  void addPolygon(const util::geo::Polygon<double>& p, size_t* i);
+  void addMultiPoint(const util::geo::MultiPoint<double>& mp, size_t* i);
+  void addMultiLineString(const util::geo::MultiLine<double>& ml, size_t* i);
+  void addLineString(const util::geo::Line<double>& l, size_t* i);
   void addMultiPolygon(const util::geo::MultiPolygon<double>& mp, size_t* i);
 
   void insertLine(const util::geo::DLine& l, bool isArea);
 
-	static std::vector<size_t> getGeomStarts(const std::string &str, size_t a);
-
-  std::string indexHashFromDisk(const std::string& fname);
+  static std::vector<size_t> getGeomStarts(const std::string& str, size_t a);
 
   static util::geo::DPoint projD(const util::geo::DPoint& p) {
     return util::geo::latLngToWebMerc<double>(p);

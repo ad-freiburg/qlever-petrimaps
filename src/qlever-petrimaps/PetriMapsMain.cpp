@@ -3,33 +3,59 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <curl/curl.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #include <iostream>
 
+#include "3rdparty/json.hpp"
+#include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/server/Server.h"
 #include "util/Misc.h"
 #include "util/http/Server.h"
 #include "util/log/Log.h"
 
+using nlohmann::json;
+using petrimaps::GeomCache;
 using petrimaps::Server;
 using util::LogLevel::ERROR;
 using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
 // _____________________________________________________________________________
-void printHelp(int argc, char** argv) {
-  UNUSED(argc);
+void printHelp(int, char** argv) {
+  double maxMemoryGB =
+      (sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE) * 0.9) / 1000000000;
+
   std::cout << "Usage: " << argv[0]
             << " [-p <port>] [-m <maxmemory>] [-c <cachedir>] [--help] [-h]"
             << "\n";
   std::cout
       << "\nAllowed arguments:\n    -p <port>    Port for server to listen to "
          "(default: 9090)"
-      << "\n    -m <memory>  Max memory in GB (default: 90% of system RAM)"
+      << "\n    -m <memory>  Max memory in GB (default: " << maxMemoryGB << ")"
       << "\n    -c <dir>     cache dir (default: none)"
+      << "\n    -x <token>   access token (default: none)"
       << "\n    -t <minutes> request cache lifetime (default: 360)"
       << "\n    -a <numobjects> threshold for auto layer selection (default: "
          "1000)\n";
+}
+
+// _____________________________________________________________________________
+petrimaps::GeomCacheConfig cacheConfigFromDisk(const std::string& fname) {
+  std::string url = util::split(fname, '/').back();
+  util::replaceAll(url, "#", "/");
+  auto canonized = petrimaps::canonizeURL(url);
+
+  auto fillQuery = GeomCache::fillQueryFromDisk(fname);
+
+  if (fillQuery.size() == 0) {
+    LOG(WARN) << "Empty fill query for index cache file " << fname
+              << ", using default";
+    fillQuery = petrimaps::getFillQuery(canonized);
+  }
+
+  return {canonized, petrimaps::getFillQuery(canonized)};
 }
 
 // _____________________________________________________________________________
@@ -47,6 +73,7 @@ int main(int argc, char** argv) {
   int port = 9090;
   int cacheLifetime = 6 * 60;
   size_t autoThreshold = 1000;
+  std::string accessToken;
   double maxMemoryGB =
       (sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE) * 0.9) / 1000000000;
   std::string cacheDir;
@@ -80,6 +107,12 @@ int main(int argc, char** argv) {
         exit(1);
       }
       cacheLifetime = atof(argv[i]);
+    } else if (cur == "-x") {
+      if (++i >= argc) {
+        LOG(ERROR) << "Missing argument for access token (-x).";
+        exit(1);
+      }
+      accessToken = argv[i];
     } else if (cur == "-a") {
       if (++i >= argc) {
         LOG(ERROR) << "Missing argument for auto threshold (-a).";
@@ -89,6 +122,8 @@ int main(int argc, char** argv) {
     }
   }
 
+  std::map<std::string, petrimaps::GeomCacheConfig> geomCacheConfigs;
+
   try {
     if (cacheDir.size() && access(cacheDir.c_str(), W_OK) != 0) {
       std::stringstream ss;
@@ -96,10 +131,33 @@ int main(int argc, char** argv) {
       throw std::runtime_error(ss.str());
     }
 
+    DIR* dir = opendir(cacheDir.c_str());
+    struct dirent* entry;
+
+    if (dir != nullptr) {
+      while ((entry = readdir(dir)) != nullptr) {
+        std::string fullpath = cacheDir + "/" + entry->d_name;
+
+        struct stat sb;
+        if (stat(fullpath.c_str(), &sb) == 0) {
+          if (S_ISREG(sb.st_mode)) {
+            auto cfg = cacheConfigFromDisk(fullpath);
+            geomCacheConfigs[cfg.backend] = cfg;
+            LOG(INFO) << "Configured backend " << cfg.backend;
+            LOG(INFO) << "  with fill query " << cfg.fillQuery;
+          }
+        }
+      }
+      closedir(dir);
+    }
+
+    if (accessToken.size() == 0)
+      LOG(WARN) << "No access token (-x) specified, this is a security risk.";
+
     LOG(INFO) << "Starting server...";
     LOG(INFO) << "Max memory is " << maxMemoryGB << " GB...";
     Server serv(maxMemoryGB * 1000000000, cacheDir, cacheLifetime,
-                autoThreshold);
+                autoThreshold, geomCacheConfigs, accessToken);
 
     LOG(INFO) << "Listening on port " << port;
     util::http::HttpServer(port, &serv, std::thread::hardware_concurrency())

@@ -26,8 +26,8 @@
 extern "C" {
 #endif
 
-#include "3rdparty/heatmap.h"
-#include "3rdparty/colorschemes/Spectral.h"
+#include "heatmap.h"
+#include "colorschemes/Spectral.h"
 
 static const unsigned char discrete_data[] = {
     0, 0, 0, 0, 94, 79, 162, 255, 50, 136, 189, 255, 102, 194, 165, 255, 171, 221, 164, 255, 230, 245, 152, 255, 241, 243, 167, 255, 254, 224, 144, 255, 253, 174, 97, 255, 244, 109, 67, 255, 213, 62, 79, 255, 158, 1, 66, 255
