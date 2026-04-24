@@ -74,7 +74,9 @@ void Requestor::request() {
 
   // sort by qlever id
   for (size_t i = 0; i < _geomColumns.size(); i++) {
-    LOG(INFO) << "[REQUESTOR] Sorting " << reader._ids[i].size() << " results for column " << _geomColumns[i] << " by qlever ID...";
+    LOG(INFO) << "[REQUESTOR] Sorting " << reader._ids[i].size()
+              << " results for column " << _geomColumns[i]
+              << " by qlever ID...";
     std::sort(reader._ids[i].begin(), reader._ids[i].end());
   }
   LOG(INFO) << "[REQUESTOR] ... done";
@@ -118,8 +120,8 @@ void Requestor::request() {
     _dynamicPoints[geomColId] = getDynamicPoints(reader._ids[geomColId]);
     _numObjects[geomColId] += _dynamicPoints[geomColId].size();
 
-    LOG(INFO) << "[REQUESTOR] ... done, got " <<  _dynamicPoints[geomColId].size()
-              << " points.";
+    LOG(INFO) << "[REQUESTOR] ... done, got "
+              << _dynamicPoints[geomColId].size() << " points.";
 
     LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";
 
@@ -496,12 +498,15 @@ std::vector<std::string> Requestor::getColumns(std::string query) const {
 std::string Requestor::prepQuery(std::string query,
                                  std::vector<std::string> columns,
                                  std::string sortBy) const {
+  std::vector<std::string> rawCols;
+  for (const auto& col : columns) rawCols.push_back(util::split(col, ':')[0]);
+
   std::regex expr("select[^{]*(\\*|[\\?$][A-Z0-9_\\-+]*)+[^{]*\\s*\\{",
                   std::regex_constants::icase);
 
   query =
       std::regex_replace(query, expr,
-                         "SELECT " + util::implode(columns, " ") + " WHERE {$&",
+                         "SELECT " + util::implode(rawCols, " ") + " WHERE {$&",
                          std::regex_constants::format_first_only) +
       "}";
 
@@ -725,7 +730,8 @@ const ResObj Requestor::getNearest(size_t fieldId, util::geo::DPoint rp,
             nearest >= _objects[fieldId].size() + _dynamicPoints[fieldId].size()
                 ? nearest - _objects[fieldId].size() -
                       _dynamicPoints[fieldId].size()
-                : nearest, fieldId,
+                : nearest,
+            fieldId,
             points.size() == 1 ? points[0] : util::geo::centroid(points),
             requestRow(row),
             points,
@@ -742,7 +748,8 @@ const ResObj Requestor::getNearest(size_t fieldId, util::geo::DPoint rp,
 
     if (isArea && util::geo::contains(rp, util::geo::DPolygon(dline))) {
       return {true,
-              nearestL, fieldId,
+              nearestL,
+              fieldId,
               {frp.getX(), frp.getY()},
               requestRow(_objects[fieldId][nearestL].second),
               geomPointGeoms(fieldId, nearestL, res),
@@ -753,7 +760,8 @@ const ResObj Requestor::getNearest(size_t fieldId, util::geo::DPoint rp,
         auto p = util::geo::PolyLine<double>(dline).projectOn(rp).p;
         auto fp = util::geo::DPoint(p.getX(), p.getY());
         return {true,
-                nearestL, fieldId,
+                nearestL,
+                fieldId,
                 fp,
                 requestRow(_objects[fieldId][nearestL].second),
                 geomPointGeoms(fieldId, nearestL, res),
@@ -764,7 +772,8 @@ const ResObj Requestor::getNearest(size_t fieldId, util::geo::DPoint rp,
         auto fp = util::geo::DPoint(p.getX(), p.getY());
 
         return {true,
-                nearestL, fieldId,
+                nearestL,
+                fieldId,
                 fp,
                 requestRow(_objects[fieldId][nearestL].second),
                 geomPointGeoms(fieldId, nearestL, res),
@@ -784,7 +793,8 @@ const ResObj Requestor::getGeom(size_t fieldId, size_t id, double rad) const {
   }
 
   if (id >= _objects[fieldId].size()) {
-    return {true, id, fieldId, {0, 0}, {}, geomPointGeoms(id, rad / 10), {}, {}};
+    return {true, id, fieldId, {0, 0}, {}, geomPointGeoms(id, rad / 10),
+            {},   {}};
   }
 
   auto obj = _objects[fieldId][id];
@@ -1142,7 +1152,8 @@ double Requestor::getVal(size_t fieldId, size_t oid) const {
     if (_dynamicPoints[fieldId][oid - _objects[fieldId].size()].second >=
         _vals[fieldId].size())
       return 1;
-    return _vals[fieldId][_dynamicPoints[fieldId][oid - _objects[fieldId].size()]
+    return _vals[fieldId]
+                [_dynamicPoints[fieldId][oid - _objects[fieldId].size()]
                      .second];
   }
 

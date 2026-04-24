@@ -32,6 +32,10 @@ struct FieldConfig {
   std::string color = "3388ff";
   std::string colorscheme = "";
   std::string style = "auto";
+
+  const std::string geomFieldRaw() const {
+    return util::split(geomField, ':')[0];
+  }
 };
 
 struct RequestorConfig {
@@ -88,7 +92,7 @@ class Requestor {
       _rcfg.fields.push_back({columns.back()});
     } else {
       for (const auto& field : _rcfg.fields) {
-        if (!_columnsMap.count(field.geomField)) continue;
+        if (!_columnsMap.count(field.geomFieldRaw())) continue;
         _geomColumns.push_back(field.geomField);
         if (_columnsMap.count(field.valueField)) {
           _valueFlds[_geomColumns.size() - 1] = _valueColumns.size();
@@ -198,7 +202,9 @@ class Requestor {
 
   size_t getFieldId(const std::string& field) {
     auto it = _geoColToLid.find(field);
-    if (it == _geoColToLid.end()) throw std::runtime_error("Field not found");
+    std::stringstream ss;
+    ss << "Field " << field << " not found";
+    if (it == _geoColToLid.end()) throw std::runtime_error(ss.str());
     return it->second;
   }
   size_t getNumFields() const { return _pgrid.size(); }

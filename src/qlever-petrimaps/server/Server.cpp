@@ -177,11 +177,11 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   std::string layers = pars.find("layers")->second;
 
   std::string id;
-  std::string layer;
+  std::string field;
 
   auto parts = util::split(layers, '-');
   if (parts.size()) id = parts[0];
-  if (parts.size() > 1) layer = parts[1];
+  if (parts.size() > 1) field = parts[1];
 
   MapStyle style = HEATMAP;
   auto colorScheme = heatmap_cs_Spectral_mixed_exp;
@@ -287,13 +287,13 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   double res = mercH / h;
 
-  size_t lid = r->getFieldId(layer);
+  size_t fid = r->getFieldId(field);
 
   checkMem(sizeof(float) * w * h, _maxMemory);
   heatmap_t* hm = heatmap_new(w, h);
   hm->max = r->getValRange().second;
 
-  double realCellSize = r->getPointGrid(lid).getCellWidth();
+  double realCellSize = r->getPointGrid(fid).getCellWidth();
   double virtCellSize = res * 2.5;
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
@@ -315,24 +315,24 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   for (size_t i = 0; i < NUM_THREADS; i++) points2[i].resize(w * h, 0);
 
   // POINTS
-  if (intersects(r->getPointGrid(lid).getBBox(), fbbox)) {
+  if (intersects(r->getPointGrid(fid).getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display points...";
     if (res < THRESHOLD) {
       std::vector<ID_TYPE> ret;
 
       // duplicates are not possible with points
-      r->getPointGrid(lid).get(fbbox, &ret);
+      r->getPointGrid(fid).get(fbbox, &ret);
 
       for (size_t j = 0; j < ret.size(); j++) {
         size_t i = ret[j];
 
-        const auto& objs = r->getObjects(lid);
-        const auto& dynPoints = r->getDynamicPoints(lid);
+        const auto& objs = r->getObjects(fid);
+        const auto& dynPoints = r->getDynamicPoints(fid);
 
         if (i >= objs.size() + dynPoints.size() && style == OBJECTS) {
           size_t cid = i - objs.size() - dynPoints.size();
           FPoint p;
-          size_t oid = r->getClusters(lid)[cid].first;
+          size_t oid = r->getClusters(fid)[cid].first;
 
           if (oid >= objs.size())
             p = dynPoints[oid - objs.size()].first;
@@ -341,7 +341,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
           if (!contains(p, fbbox)) continue;
 
-          const auto& cp = r->clusterGeom(lid, cid, res);
+          const auto& cp = r->clusterGeom(fid, cid, res);
 
           int px = ((cp.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
           int py = h - ((cp.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
@@ -350,17 +350,17 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           int ppy = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
           drawPoint(points[0], points2[0], px, py, w, h, style,
-                    r->getVal(lid, oid));
+                    r->getVal(fid, oid));
           drawLine(image.data(), ppx, ppy, px, py, w, h);
         } else {
           if (i >= objs.size() + dynPoints.size())
-            i = r->getClusters(lid)[i - objs.size() - dynPoints.size()].first;
+            i = r->getClusters(fid)[i - objs.size() - dynPoints.size()].first;
 
           FPoint p;
           if (i < objs.size())
             p = r->getPoint(objs[i].first);
           else
-            p = r->getDPoint(lid, i - objs.size());
+            p = r->getDPoint(fid, i - objs.size());
 
           if (!contains(p, fbbox)) continue;
 
@@ -368,13 +368,13 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           int py = h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
 
           drawPoint(points[0], points2[0], px, py, w, h, style,
-                    r->getVal(lid, i));
+                    r->getVal(fid, i));
         }
       }
     } else {
       // they intersect, we checked this above
-      auto iBox = intersection(r->getPointGrid(lid).getBBox(), fbbox);
-      const auto& grid = r->getPointGrid(lid);
+      auto iBox = intersection(r->getPointGrid(fid).getBBox(), fbbox);
+      const auto& grid = r->getPointGrid(fid);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t x = grid.getCellXFromX(iBox.getLowerLeft().getX());
@@ -406,24 +406,24 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           } else {
             for (auto i : *cell) {
               if (i >=
-                  r->getObjects(lid).size() + r->getDynamicPoints(lid).size()) {
-                i = r->getClusters(lid)[i - r->getObjects(lid).size() -
-                                        r->getDynamicPoints(lid).size()]
+                  r->getObjects(fid).size() + r->getDynamicPoints(fid).size()) {
+                i = r->getClusters(fid)[i - r->getObjects(fid).size() -
+                                        r->getDynamicPoints(fid).size()]
                         .first;
               }
 
               FPoint p;
-              if (i < r->getObjects(lid).size())
-                p = r->getPoint(r->getObjects(lid)[i].first);
+              if (i < r->getObjects(fid).size())
+                p = r->getPoint(r->getObjects(fid)[i].first);
               else
-                p = r->getDPoint(lid, i - r->getObjects(lid).size());
+                p = r->getDPoint(fid, i - r->getObjects(fid).size());
 
               int px = ((p.getX() - bbox.getLowerLeft().getX()) / mercW) * w;
               int py =
                   h - ((p.getY() - bbox.getLowerLeft().getY()) / mercH) * h;
               drawPoint(points[omp_get_thread_num()],
                         points2[omp_get_thread_num()], px, py, w, h, style,
-                        r->getVal(lid, i));
+                        r->getVal(fid, i));
             }
           }
         }
@@ -432,7 +432,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   }
 
   // LINES
-  const auto& lgrid = r->getLineGrid(lid);
+  const auto& lgrid = r->getLineGrid(fid);
 
   if (intersects(lgrid.getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display lines...";
@@ -446,7 +446,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
       for (size_t idx = 0; idx < ret.size(); idx++) {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
-        auto lineId = r->getObjects(lid)[ret[idx]].first;
+        auto lineId = r->getObjects(fid)[ret[idx]].first;
+        auto oid = r->getObjects(fid)[ret[idx]].second;
         if (!r->lineIntersects(lineId, bbox)) continue;
 
         // the factor depends on the render thickness of the line, make
@@ -460,12 +461,12 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
           if (px >= 0 && py >= 0 && px < w && py < h) {
             if (points2[0][w * py + px] == 0) points[0].push_back(w * py + px);
-            points2[0][py * w + px] += 1;
+            points2[0][py * w + px] += r->getVal(fid, oid);
           }
         }
       }
     } else {
-      const auto& lpgrid = r->getLinePointGrid(lid);
+      const auto& lpgrid = r->getLinePointGrid(fid);
       auto iBox = intersection(lpgrid.getBBox(), fbbox);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
@@ -656,19 +657,19 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
   if (!reqor->ready()) {
     throw std::invalid_argument("Session not ready.");
   }
-  size_t lid = reqor->getFieldId(layer);
+  size_t fid = reqor->getFieldId(layer);
 
   // as soon as we are ready, the reqor can be read concurrently
-  auto res = reqor->getGeom(lid, gid, rad);
+  auto res = reqor->getGeom(fid, gid, rad);
 
   util::json::Val dict;
 
   if (!noExport) {
     size_t row;
-    if (gid < reqor->getObjects(lid).size())
-      row = reqor->getObjects(lid)[gid].second;
+    if (gid < reqor->getObjects(fid).size())
+      row = reqor->getObjects(fid)[gid].second;
     else
-      row = reqor->getDynamicPoints(lid)[gid].second;
+      row = reqor->getDynamicPoints(fid)[gid].second;
 
     for (auto col : reqor->requestRow(row)) {
       dict.dict[col.first] = col.second;
@@ -777,7 +778,8 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
 
   if (res.has) {
     json << "{\"id\" :" << res.id;
-    json << ",\"geomfield\" :\"" << reqor->getFields()[res.fieldId].geomField << "\"";
+    json << ",\"geomfield\" :\"" << reqor->getFields()[res.fieldId].geomField
+         << "\"";
     json << ",\"attrs\" : [";
 
     bool first = true;
@@ -1023,9 +1025,9 @@ util::http::Answer Server::handleQueryReq(
 
   util::geo::FBox bbox;
 
-  for (size_t lid = 0; lid < reqor->getNumFields(); lid++) {
-    bbox = extendBox(reqor->getPointGrid(lid).getBBox(), bbox);
-    bbox = extendBox(reqor->getLineGrid(lid).getBBox(), bbox);
+  for (size_t fid = 0; fid < reqor->getNumFields(); fid++) {
+    bbox = extendBox(reqor->getPointGrid(fid).getBBox(), bbox);
+    bbox = extendBox(reqor->getLineGrid(fid).getBBox(), bbox);
   }
 
   size_t numObjs = reqor->getNumObjects();
@@ -1571,6 +1573,8 @@ RequestorConfig Server::getRequestorCfgFromJSON(
     const std::string& jsonStr) const {
   RequestorConfig ret;
 
+  std::multiset<std::string> geomFields;
+
   try {
     nlohmann::json data = nlohmann::json::parse(jsonStr);
 
@@ -1588,8 +1592,17 @@ RequestorConfig Server::getRequestorCfgFromJSON(
             }
             FieldConfig curField;
             if (layer.value().contains("id")) curField.id = layer.value()["id"];
-            if (layer.value().contains("geomfield"))
+            if (layer.value().contains("geomfield")) {
               curField.geomField = layer.value()["geomfield"];
+              if (geomFields.count(curField.geomField)) {
+                geomFields.insert(curField.geomField);
+                curField.geomField =
+                    std::string(layer.value()["geomfield"]) + ":" +
+                    std::to_string(geomFields.count(curField.geomField));
+              } else {
+                geomFields.insert(curField.geomField);
+              }
+            }
             if (layer.value().contains("name"))
               curField.name = layer.value()["name"];
             if (layer.value().contains("weightfield"))
