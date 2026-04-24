@@ -24,8 +24,7 @@ std::vector<std::string> RequestReader::requestColumns(
   std::string resString;
 
   try {
-    auto url = queryUrl(query) + "&action=tsv_export";
-    resString = httpRequest(url);
+    resString = httpRequest(_backendUrl, queryFields(query) + "&action=tsv_export");
   } catch (const std::runtime_error& e) {
     std::stringstream ss;
     ss << "[REQUESTREADER] " << e.what();
@@ -44,9 +43,11 @@ void RequestReader::requestIds(const std::string& query) {
   _raw.reserve(10000);
 
   if (_curl) {
-    auto url = queryUrl(query);
+    auto flds = queryFields(query);
     petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(_curl, CURLOPT_URL, _backendUrl.c_str());
+    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, RequestReader::writeCbIds);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
 
@@ -110,9 +111,11 @@ void RequestReader::requestRows(const std::string& query,
   _raw.reserve(10000);
 
   if (_curl) {
-    auto url = queryUrl(query);
+    auto flds = queryFields(query);
     petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(_curl, CURLOPT_URL, _backendUrl.c_str());
+    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, ptr);
 
@@ -160,12 +163,12 @@ void RequestReader::requestRows(const std::string& query,
 }
 
 // _____________________________________________________________________________
-std::string RequestReader::queryUrl(const std::string& query) const {
+std::string RequestReader::queryFields(const std::string& query) const {
   auto escStr = curl_easy_escape(_curl, query.c_str(), query.size());
   std::string esc = escStr;
   curl_free(escStr);
 
-  return _backendUrl + "/?send=18446744073709551615" + "&query=" + esc;
+  return "send=18446744073709551615&query=" + esc;
 }
 
 // _____________________________________________________________________________

@@ -381,9 +381,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
            x <= grid.getCellXFromX(iBox.getUpperRight().getX()); x++) {
         for (size_t y = grid.getCellYFromY(iBox.getLowerLeft().getY());
              y <= grid.getCellYFromY(iBox.getUpperRight().getY()); y++) {
-          if (x >= grid.getXWidth() || y >= grid.getYHeight()) {
-            continue;
-          }
+          if (x >= grid.getXWidth() || y >= grid.getYHeight()) continue;
 
           auto cell = grid.getCell(x, y);
           if (!cell || cell->size() == 0) continue;
@@ -450,8 +448,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         auto oid = r->getObjects(fid)[ret[idx]].second;
         if (!r->lineIntersects(lineId, bbox)) continue;
 
-        // the factor depends on the render thickness of the line, make
-        // this configurable!
         const auto& denseLine =
             densify(r->extractLineGeom(lineId - I_OFFSET), res);
 

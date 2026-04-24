@@ -30,7 +30,7 @@ struct FieldConfig {
   double rasterW = 0;
   double rasterH = 0;
   std::string color = "3388ff";
-  std::string colorscheme = "";
+  std::string colorscheme = "spectralexp";
   std::string style = "auto";
 
   const std::string geomFieldRaw() const {

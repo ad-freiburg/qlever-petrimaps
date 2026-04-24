@@ -183,13 +183,14 @@ function loadLayers(id, numObjects, autoThreshold, layers) {
 }
 
 function getLayer(id, layer, autoThreshold) {
+    console.log(layer);
     if (layer["style"] == "auto") {
         const autoHeatmapLayer = L.nonTiledLayer.wms('heatmap', {
             minZoom: 0,
             maxZoom: 15,
             opacity: layer["numobjects"] > autoThreshold ? 0.8 : 0.9,
             layers: id + "-" + layer["geomfield"],
-            styles: layer["numobjects"] > autoThreshold ? ["heatmap-spectralexp"] : ["objects-" + layer["color"]],
+            styles: layer["numobjects"] > autoThreshold ? ["heatmap-" + layer["colorscheme"]] : ["objects-" + layer["color"]],
             format: 'image/png',
             transparent: true,
         });
@@ -210,7 +211,7 @@ function getLayer(id, layer, autoThreshold) {
             maxZoom: 19,
             opacity: 0.8,
             layers: id + "-" + layer["geomfield"],
-            styles: ["raster-" + layer["rasterw"] + "x" + layer["rasterh"] + "-" + "spectral"],
+            styles: ["raster-" + layer["rasterw"] + "x" + layer["rasterh"] + "-" +  layer["colorscheme"]],
             format: 'image/png',
             transparent: true
         })};
@@ -220,7 +221,7 @@ function getLayer(id, layer, autoThreshold) {
             maxZoom: 19,
             opacity: 0.8,
             layers: id + "-" + layer["geomfield"],
-            styles: ["heatmap-" + "spectral"],
+            styles: ["heatmap-" + layer["colorscheme"]],
             format: 'image/png',
             transparent: true
         }) };

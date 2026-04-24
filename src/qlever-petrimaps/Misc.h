@@ -102,7 +102,7 @@ inline void petrimapsCurlSetup(CURL* curl) {
 
 size_t writeStringCb(void* contents, size_t size, size_t nmemb, void* userp);
 
-inline std::string httpRequest(const std::string& url) {
+inline std::string httpRequest(const std::string& url, const std::string& postFields = "") {
   CURL* curl = curl_easy_init();
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
@@ -111,6 +111,10 @@ inline std::string httpRequest(const std::string& url) {
 
   petrimapsCurlSetup(curl);
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  if (postFields.size()) {
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postFields.c_str());
+  }
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeStringCb);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resString);
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
@@ -170,7 +174,7 @@ struct RequestReader {
   static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
                            void* userp);
 
-  std::string queryUrl(const std::string& query) const;
+  std::string queryFields(const std::string& query) const;
 
   std::string _backendUrl;
   CURL* _curl;

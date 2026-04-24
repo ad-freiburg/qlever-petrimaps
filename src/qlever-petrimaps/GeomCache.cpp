@@ -398,9 +398,11 @@ size_t GeomCache::requestSize() {
     LOG(INFO) << "[GEOMCACHE] Count query to obtain the number of geometries:"
               << std::endl
               << countQuery;
-    auto qUrl = queryUrl(countQuery, 0, 1);
+    auto flds = queryFields(countQuery, 0, 1);
     petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
+    curl_easy_setopt(_curl, CURLOPT_URL, _config.backend.c_str());
+    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbCount);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
@@ -461,9 +463,11 @@ void GeomCache::requestPart(size_t offset) {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    auto qUrl = queryUrl(getFillQuery(), offset, 10000000);
+    auto flds = queryFields(getFillQuery(), offset, 10000000);
     petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
+    curl_easy_setopt(_curl, CURLOPT_URL, _config.backend.c_str());
+    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
@@ -671,9 +675,11 @@ void GeomCache::requestIdPart(size_t offset) {
   char errbuf[CURL_ERROR_SIZE];
 
   if (_curl) {
-    auto qUrl = queryUrl(getFillQuery(), offset, 100000000);
+    auto flds = queryFields(getFillQuery(), offset, 100000000);
     petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, qUrl.c_str());
+    curl_easy_setopt(_curl, CURLOPT_URL, _config.backend.c_str());
+    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbIds);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
@@ -716,7 +722,7 @@ void GeomCache::requestIdPart(size_t offset) {
 }
 
 // _____________________________________________________________________________
-std::string GeomCache::queryUrl(std::string query, size_t offset,
+std::string GeomCache::queryFields(std::string query, size_t offset,
                                 size_t limit) const {
   std::stringstream ss;
 
@@ -730,7 +736,7 @@ std::string GeomCache::queryUrl(std::string query, size_t offset,
 
   auto esc = curl_easy_escape(_curl, query.c_str(), query.size());
 
-  ss << _config.backend << "/?send=" << std::to_string(MAXROWS)
+  ss << "send=" << std::to_string(MAXROWS)
      << "&query=" << esc;
 
   curl_free(esc);

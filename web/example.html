@@ -58,7 +58,7 @@
       <label for="config">Requestor config JSON</label>
       <textarea id="config" name="cfg">
 {
-  "query" : "PREFIX ogc: <http://www.opengis.net/rdf#>\nPREFIX geo: <http://www.opengis.net/ont/geosparql#>\nPREFIX osm2rdfkey: <https://osm2rdf.cs.uni-freiburg.de/rdf/key#>\nPREFIX wp: <https://en.wikipedia.org/wiki/>\nPREFIX osm2rdf: <https://osm2rdf.cs.uni-freiburg.de/rdf#>\nPREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>\nSELECT ?area ?geom2 ?geom WHERE {  ?empire osm2rdfkey:wikipedia wp:British%20Empire .  ?empire geo:hasGeometry/geo:asWKT ?geom .  ?empire ogc:sfContains ?a .  ?a osmkey:building \"university\" . ?a osm2rdf:area ?area .  ?a geo:hasGeometry/geo:asWKT ?geom2} LIMIT 10",
+  "query" : "PREFIX geo: <http://www.opengis.net/ont/geosparql#>\nPREFIX osm: <https://www.openstreetmap.org/>\nPREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nPREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>\nPREFIX osm2rdf: <https://osm2rdf.cs.uni-freiburg.de/rdf#>\nSELECT ?country ?admin_level ?area ?geom WHERE {\n  ?country osmkey:admin_level ?admin_level .\n  ?country rdf:type osm:relation .                                                                                                                                                                                 \n  ?country osmkey:name ?name . \n  ?country osm2rdf:area ?area . \n  ?country geo:hasGeometry/geo:asWKT ?geom . \n  ?country osmkey:start_date ?start_date .                                                              \n  ?country osmkey:end_date ?end_date .   \n  VALUES ?date { \"1900-01-01\"^^xsd:date } \n  FILTER (?date >= xsd:date(?start_date) && ?date <= xsd:date(?end_date))                                                                                                                                          \n}",
   "layers" : [
     {
         "id" : "1",
@@ -74,18 +74,31 @@
         "style" : "objects"
     },
     {
-        "name" : "?geom als heatmap",
+        "name" : "?geom in blau",
         "geomfield" : "?geom",
+        "color" : "0000FF",
+        "style" : "objects"
+    },
+    {
+        "name" : "?geom als heatmap (area, spectral)",
+        "geomfield" : "?geom",
+        "weightfield" : "?area",
         "colorscheme" : "spectral",
         "style" : "heatmap"
     },
     {
-        "id" : "2",
-        "name" : "?geom2 in blau",
-        "geomfield" : "?geom2",
-        "color" : "0000FF",
-        "style" : "objects",
-        "toggle" : "checkbox"
+        "name" : "?geom als heatmap (area, spectralexp)",
+        "geomfield" : "?geom",
+        "weightfield" : "?area",
+        "colorscheme" : "spectralexp",
+        "style" : "heatmap"
+    },
+    {
+        "name" : "?geom als heatmap (admin_level)",
+        "geomfield" : "?geom",
+        "weightfield" : "?admin_level",
+        "colorscheme" : "YlOrRdexp",
+        "style" : "heatmap"
     }
   ]
 }

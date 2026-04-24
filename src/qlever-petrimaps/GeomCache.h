@@ -200,7 +200,7 @@ class GeomCache {
 
   std::string requestIndexHash();
 
-  std::string queryUrl(std::string query, size_t offset, size_t limit) const;
+  std::string queryFields(std::string query, size_t offset, size_t limit) const;
 
   static bool pointValid(const util::geo::DPoint& p);
 
