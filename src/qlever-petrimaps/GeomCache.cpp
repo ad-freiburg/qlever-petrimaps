@@ -36,9 +36,6 @@ using util::LogLevel::ERROR;
 using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
-// change on each index-breaking change to the code base
-const static std::string INDEX_HASH_PREFIX = "_5_";
-
 // _____________________________________________________________________________
 const std::string &GeomCache::getFillQuery() const {
   return _config.fillQuery;
@@ -59,12 +56,6 @@ std::string GeomCache::getCountQuery() const {
   return query;
 }
 
-// _____________________________________________________________________________
-size_t GeomCache::writeCbString(void *contents, size_t size, size_t nmemb,
-                                void *userp) {
-  ((std::string *)userp)->append((char *)contents, size * nmemb);
-  return size * nmemb;
-}
 
 // _____________________________________________________________________________
 size_t GeomCache::writeCb(void *contents, size_t size, size_t nmemb,
@@ -1261,6 +1252,13 @@ void GeomCache::requestRasterMeta() {
 }
 
 // _____________________________________________________________________________
+std::string GeomCache::requestIndexHash() {
+  auto r = RequestReader(getConfig().backend, _maxMemory, 0, 0, 0);
+
+  return r.requestIndexHash(getConfig().getHash());
+}
+
+// _____________________________________________________________________________
 std::pair<double, double> GeomCache::getRasterMeta(size_t did) const {
   auto i = _rasterMeta.find(did);
   if (i != _rasterMeta.end()) return i->second;
@@ -1268,50 +1266,6 @@ std::pair<double, double> GeomCache::getRasterMeta(size_t did) const {
   LOG(WARN) << "[GEOMCACHE] Unknown raster dataset " << did;
 
   return {10, 10};
-}
-
-// _____________________________________________________________________________
-std::string GeomCache::requestIndexHash() {
-  // TODO: move this function into Reader class
-  CURLcode res;
-  char errbuf[CURL_ERROR_SIZE];
-  std::string response;
-
-  if (_curl) {
-    std::string url = _config.backend + "/?cmd=get-index-id";
-    petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbString);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, &response);
-    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-
-    res = curl_easy_perform(_curl);
-
-    if (res != CURLE_OK) {
-      size_t len = strlen(errbuf);
-      if (len > 0) {
-        LOG(ERROR) << "[GEOMCACHE] " << errbuf;
-      } else {
-        LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
-      }
-
-      return "";
-    }
-
-    long httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    if (httpCode != 200) {
-      LOG(WARN) << "QLever backend returned status code " << httpCode
-                << " for index hash.";
-      return "";
-    }
-
-    return INDEX_HASH_PREFIX + "|" + _config.getHash() + "|" + response;
-  } else {
-    LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request for index hash.";
-    return "";
-  }
 }
 
 // _____________________________________________________________________________

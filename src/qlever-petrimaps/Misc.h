@@ -169,6 +169,7 @@ struct RequestReader {
   void requestIds(const std::string& qurl);
   std::map<size_t, std::pair<double, double>> requestRasterMeta(
       const std::string& query);
+  std::string requestIndexHash(const std::string& configHash);
   void requestRows(const std::string& qurl);
   void requestRows(const std::string& query,
                    size_t (*writeCb)(void*, size_t, size_t, void*), void* ptr);
@@ -181,6 +182,8 @@ struct RequestReader {
                            void* userp);
   static size_t writeCbRasterMeta(void* contents, size_t size, size_t nmemb,
                                   void* userp);
+  static size_t writeCbString(void* contents, size_t size, size_t nmemb,
+                              void* userp);
 
   std::string queryFields(const std::string& query) const;
 

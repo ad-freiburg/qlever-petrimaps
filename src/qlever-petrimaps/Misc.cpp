@@ -17,6 +17,9 @@ using util::LogLevel::ERROR;
 using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
+// change on each index-breaking change to the code base
+const static std::string INDEX_HASH_PREFIX = "_5_";
+
 // _____________________________________________________________________________
 std::vector<std::string> RequestReader::requestColumns(
     const std::string& query) {
@@ -505,3 +508,55 @@ std::string petrimaps::canonizeURL(const std::string& inURL) {
   curl_easy_cleanup(curl);
   return normalizeURL(ret);
 }
+
+// _____________________________________________________________________________
+size_t RequestReader::writeCbString(void *contents, size_t size, size_t nmemb,
+                                void *userp) {
+  ((std::string *)userp)->append((char *)contents, size * nmemb);
+  return size * nmemb;
+}
+
+// _____________________________________________________________________________
+std::string RequestReader::requestIndexHash(const std::string& configHash) {
+  // TODO: move this function into Reader class
+  CURLcode res;
+  char errbuf[CURL_ERROR_SIZE];
+  std::string response;
+
+  if (_curl) {
+    std::string url = _backendUrl + "/?cmd=get-index-id";
+    petrimapsCurlSetup(_curl);
+    curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, RequestReader::writeCbString);
+    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
+
+    res = curl_easy_perform(_curl);
+
+    if (res != CURLE_OK) {
+      size_t len = strlen(errbuf);
+      if (len > 0) {
+        LOG(ERROR) << "[GEOMCACHE] " << errbuf;
+      } else {
+        LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
+      }
+
+      return "";
+    }
+
+    long httpCode = 0;
+    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    if (httpCode != 200) {
+      LOG(WARN) << "QLever backend returned status code " << httpCode
+                << " for index hash.";
+      return "";
+    }
+
+    return INDEX_HASH_PREFIX + "|" + configHash + "|" + response;
+  } else {
+    LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request for index hash.";
+    return "";
+  }
+}
+
