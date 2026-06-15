@@ -15,6 +15,7 @@
 
 #include "3rdparty/heatmap.h"
 #include "qlever-petrimaps/GeomCache.h"
+#include "qlever-petrimaps/server/RenderContext.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "util/http/Server.h"
 
@@ -22,8 +23,6 @@ namespace petrimaps {
 
 typedef std::map<std::string, std::string> Params;
 typedef std::unordered_map<std::string, std::string> HeaderParams;
-
-enum MapStyle { HEATMAP, OBJECTS, RASTER };
 
 class Server : public util::http::Handler {
  public:
@@ -92,9 +91,6 @@ class Server : public util::http::Handler {
   util::geo::Point<int> mercToPx(util::geo::DPoint p, double orx, double ory,
                                  double mercW, double mercH, int w,
                                  int h) const;
-  heatmap_stamp_t* rasterStamp(double res, double w, double h, double screenW,
-                               double screenH) const;
-
   size_t _maxMemory;
 
   std::string _cacheDir;
