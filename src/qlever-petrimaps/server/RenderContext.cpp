@@ -26,7 +26,8 @@ using petrimaps::MapStyle;
 using petrimaps::RenderContext;
 
 // _____________________________________________________________________________
-RenderContext::RenderContext(size_t w, size_t h, MapStyle style, size_t numThreads)
+RenderContext::RenderContext(size_t w, size_t h, MapStyle style,
+                             size_t numThreads)
     : _points(numThreads),
       _weights(numThreads),
       _rasterDims(numThreads),
@@ -42,8 +43,7 @@ RenderContext::RenderContext(size_t w, size_t h, MapStyle style, size_t numThrea
 
 // _____________________________________________________________________________
 void RenderContext::drawPoint(size_t tid, int px, int py, int w, int h,
-                              double weight, double rasterW,
-                              double rasterH) {
+                              double weight, double rasterW, double rasterH) {
   if (_style == RASTER) {
     if (px >= 0 && py >= 0 && px < w && py < h) {
       _rasterDims[tid][w * py + px] = {rasterW, rasterH};
@@ -119,8 +119,8 @@ void RenderContext::writeHeatmap(heatmap_t* hm, double res) {
       for (const auto& p : _points[i]) {
         if (stamps.count(_rasterDims[i][p])) continue;
         if (_weights[i][p] == 0) continue;
-        stamps[_rasterDims[i][p]] = rasterStamp(res, _rasterDims[i][p].first,
-                                               _rasterDims[i][p].second, _w, _h);
+        stamps[_rasterDims[i][p]] = rasterStamp(
+            res, _rasterDims[i][p].first, _rasterDims[i][p].second, _w, _h);
       }
     }
 
@@ -165,7 +165,8 @@ void RenderContext::writeHeatmap(heatmap_t* hm, double res) {
 
 // _____________________________________________________________________________
 heatmap_stamp_t* RenderContext::rasterStamp(double res, double w, double h,
-                                     double screenW, double screenH) const {
+                                            double screenW,
+                                            double screenH) const {
   if (w < 0) w = 0;
   if (h < 0) h = 0;
   if (screenW < 0) screenW = 0;
@@ -187,4 +188,3 @@ heatmap_stamp_t* RenderContext::rasterStamp(double res, double w, double h,
 
   return heatmap_stamp_new_with(width, height, stamp);
 }
-

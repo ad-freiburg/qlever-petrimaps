@@ -85,6 +85,8 @@ void Requestor::request() {
 
   _objects.resize(_geomColumns.size());
   _vals.resize(_geomColumns.size());
+  _valsMax.resize(_geomColumns.size(), 0);
+  _valsMin.resize(_geomColumns.size(), 1);
   _rasterMetas.resize(_geomColumns.size());
   _dynamicPoints.resize(_geomColumns.size());
   _pgrid.resize(_geomColumns.size());
@@ -105,12 +107,12 @@ void Requestor::request() {
     if (_valueFlds.count(geomColId)) {
       _vals[geomColId] = std::move(reader._vals[_valueFlds[geomColId]]);
 
-      _valMin = std::numeric_limits<double>::max();
-      _valMax = 0;
+      _valsMin[geomColId] = std::numeric_limits<double>::max();
+      _valsMax[geomColId] = 0;
 
       for (auto v : _vals[geomColId]) {
-        if (v < _valMin) _valMin = v;
-        if (v > _valMax) _valMax = v;
+        if (v < _valsMin[geomColId]) _valsMin[geomColId] = v;
+        if (v > _valsMax[geomColId]) _valsMax[geomColId] = v;
       }
     }
 
@@ -873,9 +875,10 @@ util::geo::MultiPoint<double> Requestor::geomPointGeoms(size_t fieldId,
     points.push_back(
         {_dynamicPoints[fieldId][oid - _objects[fieldId].size()].first.getX(),
          _dynamicPoints[fieldId][oid - _objects[fieldId].size()].first.getY()});
+    return points;
   }
 
-  // catch multigeometries
+  // catch multigeometries, not relevant for dynamic points
   for (size_t i = oid;
        i < _objects[fieldId].size() &&
        _objects[fieldId][i].second == _objects[fieldId][oid].second;
@@ -1068,24 +1071,24 @@ bool Requestor::lineIntersects(size_t lineId,
 }
 
 // _____________________________________________________________________________
-std::pair<double, double> Requestor::getValRange() const {
-  if (_valMin >= _valMax) return {0, 0};
-  return {_valMin, _valMax};
+std::pair<double, double> Requestor::getValRange(size_t fid) const {
+  if (_valsMin[fid] >= _valsMax[fid]) return {0, 0};
+  return {_valsMin[fid], _valsMax[fid]};
 }
 
 // _____________________________________________________________________________
-std::pair<double, double> Requestor::getRasterMetas(size_t fieldId,
-                                                    size_t oid) const {
+std::pair<double, double> Requestor::getRasterMetas(
+    size_t fieldId, size_t oid, std::pair<double, double> def) const {
   if (oid < _objects[fieldId].size()) {
     if (_objects[fieldId][oid].second >= _rasterMetas[fieldId].size())
-      return {10, 10};
+      return def;
     size_t did = _rasterMetas[fieldId][_objects[fieldId][oid].second];
     return _cache->getRasterMeta(did);
   }
   if (oid >= _objects[fieldId].size()) {
     if (_dynamicPoints[fieldId][oid - _objects[fieldId].size()].second >=
         _rasterMetas[fieldId].size())
-      return {10, 10};
+      return def;
     size_t did =
         _rasterMetas[fieldId]
                     [_dynamicPoints[fieldId][oid - _objects[fieldId].size()]
@@ -1093,7 +1096,7 @@ std::pair<double, double> Requestor::getRasterMetas(size_t fieldId,
     return _cache->getRasterMeta(did);
   }
 
-  return {10, 10};
+  return def;
 }
 
 // _____________________________________________________________________________

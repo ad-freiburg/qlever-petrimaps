@@ -154,7 +154,8 @@ class Requestor {
 
   const std::pair<ID_TYPE, std::pair<size_t, size_t>>& getCluster(
       size_t fieldId, size_t oid) const {
-    size_t cid = oid - _objects[fieldId].size() - _dynamicPoints[fieldId].size();
+    size_t cid =
+        oid - _objects[fieldId].size() - _dynamicPoints[fieldId].size();
     return _clusterObjects[fieldId][cid];
   }
 
@@ -178,7 +179,9 @@ class Requestor {
     return _objects[fieldId][oid].second;
   }
 
-  bool isCluster(size_t fieldId, ID_TYPE id) const { return id >= getObjects(fieldId).size() + getDynamicPoints(fieldId).size(); }
+  bool isCluster(size_t fieldId, ID_TYPE id) const {
+    return id >= getObjects(fieldId).size() + getDynamicPoints(fieldId).size();
+  }
 
   size_t getLine(ID_TYPE id) const { return _cache->getLine(id); }
 
@@ -224,7 +227,8 @@ class Requestor {
   std::vector<std::string> getColumns(std::string query) const;
 
   double getVal(size_t lid, size_t oid) const;
-  std::pair<double, double> getRasterMetas(size_t lid, size_t oid) const;
+  std::pair<double, double> getRasterMetas(size_t lid, size_t oid,
+                                           std::pair<double, double> def) const;
 
   size_t getFieldId(const std::string& field) {
     auto it = _geoColToLid.find(field);
@@ -237,7 +241,7 @@ class Requestor {
   bool lineIntersects(size_t lid, const util::geo::DBox& bbox) const;
 
   const std::vector<FieldConfig> getFields() const { return _rcfg.fields; }
-  std::pair<double, double> getValRange() const;
+  std::pair<double, double> getValRange(size_t fid) const;
 
   std::chrono::time_point<std::chrono::system_clock> createdAt() const {
     return _createdAt;
@@ -275,7 +279,8 @@ class Requestor {
   std::vector<std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>>
       _clusterObjects;
   std::vector<std::vector<double>> _vals;
-  double _valMax = 0, _valMin = 1;
+  std::vector<double> _valsMax;
+  std::vector<double> _valsMin;
   std::vector<std::vector<size_t>> _rasterMetas;
   std::vector<size_t> _numObjects;
 

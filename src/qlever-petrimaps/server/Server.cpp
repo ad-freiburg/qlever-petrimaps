@@ -268,6 +268,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
     }
     r = _rs[id];
   }
+  if (!r->ready()) {
+    throw std::invalid_argument("Session not ready.");
+  }
 
   LOG(INFO) << "[SERVER] Begin heat for session " << id;
 
@@ -288,8 +291,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   int w = atoi(pars.find("width")->second.c_str());
   int h = atoi(pars.find("height")->second.c_str());
 
-  if (w < 0 || w > 3000) throw std::invalid_argument("Invalid request");
-  if (h < 0 || h > 3000) throw std::invalid_argument("Invalid request");
+  if (w <= 0 || w > 3000) throw std::invalid_argument("Invalid request");
+  if (h <= 0 || h > 3000) throw std::invalid_argument("Invalid request");
 
   double res = mercH / h;
 
@@ -297,7 +300,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   checkMem(sizeof(float) * w * h, _maxMemory);
   heatmap_t* hm = heatmap_new(w, h);
-  hm->max = r->getValRange().second;
+  hm->max = r->getValRange(fid).second;
 
   double realCellSize = r->getPointGrid(fid).getCellWidth();
   double virtCellSize = res * 2.5;
@@ -339,7 +342,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           auto ppx = mercToPx(p, orx, ory, mercW, mercH, w, h);
 
           rcontext.drawPoint(0, px.getX(), px.getY(), w, h, r->getVal(fid, oid),
-                             rasterWidth, rasterHeight);
+                             0, 0);
           rcontext.drawLine(px.getX(), px.getY(), ppx.getX(), ppx.getY(), w, h);
         } else {
           if (r->isCluster(fid, oid)) oid = r->getCluster(fid, oid).first;
@@ -350,13 +353,15 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           auto px = mercToPx(p, orx, ory, mercW, mercH, w, h);
 
           if (style == RASTER) {
-            auto rasterMeta = r->getRasterMetas(fid, oid);
-            rasterWidth = rasterMeta.first;
-            rasterHeight = rasterMeta.second;
+            auto rasterMeta =
+                r->getRasterMetas(fid, oid, {rasterWidth, rasterHeight});
+            rcontext.drawPoint(0, px.getX(), px.getY(), w, h,
+                               r->getVal(fid, oid), rasterMeta.first,
+                               rasterMeta.second);
           }
 
           rcontext.drawPoint(0, px.getX(), px.getY(), w, h, r->getVal(fid, oid),
-                             rasterWidth, rasterHeight);
+                             0, 0);
         }
       }
     } else {
@@ -380,8 +385,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
             auto px =
                 mercToPx(cellBox.getLowerLeft(), orx, ory, mercW, mercH, w, h);
 
-            rcontext.drawPoint(tid, px.getX(), px.getY(), w, h, cell->size(),
-                               rasterWidth, rasterHeight);
+            // TODO: just setting rasterWidth to 1x1 here is not correct
+            rcontext.drawPoint(tid, px.getX(), px.getY(), w, h, cell->size(), 1,
+                               1);
           } else {
             for (auto oid : *cell) {
               if (r->isCluster(fid, oid)) oid = r->getCluster(fid, oid).first;
@@ -390,14 +396,12 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
               auto px = mercToPx(p, orx, ory, mercW, mercH, w, h);
 
               if (style == RASTER) {
-                auto rasterMeta = r->getRasterMetas(fid, oid);
-                rasterWidth = rasterMeta.first;
-                rasterHeight = rasterMeta.second;
+                auto rasterMeta =
+                    r->getRasterMetas(fid, oid, {rasterWidth, rasterHeight});
+                rcontext.drawPoint(tid, px.getX(), px.getY(), w, h,
+                                   r->getVal(fid, oid), rasterMeta.first,
+                                   rasterMeta.second);
               }
-
-              rcontext.drawPoint(tid, px.getX(), px.getY(), w, h,
-                                 r->getVal(fid, oid), rasterWidth,
-                                 rasterHeight);
             }
           }
         }
@@ -581,6 +585,7 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
   if (!reqor->ready()) {
     throw std::invalid_argument("Session not ready.");
   }
+
   size_t fid = reqor->getFieldId(layer);
 
   // as soon as we are ready, the reqor can be read concurrently
@@ -590,11 +595,14 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
 
   if (!noExport) {
     size_t row;
-    if (gid < reqor->getObjects(fid).size())
+    if (gid < reqor->getObjects(fid).size()) {
       row = reqor->getObjects(fid)[gid].second;
-    else {
+    } else if (gid - reqor->getObjects(fid).size() <
+               reqor->getDynamicPoints(fid).size()) {
       row = reqor->getDynamicPoints(fid)[gid - reqor->getObjects(fid).size()]
                 .second;
+    } else {
+      throw std::invalid_argument("Invalid request.");
     }
 
     for (auto col : reqor->requestRow(row)) {
@@ -673,6 +681,8 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   auto fbbox = FBox({x1, y1}, {x2, y2});
 
   int h = atoi(pars.find("height")->second.c_str());
+
+  if (h <= 0 || h > 3000) throw std::invalid_argument("Invalid request");
 
   double reso = mercH / h;
 
@@ -1146,7 +1156,7 @@ void Server::clearOldSessions() const {
       for (const auto& i : _rs) {
         if (std::chrono::duration_cast<std::chrono::minutes>(
                 std::chrono::system_clock::now() - i.second->createdAt())
-                .count() >= 1) {
+                .count() >= _cacheLifetime) {
           toDel.push_back(i.first);
         }
       }
