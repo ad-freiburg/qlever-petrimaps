@@ -63,7 +63,7 @@ class Server : public util::http::Handler {
   void clearOldSessions() const;
 
   std::string getSessionId() const;
-  std::string getLayerId() const;
+  std::string getFreeLayerId() const;
 
   double getLoadStatusPercent() const;
 

@@ -28,8 +28,8 @@ struct FieldConfig {
   std::string valueField = "";
   std::string rasterMetaField = "";
   std::string toggle = "";
-  double rasterW = 0;
-  double rasterH = 0;
+  double rasterW = 10;
+  double rasterH = 10;
   std::string color = "3388ff";
   std::string colorscheme = "spectralexp";
   std::string style = "auto";
@@ -171,7 +171,14 @@ class Requestor {
     return getDPoint(fieldId, oid);
   }
 
-  bool isCluster(size_t fieldId, ID_TYPE id) const { return id > getObjects(fieldId).size() + getDynamicPoints(fieldId).size(); }
+  size_t getRow(size_t fieldId, ID_TYPE oid) const {
+    if (isCluster(fieldId, oid)) oid = getCluster(fieldId, oid).first;
+    if (oid >= _objects[fieldId].size())
+      return _dynamicPoints[fieldId][oid - _objects[fieldId].size()].second;
+    return _objects[fieldId][oid].second;
+  }
+
+  bool isCluster(size_t fieldId, ID_TYPE id) const { return id >= getObjects(fieldId).size() + getDynamicPoints(fieldId).size(); }
 
   size_t getLine(ID_TYPE id) const { return _cache->getLine(id); }
 
@@ -212,7 +219,7 @@ class Requestor {
     return ret;
   }
   size_t getNumObjects(size_t lid) const { return _numObjects[lid]; }
-  util::geo::DPoint clusterGeom(size_t fieldId, size_t cid, double res) const;
+  util::geo::DPoint clusterGeom(size_t fieldId, size_t oid, double res) const;
 
   std::vector<std::string> getColumns(std::string query) const;
 
@@ -222,7 +229,7 @@ class Requestor {
   size_t getFieldId(const std::string& field) {
     auto it = _geoColToLid.find(field);
     std::stringstream ss;
-    ss << "Field " << field << " not found";
+    ss << "Field '" << field << "' not found";
     if (it == _geoColToLid.end()) throw std::runtime_error(ss.str());
     return it->second;
   }

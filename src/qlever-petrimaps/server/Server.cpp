@@ -327,25 +327,20 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
       for (size_t j = 0; j < ret.size(); j++) {
         size_t oid = ret[j];
 
-        const auto& objs = r->getObjects(fid);
-        const auto& dynPoints = r->getDynamicPoints(fid);
-
         if (r->isCluster(fid, oid) && style == OBJECTS) {
-          size_t cid = oid - objs.size() - dynPoints.size();
-          oid = r->getCluster(fid, oid).first;
+          size_t refOid = r->getCluster(fid, oid).first;
 
-          FPoint p = r->getPoint(fid, oid);
+          FPoint p = r->getPoint(fid, refOid);
           if (!contains(p, fbbox)) continue;
 
-          const auto& cp = r->clusterGeom(fid, cid, res);
+          const auto& cp = r->clusterGeom(fid, oid, res);
 
           auto px = mercToPx(cp, orx, ory, mercW, mercH, w, h);
           auto ppx = mercToPx(p, orx, ory, mercW, mercH, w, h);
 
           rcontext.drawPoint(0, px.getX(), px.getY(), w, h, r->getVal(fid, oid),
                              rasterWidth, rasterHeight);
-          rcontext.drawLine(ppx.getX(), ppx.getY(), ppx.getX(), ppx.getY(), w,
-                            h);
+          rcontext.drawLine(px.getX(), px.getY(), ppx.getX(), ppx.getY(), w, h);
         } else {
           if (r->isCluster(fid, oid)) oid = r->getCluster(fid, oid).first;
 
@@ -597,8 +592,10 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
     size_t row;
     if (gid < reqor->getObjects(fid).size())
       row = reqor->getObjects(fid)[gid].second;
-    else
-      row = reqor->getDynamicPoints(fid)[gid].second;
+    else {
+      row = reqor->getDynamicPoints(fid)[gid - reqor->getObjects(fid).size()]
+                .second;
+    }
 
     for (auto col : reqor->requestRow(row)) {
       dict.dict[col.first] = col.second;
@@ -874,11 +871,18 @@ util::http::Answer Server::handleQueryReq(const Params& pars,
 
   RequestorConfig rcfg;
 
+  // backwards compatibility
   if (pars.count("fields") != 0) {
     for (auto raw : util::split(pars.find("fields")->second, ';')) {
       auto parts = util::split(raw, ',');
       if (parts.size() == 0) continue;
-      rcfg.fields.push_back({parts[0], parts.size() > 1 ? parts[1] : "", 0, 0});
+      rcfg.fields.push_back({
+          parts[0],                          // geomField
+          getFreeLayerId(),                  // id
+          "",                                // name
+          parts.size() > 1 ? parts[1] : "",  // valueField
+                                             // ..., rest defaults
+      });
     }
   }
 
@@ -1342,7 +1346,7 @@ util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
 }
 
 // _____________________________________________________________________________
-std::string Server::getLayerId() const {
+std::string Server::getFreeLayerId() const {
   std::random_device dev;
   std::mt19937 rng(dev());
   std::uniform_int_distribution<std::mt19937::result_type> d(
@@ -1464,7 +1468,7 @@ RequestorConfig Server::getRequestorCfgFromJSON(
             if (layer.value().contains("style"))
               curField.style = layer.value()["style"].get<std::string>();
             if (curField.name.size() == 0) curField.name = curField.geomField;
-            if (curField.id.size() == 0) curField.id = getLayerId();
+            if (curField.id.size() == 0) curField.id = getFreeLayerId();
             ret.fields.push_back(curField);
           }
         }

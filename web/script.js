@@ -99,19 +99,19 @@ function openPopup(data) {
                         "<td>" + key.replace(/_/g, " ") + "</td>" +
                         "<td>" + value + "</td></tr>");
         })
-            let popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
-            popup_html += '<a class="export-link" href="geojson?gid=' + data[0].id + "&id=" + sessionId + '&rad=0&export=1">Export as GeoJSON</a>';
+        let popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
+        popup_html += '<a class="export-link" href="geojson?gid=' + data[0].id + "&layer=" + data[0].geomfield + "&id=" + sessionId + '&rad=0&export=1">Export as GeoJSON</a>';
 
-            if (curGeojson) curGeojson.remove();
+        if (curGeojson) curGeojson.remove();
 
-            L.popup({"maxWidth" : 600})
-                .setLatLng(data[0]["ll"])
-                .setContent(popup_html)
-                .openOn(map)
-                .on('remove', function() {
-                    curGeojson.remove();
-                    curGeojsonId = -1;
-                });
+        L.popup({"maxWidth" : 600})
+            .setLatLng(data[0]["ll"])
+            .setContent(popup_html)
+            .openOn(map)
+            .on('remove', function() {
+                curGeojson.remove();
+                curGeojsonId = -1;
+            });
 
         curGeojson = getGeoJsonLayer(data[0].geom);
         curGeojsonId = data[0].id;
