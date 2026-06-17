@@ -37,9 +37,7 @@ using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
 // _____________________________________________________________________________
-const std::string &GeomCache::getFillQuery() const {
-  return _config.fillQuery;
-}
+const std::string &GeomCache::getFillQuery() const { return _config.fillQuery; }
 
 // _____________________________________________________________________________
 std::string GeomCache::getCountQuery() const {
@@ -55,7 +53,6 @@ std::string GeomCache::getCountQuery() const {
   query.append(" }");
   return query;
 }
-
 
 // _____________________________________________________________________________
 size_t GeomCache::writeCb(void *contents, size_t size, size_t nmemb,
@@ -312,9 +309,6 @@ void GeomCache::parseIds(const char *c, size_t size) {
         if (_curId.val > _maxQid) _maxQid = _curId.val;
       } else {
         LOG(WARN) << "The results for the binary IDs are out of sync.";
-        LOG(WARN) << "_curRow: " << _curRow
-                  << " _qleverIdInt.size: " << _qidToId.size()
-                  << " cur val: " << _qidToId[_curIdRow].qid;
       }
 
       // if a qlever entity contained multiple geometries (MULTILINESTRING,
@@ -322,7 +316,7 @@ void GeomCache::parseIds(const char *c, size_t size) {
       // _qidToId; continuation geometries are marked by a
       // preliminary qlever ID of 1, while the first geometry always has a
       // preliminary id of 0
-      while (_curIdRow < _qidToId.size() - 1 &&
+      while (_curIdRow + 1 < _qidToId.size() - 1 &&
              _qidToId[_curIdRow + 1].qid == 1) {
         _qidToId[++_curIdRow].qid = _curId.val;
       }
@@ -496,22 +490,26 @@ void GeomCache::request() {
   char *pointsFName = strdup("pointsXXXXXX");
   int i = mkstemp(pointsFName);
   if (i == -1) throw std::runtime_error("Could not create temporary file");
+  close(i);
   _pointsF.open(pointsFName, std::ios::out | std::ios::in | std::ios::binary);
 
   char *linePointsFName = strdup("linepointsXXXXXX");
   i = mkstemp(linePointsFName);
   if (i == -1) throw std::runtime_error("Could not create temporary file");
+  close(i);
   _linePointsF.open(linePointsFName,
                     std::ios::out | std::ios::in | std::ios::binary);
 
   char *linesFName = strdup("linesXXXXXX");
   i = mkstemp(linesFName);
   if (i == -1) throw std::runtime_error("Could not create temporary file");
+  close(i);
   _linesF.open(linesFName, std::ios::out | std::ios::in | std::ios::binary);
 
   char *qidToIdFName = strdup("qidtoidXXXXXX");
   i = mkstemp(qidToIdFName);
   if (i == -1) throw std::runtime_error("Could not create temporary file");
+  close(i);
   _qidToIdF.open(qidToIdFName, std::ios::out | std::ios::in | std::ios::binary);
 
   // immediately unlink
@@ -551,8 +549,6 @@ void GeomCache::request() {
               << _totalSize << " rows (determined via count query)";
     LOG(WARN) << "Last answer from QLever began with " << _raw;
   }
-
-  if (i == -1) throw std::runtime_error("Could not create temporary file");
 
   LOG(INFO) << "[GEOMCACHE] Building vectors...";
 
@@ -682,7 +678,7 @@ void GeomCache::requestIdPart(size_t offset) {
 
 // _____________________________________________________________________________
 std::string GeomCache::queryFields(std::string query, size_t offset,
-                                size_t limit) const {
+                                   size_t limit) const {
   std::stringstream ss;
 
   if (util::toLower(query).find("limit") == std::string::npos) {
@@ -695,8 +691,7 @@ std::string GeomCache::queryFields(std::string query, size_t offset,
 
   auto esc = curl_easy_escape(_curl, query.c_str(), query.size());
 
-  ss << "send=" << std::to_string(MAXROWS)
-     << "&query=" << esc;
+  ss << "send=" << std::to_string(MAXROWS) << "&query=" << esc;
 
   curl_free(esc);
 
@@ -704,35 +699,23 @@ std::string GeomCache::queryFields(std::string query, size_t offset,
 }
 
 // _____________________________________________________________________________
-bool GeomCache::pointValid(const DPoint &p) {
-  if (p.getY() > 90.0) return false;
-  if (p.getY() < -90.0) return false;
-  if (p.getX() > 180.0) return false;
-  if (p.getX() < -180.0) return false;
-
-  return true;
-}
-
-// _____________________________________________________________________________
 void GeomCache::addMultiPoint(const util::geo::MultiPoint<double> &mp,
                               size_t *i) {
   for (const auto &point : mp) {
-    if (pointValid(point)) {
-      FPoint fpoint{point.getX(), point.getY()};
-      _pointsF.write(reinterpret_cast<const char *>(&fpoint),
-                     sizeof(util::geo::FPoint));
-      _pointsFSize++;
-      if (_pointsFSize >= I_OFFSET) {
-        std::stringstream ss;
-        ss << "Maximum number of points (" << I_OFFSET << ") exceeded.";
-        throw std::runtime_error(ss.str());
-      }
-      IdMapping idm{*i == 0 ? 0 : 1, _pointsFSize - 1};
-      _lastQidToId = idm;
-      _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
-      _qidToIdFSize++;
-      (*i)++;
+    FPoint fpoint{point.getX(), point.getY()};
+    _pointsF.write(reinterpret_cast<const char *>(&fpoint),
+                   sizeof(util::geo::FPoint));
+    _pointsFSize++;
+    if (_pointsFSize >= I_OFFSET) {
+      std::stringstream ss;
+      ss << "Maximum number of points (" << I_OFFSET << ") exceeded.";
+      throw std::runtime_error(ss.str());
     }
+    IdMapping idm{*i == 0 ? 0 : 1, _pointsFSize - 1};
+    _lastQidToId = idm;
+    _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
+    _qidToIdFSize++;
+    (*i)++;
   }
 }
 
@@ -1208,7 +1191,7 @@ void GeomCache::fromDisk(const std::string &fname) {
 // _____________________________________________________________________________
 void GeomCache::serializeToDisk(const std::string &fname) const {
   std::ofstream f;
-  f.open(fname);
+  f.open(fname, std::ios::binary);
 
   std::string h = _indexHash;
   h.insert(h.end(), 99 - h.size(), ' ');
@@ -1287,6 +1270,8 @@ std::string GeomCache::load(const std::string &cacheDir) {
     std::string backend = getConfig().backend;
     util::replaceAll(backend, "/", "#");
     std::string cacheFile = cacheDir + "/" + backend;
+
+    // why is this called a second time here, reuse!
     auto indexHash = requestIndexHash();
 
     // if the hash size is 0, we could not obtain an index hash from

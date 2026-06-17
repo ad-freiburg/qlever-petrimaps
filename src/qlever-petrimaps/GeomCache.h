@@ -214,8 +214,6 @@ class GeomCache {
 
   std::string queryFields(std::string query, size_t offset, size_t limit) const;
 
-  static bool pointValid(const util::geo::DPoint& p);
-
   static util::geo::DLine createLineString(const std::string& a, size_t p);
 
   void addPolygon(const util::geo::Polygon<double>& p, size_t* i);
