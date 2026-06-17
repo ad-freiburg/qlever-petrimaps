@@ -1508,6 +1508,9 @@ GeomCacheConfig Server::getGeomCacheCfgFromJSON(
         if (i.key() == "fillQuery") {
           ret.fillQuery = i.value().get<std::string>();
         }
+        if (i.key() == "rasterMetaQuery") {
+          ret.rasterMetaQuery = i.value().get<std::string>();
+        }
       }
     }
   } catch (const std::runtime_error& e) {
