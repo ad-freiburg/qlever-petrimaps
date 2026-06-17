@@ -238,11 +238,12 @@ void Requestor::request() {
         {lineBbox.getUpperRight().getX(), lineBbox.getUpperRight().getY()}};
 
     _pgrid[geomColId] =
-        petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, pointBbox);
+        petrimaps::Grid<ID_TYPE, float, float>(GRID_SIZE, GRID_SIZE, pointBbox);
     _lgrid[geomColId] =
-        petrimaps::Grid<ID_TYPE, float>(GRID_SIZE, GRID_SIZE, fLineBbox);
-    _lpgrid[geomColId] = petrimaps::Grid<util::geo::Point<uint8_t>, float>(
-        GRID_SIZE, GRID_SIZE, fLineBbox);
+        petrimaps::Grid<ID_TYPE, float, float>(GRID_SIZE, GRID_SIZE, fLineBbox);
+    _lpgrid[geomColId] =
+        petrimaps::Grid<util::geo::Point<uint8_t>, float, float>(
+            GRID_SIZE, GRID_SIZE, fLineBbox);
 
     std::exception_ptr ePtr1, ePtr2, ePtr3, ePtr4;
 
@@ -269,12 +270,12 @@ void Requestor::request() {
           if (clusterI > 0) {
             for (size_t m = 0; m < clusterI; m++) {
               const auto& p = _objects[geomColId][oid - m];
-              _pgrid[geomColId].add(_cache->getPoints()[p.first], j);
+              _pgrid[geomColId].add(_cache->getPoints()[p.first], getVal(geomColId, j), j);
               _clusterObjects[geomColId].push_back({oid - m, {m, clusterI}});
               j++;
             }
           } else {
-            _pgrid[geomColId].add(_cache->getPoints()[geomId], oid);
+            _pgrid[geomColId].add(_cache->getPoints()[geomId], getVal(geomColId, oid), oid);
           }
 
           // every 100000 objects, check memory...
@@ -304,13 +305,13 @@ void Requestor::request() {
             for (size_t m = 0; m < clusterI; m++) {
               const auto& p = _dynamicPoints[geomColId][i - m];
               auto geom = p.first;
-              _pgrid[geomColId].add(geom, j);
+              _pgrid[geomColId].add(geom, getVal(geomColId, j), j);
               _clusterObjects[geomColId].push_back(
                   {i - m + _objects[geomColId].size(), {m, clusterI}});
               j++;
             }
           } else {
-            _pgrid[geomColId].add(geom, i + _objects[geomColId].size());
+            _pgrid[geomColId].add(geom, getVal(geomColId, i + _objects[geomColId].size()), i + _objects[geomColId].size());
           }
 
           // every 100000 objects, check memory...
@@ -336,7 +337,7 @@ void Requestor::request() {
             util::geo::FBox fbox = {
                 {box.getLowerLeft().getX(), box.getLowerLeft().getY()},
                 {box.getUpperRight().getX(), box.getUpperRight().getY()}};
-            _lgrid[geomColId].add(fbox, i);
+            _lgrid[geomColId].add(fbox, getVal(geomColId, i), i);
           }
           i++;
 
@@ -401,7 +402,7 @@ void Requestor::request() {
                            256;
 
               if (gi == 3 || lastX != sX || lastY != sY) {
-                _lpgrid[geomColId].add(cellX, cellY, {sX, sY});
+                _lpgrid[geomColId].add(cellX, cellY, getVal(geomColId, i), {sX, sY});
                 lastX = sX;
                 lastY = sY;
               }
@@ -1101,6 +1102,9 @@ std::pair<double, double> Requestor::getRasterMetas(
 
 // _____________________________________________________________________________
 double Requestor::getVal(size_t fieldId, size_t oid) const {
+  // shortcut
+  if (_vals[fieldId].size() == 0) return 1;
+
   if (oid < _objects[fieldId].size()) {
     if (_objects[fieldId][oid].second >= _vals[fieldId].size()) return 1;
     return _vals[fieldId][_objects[fieldId][oid].second];

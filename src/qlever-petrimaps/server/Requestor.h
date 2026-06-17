@@ -124,16 +124,18 @@ class Requestor {
           void(std::vector<std::vector<std::pair<std::string, std::string>>>)>
           cb) const;
 
-  const petrimaps::Grid<ID_TYPE, float>& getPointGrid(size_t fieldId) const {
+  const petrimaps::Grid<ID_TYPE, float, float>& getPointGrid(
+      size_t fieldId) const {
     return _pgrid[fieldId];
   }
 
-  const petrimaps::Grid<ID_TYPE, float>& getLineGrid(size_t fieldId) const {
+  const petrimaps::Grid<ID_TYPE, float, float>& getLineGrid(
+      size_t fieldId) const {
     return _lgrid[fieldId];
   }
 
-  const petrimaps::Grid<util::geo::Point<uint8_t>, float>& getLinePointGrid(
-      size_t fieldId) const {
+  const petrimaps::Grid<util::geo::Point<uint8_t>, float, float>&
+  getLinePointGrid(size_t fieldId) const {
     return _lpgrid[fieldId];
   }
 
@@ -292,9 +294,9 @@ class Requestor {
   std::map<size_t, size_t> _valueFlds;
   std::map<size_t, size_t> _rasterMetaFlds;
 
-  std::vector<petrimaps::Grid<ID_TYPE, float>> _pgrid;
-  std::vector<petrimaps::Grid<ID_TYPE, float>> _lgrid;
-  std::vector<petrimaps::Grid<util::geo::Point<uint8_t>, float>> _lpgrid;
+  std::vector<petrimaps::Grid<ID_TYPE, float, float>> _pgrid;
+  std::vector<petrimaps::Grid<ID_TYPE, float, float>> _lgrid;
+  std::vector<petrimaps::Grid<util::geo::Point<uint8_t>, float, float>> _lpgrid;
 
   bool _ready = false;
 

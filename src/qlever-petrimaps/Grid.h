@@ -8,6 +8,7 @@
 #include <map>
 #include <unordered_set>
 #include <vector>
+
 #include "util/geo/Geo.h"
 
 namespace petrimaps {
@@ -17,11 +18,11 @@ class GridException : public std::runtime_error {
   GridException(std::string const& msg) : std::runtime_error(msg) {}
 };
 
-template <typename V, typename T>
+template <typename V, typename T, typename W>
 class Grid {
  public:
-  Grid(const Grid<V, T>&) = delete;
-  Grid(Grid<V, T>&& o)
+  Grid(const Grid<V, T, W>&) = delete;
+  Grid(Grid<V, T, W>&& o)
       : _width(o._width),
         _height(o._height),
         _cellWidth(o._cellWidth),
@@ -29,11 +30,13 @@ class Grid {
         _bb(o._bb),
         _xWidth(o._xWidth),
         _yHeight(o._yHeight),
-        _grid(o._grid) {
+        _grid(o._grid),
+        _cellSums(std::move(o._cellSums)) {
     o._grid = 0;
+    o._cellSums = {};
   }
 
-  Grid<V, T>& operator=(Grid<V, T>&& o) {
+  Grid<V, T, W>& operator=(Grid<V, T, W>&& o) {
     _width = o._width;
     _height = o._height;
     _cellWidth = o._cellWidth;
@@ -42,6 +45,7 @@ class Grid {
     _xWidth = o._xWidth;
     _yHeight = o._yHeight;
     _grid = o._grid;
+    _cellSums = std::move(o._cellSums);
     o._grid = 0;
 
     return *this;
@@ -64,15 +68,16 @@ class Grid {
   }
 
   // add object t to this grid
-  void add(const util::geo::Box<T>& box, const V& val);
-  void add(const util::geo::Point<T>& box, const V& val);
-  void add(size_t x, size_t y, V val);
+  void add(const util::geo::Box<T>& box, W weight, const V& val);
+  void add(const util::geo::Point<T>& box, W weight, const V& val);
+  void add(size_t x, size_t y, W weight, V val);
 
   void get(const util::geo::Box<T>& btbox, std::unordered_set<V>* s) const;
   void get(size_t x, size_t y, std::unordered_set<V>* s) const;
   void get(const util::geo::Box<T>& btbox, std::vector<V>* s) const;
   void get(size_t x, size_t y, std::vector<V>* s) const;
   const std::vector<V>* getCell(size_t x, size_t y) const;
+  W getCellSum(size_t x, size_t y) const;
 
   size_t getXWidth() const;
   size_t getYHeight() const;
@@ -99,6 +104,7 @@ class Grid {
   size_t _yHeight;
 
   std::vector<V>** _grid;
+  std::vector<W> _cellSums;
 };
 
 #include "qlever-petrimaps/Grid.tpp"

@@ -358,10 +358,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
             rcontext.drawPoint(0, px.getX(), px.getY(), w, h,
                                r->getVal(fid, oid), rasterMeta.first,
                                rasterMeta.second);
+          } else {
+            rcontext.drawPoint(0, px.getX(), px.getY(), w, h,
+                               r->getVal(fid, oid), 0, 0);
           }
-
-          rcontext.drawPoint(0, px.getX(), px.getY(), w, h, r->getVal(fid, oid),
-                             0, 0);
         }
       }
     } else {
@@ -386,8 +386,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                 mercToPx(cellBox.getLowerLeft(), orx, ory, mercW, mercH, w, h);
 
             // TODO: just setting rasterWidth to 1x1 here is not correct
-            rcontext.drawPoint(tid, px.getX(), px.getY(), w, h, cell->size(), 1,
-                               1);
+            rcontext.drawPoint(tid, px.getX(), px.getY(), w, h,
+                               grid.getCellSum(x, y), 1, 1);
           } else {
             for (auto oid : *cell) {
               if (r->isCluster(fid, oid)) oid = r->getCluster(fid, oid).first;
@@ -401,6 +401,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                 rcontext.drawPoint(tid, px.getX(), px.getY(), w, h,
                                    r->getVal(fid, oid), rasterMeta.first,
                                    rasterMeta.second);
+              } else {
+                rcontext.drawPoint(tid, px.getX(), px.getY(), w, h,
+                                   r->getVal(fid, oid), 0, 0);
               }
             }
           }
@@ -457,8 +460,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           if (subCellSize == 1) {
             auto pix =
                 mercToPx(cellBox.getLowerLeft(), orx, ory, mercW, mercH, w, h);
-            rcontext.drawPoint(tid, pix.getX(), pix.getY(), w, h, cell->size(),
-                               rasterWidth, rasterHeight);
+            rcontext.drawPoint(tid, pix.getX(), pix.getY(), w, h,
+                               lpgrid.getCellSum(x, y), rasterWidth,
+                               rasterHeight);
           } else {
             for (const auto& p : *cell) {
               int px = ((cellBox.getLowerLeft().getX() + p.getX() * 256 -

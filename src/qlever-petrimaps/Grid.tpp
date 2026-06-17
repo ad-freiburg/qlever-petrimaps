@@ -3,8 +3,8 @@
 // Author: Patrick Brosi <brosip@informatik.uni-freiburg.de>
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-Grid<V, T>::Grid()
+template <typename V, typename T, typename W>
+Grid<V, T, W>::Grid()
     : _width(0),
       _height(0),
       _cellWidth(0),
@@ -14,8 +14,8 @@ Grid<V, T>::Grid()
       _grid(0) {}
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-Grid<V, T>::Grid(double w, double h, const util::geo::Box<T>& bbox)
+template <typename V, typename T, typename W>
+Grid<V, T, W>::Grid(double w, double h, const util::geo::Box<T>& bbox)
     : _cellWidth(fabs(w)), _cellHeight(fabs(h)), _bb(bbox), _grid() {
   _width = bbox.getUpperRight().getX() - bbox.getLowerLeft().getX();
   _height = bbox.getUpperRight().getY() - bbox.getLowerLeft().getY();
@@ -34,17 +34,19 @@ Grid<V, T>::Grid(double w, double h, const util::geo::Box<T>& bbox)
   // resize rows
   _grid = new std::vector<V>*[_xWidth * _yHeight];
   memset(_grid, 0, _xWidth * _yHeight * sizeof(std::vector<V>*));
+
+  _cellSums.resize(_xWidth * _yHeight);
 }
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-void Grid<V, T>::add(const util::geo::Point<T>& p, const V& val) {
-  add(getCellXFromX(p.getX()), getCellYFromY(p.getY()), val);
+template <typename V, typename T, typename W>
+void Grid<V, T, W>::add(const util::geo::Point<T>& p, W weight, const V& val) {
+  add(getCellXFromX(p.getX()), getCellYFromY(p.getY()), weight, val);
 }
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-void Grid<V, T>::add(const util::geo::Box<T>& box, const V& val) {
+template <typename V, typename T, typename W>
+void Grid<V, T, W>::add(const util::geo::Box<T>& box, W weight, const V& val) {
   size_t swX = getCellXFromX(box.getLowerLeft().getX());
   size_t swY = getCellYFromY(box.getLowerLeft().getY());
 
@@ -53,23 +55,23 @@ void Grid<V, T>::add(const util::geo::Box<T>& box, const V& val) {
 
   for (size_t x = swX; x <= neX && x < _xWidth; x++) {
     for (size_t y = swY; y <= neY && y < _yHeight; y++) {
-      add(x, y, val);
+      add(x, y, weight, val);
     }
   }
 }
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-void Grid<V, T>::add(size_t x, size_t y, V val) {
+template <typename V, typename T, typename W>
+void Grid<V, T, W>::add(size_t x, size_t y, W weight, V val) {
   if (x >= _xWidth || y >= _yHeight) return;
   if (!_grid[y * _xWidth + x]) _grid[y * _xWidth + x] = new std::vector<V>();
   _grid[y * _xWidth + x]->push_back(val);
+  _cellSums[y * _xWidth + x] += weight;
 }
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-void Grid<V, T>::get(const util::geo::Box<T>& box,
-                     std::vector<V>* s) const {
+template <typename V, typename T, typename W>
+void Grid<V, T, W>::get(const util::geo::Box<T>& box, std::vector<V>* s) const {
   size_t swX = getCellXFromX(box.getLowerLeft().getX());
   size_t swY = getCellYFromY(box.getLowerLeft().getY());
 
@@ -81,9 +83,9 @@ void Grid<V, T>::get(const util::geo::Box<T>& box,
 }
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-void Grid<V, T>::get(const util::geo::Box<T>& box,
-                     std::unordered_set<V>* s) const {
+template <typename V, typename T, typename W>
+void Grid<V, T, W>::get(const util::geo::Box<T>& box,
+                        std::unordered_set<V>* s) const {
   size_t swX = getCellXFromX(box.getLowerLeft().getX());
   size_t swY = getCellYFromY(box.getLowerLeft().getY());
 
@@ -95,28 +97,35 @@ void Grid<V, T>::get(const util::geo::Box<T>& box,
 }
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-void Grid<V, T>::get(size_t x, size_t y, std::unordered_set<V>* s) const {
+template <typename V, typename T, typename W>
+void Grid<V, T, W>::get(size_t x, size_t y, std::unordered_set<V>* s) const {
   if (!_grid[y * _xWidth + x]) return;
   s->insert(_grid[y * _xWidth + x]->begin(), _grid[y * _xWidth + x]->end());
 }
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-void Grid<V, T>::get(size_t x, size_t y, std::vector<V>* s) const {
+template <typename V, typename T, typename W>
+void Grid<V, T, W>::get(size_t x, size_t y, std::vector<V>* s) const {
   if (!_grid[y * _xWidth + x]) return;
-  s->insert(s->end(), _grid[y * _xWidth + x]->begin(), _grid[y * _xWidth + x]->end());
+  s->insert(s->end(), _grid[y * _xWidth + x]->begin(),
+            _grid[y * _xWidth + x]->end());
 }
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-const std::vector<V>* Grid<V, T>::getCell(size_t x, size_t y) const {
+template <typename V, typename T, typename W>
+const std::vector<V>* Grid<V, T, W>::getCell(size_t x, size_t y) const {
   return _grid[y * _xWidth + x];
 }
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-util::geo::Box<T> Grid<V, T>::getBox(size_t x, size_t y) const {
+template <typename V, typename T, typename W>
+W Grid<V, T, W>::getCellSum(size_t x, size_t y) const {
+  return _cellSums[y * _xWidth + x];
+}
+
+// _____________________________________________________________________________
+template <typename V, typename T, typename W>
+util::geo::Box<T> Grid<V, T, W>::getBox(size_t x, size_t y) const {
   util::geo::Point<T> sw(_bb.getLowerLeft().getX() + x * _cellWidth,
                          _bb.getLowerLeft().getY() + y * _cellHeight);
   util::geo::Point<T> ne(_bb.getLowerLeft().getX() + (x + 1) * _cellWidth,
@@ -125,29 +134,29 @@ util::geo::Box<T> Grid<V, T>::getBox(size_t x, size_t y) const {
 }
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-size_t Grid<V, T>::getCellXFromX(double x) const {
+template <typename V, typename T, typename W>
+size_t Grid<V, T, W>::getCellXFromX(double x) const {
   float dist = x - _bb.getLowerLeft().getX();
   if (dist < 0) return 0;
   return dist / _cellWidth;
 }
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-size_t Grid<V, T>::getCellYFromY(double y) const {
+template <typename V, typename T, typename W>
+size_t Grid<V, T, W>::getCellYFromY(double y) const {
   float dist = y - _bb.getLowerLeft().getY();
   if (dist < 0) return 0;
   return dist / _cellHeight;
 }
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-size_t Grid<V, T>::getXWidth() const {
+template <typename V, typename T, typename W>
+size_t Grid<V, T, W>::getXWidth() const {
   return _xWidth;
 }
 
 // _____________________________________________________________________________
-template <typename V, typename T>
-size_t Grid<V, T>::getYHeight() const {
+template <typename V, typename T, typename W>
+size_t Grid<V, T, W>::getYHeight() const {
   return _yHeight;
 }

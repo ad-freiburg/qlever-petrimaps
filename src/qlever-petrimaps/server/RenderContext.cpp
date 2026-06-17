@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <map>
+#include <iostream>
 
 // clang-format off
 #include "3rdparty/heatmap.h"
@@ -152,6 +153,7 @@ void RenderContext::writeHeatmap(heatmap_t* hm, double res) {
     }
     heatmap_stamp_free(stamp);
   } else {
+    // HEATMAP
     for (size_t i = 0; i < NUM_THREADS; i++) {
       for (const auto& p : _points[i]) {
         size_t y = p / _w;
