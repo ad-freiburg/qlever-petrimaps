@@ -1172,7 +1172,7 @@ void GeomCache::fromDisk(const std::string &fname) {
   if (!f) throw std::runtime_error("Corrupted cache file");
   for (size_t i = 0; i < numPoints; i++) {
     f.read(reinterpret_cast<char *>(&_points[i]), sizeof(util::geo::FPoint));
-  if (!f) throw std::runtime_error("Corrupted cache file");
+    if (!f) throw std::runtime_error("Corrupted cache file");
     _curRow += 1;
   }
 
@@ -1251,6 +1251,11 @@ void GeomCache::requestRasterMeta() {
   auto r = RequestReader(getConfig().backend, _maxMemory, 0, 0, 0);
 
   _rasterMeta = r.requestRasterMeta(getConfig().rasterMetaQuery);
+
+  for (const auto &rm : _rasterMeta) {
+    LOG(INFO) << "Configured raster " << rm.first << ": " << rm.second.first
+              << "x" << rm.second.second;
+  }
 }
 
 // _____________________________________________________________________________

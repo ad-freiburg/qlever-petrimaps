@@ -153,6 +153,7 @@ int main(int argc, char** argv) {
             geomCacheConfigs[cfg.backend] = cfg;
             LOG(INFO) << "Configured backend " << cfg.backend;
             LOG(INFO) << "  with fill query " << cfg.fillQuery;
+            LOG(INFO) << "  with raster query " << cfg.rasterMetaQuery;
           }
         }
       }
