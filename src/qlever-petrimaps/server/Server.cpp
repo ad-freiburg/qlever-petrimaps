@@ -264,11 +264,14 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
     std::lock_guard<std::mutex> guard(_m);
     bool has = _rs.count(id);
     if (!has) {
+      LOG(ERROR) << "Session " << id << " not found!";
       throw std::invalid_argument("Session not found");
     }
     r = _rs[id];
   }
+
   if (!r->ready()) {
+      LOG(ERROR) << "Session " << id << " not ready!";
     throw std::invalid_argument("Session not ready.");
   }
 
@@ -581,6 +584,7 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
     std::lock_guard<std::mutex> guard(_m);
     bool has = _rs.count(id);
     if (!has) {
+      LOG(ERROR) << "Session " << id << " not found!";
       throw std::invalid_argument("Session not found");
     }
     reqor = _rs[id];
@@ -700,6 +704,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
     std::lock_guard<std::mutex> guard(_m);
     bool has = _rs.count(id);
     if (!has) {
+      LOG(ERROR) << "Session " << id << " not found!";
       throw std::invalid_argument("Session not found");
     }
     reqor = _rs[id];
@@ -1190,6 +1195,7 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
     std::lock_guard<std::mutex> guard(_m);
     bool has = _rs.count(id);
     if (!has) {
+      LOG(ERROR) << "Session " << id << " not found!";
       throw std::invalid_argument("Session not found");
     }
     reqor = _rs[id];

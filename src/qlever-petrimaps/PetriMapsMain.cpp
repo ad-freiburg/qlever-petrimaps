@@ -45,7 +45,15 @@ void printHelp(int, char** argv) {
 petrimaps::GeomCacheConfig cacheConfigFromDisk(const std::string& fname) {
   std::string url = util::split(fname, '/').back();
   util::replaceAll(url, "#", "/");
-  auto canonized = petrimaps::canonizeURL(url);
+
+  std::string canonized;
+
+  try {
+    canonized = petrimaps::canonizeURL(url);
+  } catch (std::runtime_error& e) {
+    LOG(WARN) << fname << "' seems to be a legacy cache file, delete it!";
+    throw;
+  }
 
   auto fillQuery = GeomCache::fillQueryFromDisk(fname);
 

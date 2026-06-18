@@ -1083,8 +1083,10 @@ std::string GeomCache::fillQueryFromDisk(const std::string &fname) {
   // skip hash
   f.ignore(100);
   f.read(reinterpret_cast<char *>(&fillQuerySize), sizeof(size_t));
+  if (!f) throw std::runtime_error("Corrupted cache file");
   fillQuery.resize(fillQuerySize);
   f.read(reinterpret_cast<char *>(&fillQuery[0]), fillQuerySize);
+  if (!f) throw std::runtime_error("Corrupted cache file");
 
   return fillQuery;
 }
@@ -1108,8 +1110,10 @@ void GeomCache::fromDisk(const std::string &fname) {
   size_t fillQuerySize;
   std::string fillQuery;
   f.read(reinterpret_cast<char *>(&fillQuerySize), sizeof(size_t));
+  if (!f) throw std::runtime_error("Corrupted cache file");
   fillQuery.resize(fillQuerySize);
   f.read(reinterpret_cast<char *>(&fillQuery[0]), fillQuerySize);
+  if (!f) throw std::runtime_error("Corrupted cache file");
 
   LOG(INFO) << " Disk cache (" << fname << ") fill query is " << fillQuery;
 
@@ -1130,27 +1134,34 @@ void GeomCache::fromDisk(const std::string &fname) {
   _points.resize(numPoints);
   posPoints = f.tellg();
   f.seekg(sizeof(util::geo::FPoint) * numPoints, f.cur);
+  if (!f) throw std::runtime_error("Corrupted cache file");
 
   // linePoints
   f.read(reinterpret_cast<char *>(&numLinePoints), sizeof(size_t));
+  if (!f) throw std::runtime_error("Corrupted cache file");
   checkMem(sizeof(util::geo::Point<int16_t>) * numLinePoints, _maxMemory);
   _linePoints.resize(numLinePoints);
   posLinePoints = f.tellg();
   f.seekg(sizeof(util::geo::Point<int16_t>) * numLinePoints, f.cur);
+  if (!f) throw std::runtime_error("Corrupted cache file");
 
   // lines
   f.read(reinterpret_cast<char *>(&numLines), sizeof(size_t));
+  if (!f) throw std::runtime_error("Corrupted cache file");
   checkMem(sizeof(size_t) * numLines, _maxMemory);
   _lines.resize(numLines);
   posLines = f.tellg();
   f.seekg(sizeof(size_t) * numLines, f.cur);
+  if (!f) throw std::runtime_error("Corrupted cache file");
 
   // qidToId
   f.read(reinterpret_cast<char *>(&numQidToId), sizeof(size_t));
+  if (!f) throw std::runtime_error("Corrupted cache file");
   checkMem(sizeof(IdMapping) * numQidToId, _maxMemory);
   _qidToId.resize(numQidToId);
   posQidToId = f.tellg();
   f.seekg(sizeof(IdMapping) * numQidToId, f.cur);
+  if (!f) throw std::runtime_error("Corrupted cache file");
 
   _totalSize = numPoints + numLinePoints + numLines + numQidToId;
   _curRow = 0;
@@ -1158,30 +1169,38 @@ void GeomCache::fromDisk(const std::string &fname) {
   // read data from file
   // points
   f.seekg(posPoints);
+  if (!f) throw std::runtime_error("Corrupted cache file");
   for (size_t i = 0; i < numPoints; i++) {
     f.read(reinterpret_cast<char *>(&_points[i]), sizeof(util::geo::FPoint));
+  if (!f) throw std::runtime_error("Corrupted cache file");
     _curRow += 1;
   }
 
   // linePoints
   f.seekg(posLinePoints);
+  if (!f) throw std::runtime_error("Corrupted cache file");
   for (size_t i = 0; i < numLinePoints; i++) {
     f.read(reinterpret_cast<char *>(&_linePoints[i]),
            sizeof(util::geo::Point<int16_t>));
+    if (!f) throw std::runtime_error("Corrupted cache file");
     _curRow += 1;
   }
 
   // lines
   f.seekg(posLines);
+  if (!f) throw std::runtime_error("Corrupted cache file");
   for (size_t i = 0; i < numLines; i++) {
     f.read(reinterpret_cast<char *>(&_lines[i]), sizeof(size_t));
+    if (!f) throw std::runtime_error("Corrupted cache file");
     _curRow += 1;
   }
 
   // qidToId
   f.seekg(posQidToId);
+  if (!f) throw std::runtime_error("Corrupted cache file");
   for (size_t i = 0; i < numQidToId; i++) {
     f.read(reinterpret_cast<char *>(&_qidToId[i]), sizeof(IdMapping));
+    if (!f) throw std::runtime_error("Corrupted cache file");
     _curRow += 1;
   }
 
