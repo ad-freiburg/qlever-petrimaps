@@ -5,6 +5,7 @@
 #include <curl/curl.h>
 #include <stdint.h>
 
+#include <exception>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -64,6 +65,13 @@ inline int16_t isMCoord(int16_t c) {
 
 std::string normalizeURL(const std::string& inURL);
 std::string canonizeURL(const std::string& inURL);
+
+void performCurlRequest(CURL* curl, const std::string& url,
+                        const std::string& postFields,
+                        const std::string& acceptHeader,
+                        size_t (*writeCb)(void*, size_t, size_t, void*),
+                        void* writeData, const std::string* raw,
+                        std::exception_ptr* exceptionPtr);
 
 class OutOfMemoryError : public std::exception {
  public:
@@ -142,15 +150,19 @@ inline std::string httpRequest(const std::string& url,
       ss << curl_easy_strerror(res);
     }
 
+    curl_easy_cleanup(curl);
     throw std::runtime_error(ss.str());
   }
+
+  curl_easy_cleanup(curl);
 
   return resString;
 }
 
 struct RequestReader {
   explicit RequestReader(const std::string& backendUrl, size_t maxMemory,
-                         size_t geomFields, size_t valFields, size_t rasterMetaFields)
+                         size_t geomFields, size_t valFields,
+                         size_t rasterMetaFields)
       : _backendUrl(backendUrl),
         _curl(curl_easy_init()),
         _maxMemory(maxMemory),

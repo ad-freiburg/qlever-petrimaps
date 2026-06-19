@@ -343,56 +343,18 @@ size_t GeomCache::requestSize() {
   _raw.clear();
   _raw.reserve(1000);
 
-  CURLcode res;
-  char errbuf[CURL_ERROR_SIZE];
+  const std::string &countQuery = getCountQuery();
+  LOG(INFO) << "[GEOMCACHE] Count query to obtain the number of geometries:"
+            << std::endl
+            << countQuery;
+  auto flds = queryFields(countQuery, 0, 1);
 
-  if (_curl) {
-    const std::string &countQuery = getCountQuery();
-    LOG(INFO) << "[GEOMCACHE] Count query to obtain the number of geometries:"
-              << std::endl
-              << countQuery;
-    auto flds = queryFields(countQuery, 0, 1);
-    petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, _config.backend.c_str());
-    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbCount);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
-    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-
-    // set headers
-    struct curl_slist *headers = 0;
-    headers = curl_slist_append(headers, "Accept: text/tab-separated-values");
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
-
-    res = curl_easy_perform(_curl);
-
-    long httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    curl_slist_free_all(headers);
-
-    if (httpCode != 200) {
-      std::stringstream ss;
-      LOG(ERROR) << "[GEOMCACHE] QLever backend returned status code "
-                 << httpCode << " during count query";
-      return 0;
-    }
-
-    if (_exceptionPtr) std::rethrow_exception(_exceptionPtr);
-  } else {
-    LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request.";
-    return 0;
-  }
-
-  // check if there was an error
-  if (res != CURLE_OK) {
-    size_t len = strlen(errbuf);
-    if (len > 0) {
-      LOG(ERROR) << "[GEOMCACHE] " << errbuf;
-    } else {
-      LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
-    }
+  try {
+    performCurlRequest(_curl, _config.backend, flds,
+                       "text/tab-separated-values", GeomCache::writeCbCount,
+                       this, &_raw, &_exceptionPtr);
+  } catch (const std::exception &e) {
+    LOG(ERROR) << "[GEOMCACHE] Count query failed: " << e.what();
     return 0;
   }
 
@@ -412,57 +374,9 @@ void GeomCache::requestPart(size_t offset) {
   _lastReceivedTime = TIME();
   _lastBytesReceived = 0;
 
-  CURLcode res;
-  char errbuf[CURL_ERROR_SIZE];
-
-  if (_curl) {
-    auto flds = queryFields(getFillQuery(), offset, 10000000);
-    petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, _config.backend.c_str());
-    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCb);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
-    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-
-    // set headers
-    struct curl_slist *headers = 0;
-    headers = curl_slist_append(headers, "Accept: text/tab-separated-values");
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
-
-    // accept any compression supported
-    curl_easy_setopt(_curl, CURLOPT_ACCEPT_ENCODING, "");
-    res = curl_easy_perform(_curl);
-
-    long httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    curl_slist_free_all(headers);
-
-    if (httpCode != 200) {
-      std::stringstream ss;
-      ss << "QLever backend returned status code " << httpCode
-         << " during query (offset=" << offset << ")";
-      ss << "\n";
-      ss << _raw;
-      throw std::runtime_error(ss.str());
-    }
-
-    if (_exceptionPtr) std::rethrow_exception(_exceptionPtr);
-  } else {
-    LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request.";
-    return;
-  }
-
-  // check if there was an error
-  if (res != CURLE_OK) {
-    size_t len = strlen(errbuf);
-    if (len > 0) {
-      LOG(ERROR) << "[GEOMCACHE] " << errbuf;
-    } else {
-      LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
-    }
-  }
+  auto flds = queryFields(getFillQuery(), offset, 10000000);
+  performCurlRequest(_curl, _config.backend, flds, "text/tab-separated-values",
+                     GeomCache::writeCb, this, &_raw, &_exceptionPtr);
 }
 
 // _____________________________________________________________________________
@@ -626,54 +540,9 @@ void GeomCache::requestIds() {
 
 // _____________________________________________________________________________
 void GeomCache::requestIdPart(size_t offset) {
-  CURLcode res;
-  char errbuf[CURL_ERROR_SIZE];
-
-  if (_curl) {
-    auto flds = queryFields(getFillQuery(), offset, 100000000);
-    petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, _config.backend.c_str());
-    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, GeomCache::writeCbIds);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
-    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-
-    // set headers
-    struct curl_slist *headers = 0;
-    headers = curl_slist_append(headers, "Accept: application/octet-stream");
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
-
-    res = curl_easy_perform(_curl);
-
-    long httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    curl_slist_free_all(headers);
-
-    if (httpCode != 200) {
-      std::stringstream ss;
-      ss << "QLever backend returned status code " << httpCode;
-      ss << "\n";
-      ss << _raw;
-      throw std::runtime_error(ss.str());
-    }
-
-    if (_exceptionPtr) std::rethrow_exception(_exceptionPtr);
-  } else {
-    LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request.";
-    return;
-  }
-
-  // check if there was an error
-  if (res != CURLE_OK) {
-    size_t len = strlen(errbuf);
-    if (len > 0) {
-      LOG(ERROR) << "[GEOMCACHE] " << errbuf;
-    } else {
-      LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
-    }
-  }
+  auto flds = queryFields(getFillQuery(), offset, 100000000);
+  performCurlRequest(_curl, _config.backend, flds, "application/octet-stream",
+                     GeomCache::writeCbIds, this, &_raw, &_exceptionPtr);
 }
 
 // _____________________________________________________________________________

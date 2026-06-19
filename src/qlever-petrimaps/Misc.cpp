@@ -21,6 +21,67 @@ using util::LogLevel::WARN;
 const static std::string INDEX_HASH_PREFIX = "_5_";
 
 // _____________________________________________________________________________
+void petrimaps::performCurlRequest(
+    CURL* curl, const std::string& url, const std::string& postFields,
+    const std::string& acceptHeader,
+    size_t (*writeCb)(void*, size_t, size_t, void*), void* writeData,
+    const std::string* raw, std::exception_ptr* exceptionPtr) {
+  if (!curl) {
+    throw std::runtime_error("Failed to perform curl request.");
+  }
+
+  char errbuf[CURL_ERROR_SIZE];
+  errbuf[0] = 0;
+
+  petrimapsCurlSetup(curl);
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  if (postFields.size()) {
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postFields.c_str());
+  }
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCb);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, writeData);
+  curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+
+  struct curl_slist* headers = 0;
+  if (acceptHeader.size()) {
+    headers = curl_slist_append(headers, ("Accept: " + acceptHeader).c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+  }
+
+  CURLcode res = curl_easy_perform(curl);
+
+  long httpCode = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+  if (headers) curl_slist_free_all(headers);
+
+  if (httpCode != 200) {
+    std::stringstream ss;
+    ss << "QLever backend returned status code " << httpCode;
+    if (raw) ss << "\n" << *raw;
+    throw std::runtime_error(ss.str());
+  }
+
+  // an exception thrown inside the write callback takes precedence over a
+  // generic transport error
+  if (exceptionPtr && *exceptionPtr) std::rethrow_exception(*exceptionPtr);
+
+  if (res != CURLE_OK) {
+    std::stringstream ss;
+    ss << "QLever backend request failed: ";
+    if (strlen(errbuf) > 0) {
+      LOG(ERROR) << "[CURL] " << errbuf;
+      ss << errbuf;
+    } else {
+      LOG(ERROR) << "[CURL] " << curl_easy_strerror(res);
+      ss << curl_easy_strerror(res);
+    }
+    throw std::runtime_error(ss.str());
+  }
+}
+
+// _____________________________________________________________________________
 std::vector<std::string> RequestReader::requestColumns(
     const std::string& query) {
   std::string resString;
@@ -39,127 +100,25 @@ std::vector<std::string> RequestReader::requestColumns(
 
 // _____________________________________________________________________________
 void RequestReader::requestIds(const std::string& query) {
-  CURLcode res;
-  char errbuf[CURL_ERROR_SIZE];
-
   _raw.clear();
   _raw.reserve(10000);
 
-  if (_curl) {
-    auto flds = queryFields(query);
-    petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, _backendUrl.c_str());
-    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, RequestReader::writeCbIds);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
-
-    // set headers
-    struct curl_slist* headers = 0;
-    headers = curl_slist_append(headers, "Accept: application/octet-stream");
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
-
-    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    res = curl_easy_perform(_curl);
-
-    long httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    curl_slist_free_all(headers);
-
-    if (httpCode != 200) {
-      std::stringstream ss;
-      ss << "QLever backend returned status code " << httpCode;
-      ss << "\n";
-      ss << _raw;
-      throw std::runtime_error(ss.str());
-    }
-
-    if (exceptionPtr) std::rethrow_exception(exceptionPtr);
-
-  } else {
-    LOG(ERROR) << "[REQUESTREADER] Failed to perform curl request.";
-    return;
-  }
-
-  if (res != CURLE_OK) {
-    std::stringstream ss;
-    ss << "QLever backend request failed: ";
-    size_t len = strlen(errbuf);
-    if (len > 0) {
-      LOG(ERROR) << "[REQUESTREADER] " << errbuf;
-      ss << errbuf;
-    } else {
-      LOG(ERROR) << "[REQUESTREADER] " << curl_easy_strerror(res);
-      ss << curl_easy_strerror(res);
-    }
-
-    throw std::runtime_error(ss.str());
-  }
+  performCurlRequest(_curl, _backendUrl, queryFields(query),
+                     "application/octet-stream", RequestReader::writeCbIds,
+                     this, &_raw, &exceptionPtr);
 }
 
 // _____________________________________________________________________________
 std::map<size_t, std::pair<double, double>> RequestReader::requestRasterMeta(
     const std::string& query) {
-  CURLcode res;
-  char errbuf[CURL_ERROR_SIZE];
   _curRasterFieldDimensions = {};
 
   _raw.clear();
   _raw.reserve(10000);
 
-  if (_curl) {
-    auto flds = queryFields(query);
-    petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, _backendUrl.c_str());
-    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION,
-                     RequestReader::writeCbRasterMeta);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
-
-    // set headers
-    struct curl_slist* headers = 0;
-    headers = curl_slist_append(headers, "Accept: application/octet-stream");
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
-
-    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    res = curl_easy_perform(_curl);
-
-    long httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    curl_slist_free_all(headers);
-
-    if (httpCode != 200) {
-      std::stringstream ss;
-      ss << "QLever backend returned status code " << httpCode;
-      ss << "\n";
-      ss << _raw;
-      throw std::runtime_error(ss.str());
-    }
-
-    if (exceptionPtr) std::rethrow_exception(exceptionPtr);
-
-  } else {
-    LOG(ERROR) << "[REQUESTREADER] Failed to perform curl request.";
-    return {};
-  }
-
-  if (res != CURLE_OK) {
-    std::stringstream ss;
-    ss << "QLever backend request failed: ";
-    size_t len = strlen(errbuf);
-    if (len > 0) {
-      LOG(ERROR) << "[REQUESTREADER] " << errbuf;
-      ss << errbuf;
-    } else {
-      LOG(ERROR) << "[REQUESTREADER] " << curl_easy_strerror(res);
-      ss << curl_easy_strerror(res);
-    }
-
-    throw std::runtime_error(ss.str());
-  }
+  performCurlRequest(
+      _curl, _backendUrl, queryFields(query), "application/octet-stream",
+      RequestReader::writeCbRasterMeta, this, &_raw, &exceptionPtr);
 
   return _curRasterFieldDimensions;
 }
@@ -173,62 +132,12 @@ void RequestReader::requestRows(const std::string& query) {
 void RequestReader::requestRows(const std::string& query,
                                 size_t (*writeCb)(void*, size_t, size_t, void*),
                                 void* ptr) {
-  CURLcode res;
-  char errbuf[CURL_ERROR_SIZE];
-
   _raw.clear();
   _raw.reserve(10000);
 
-  if (_curl) {
-    auto flds = queryFields(query);
-    petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, _backendUrl.c_str());
-    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, writeCb);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, ptr);
-
-    // set headers
-    struct curl_slist* headers = 0;
-    headers = curl_slist_append(headers, "Accept: text/tab-separated-values");
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
-
-    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    res = curl_easy_perform(_curl);
-
-    long httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    curl_slist_free_all(headers);
-
-    if (httpCode != 200) {
-      std::stringstream ss;
-      ss << "QLever backend returned status code " << httpCode;
-      ss << "\n";
-      ss << _raw;
-      throw std::runtime_error(ss.str());
-    }
-
-    if (exceptionPtr) std::rethrow_exception(exceptionPtr);
-  } else {
-    LOG(ERROR) << "[REQUESTREADER] Failed to perform curl request.";
-    return;
-  }
-
-  if (res != CURLE_OK) {
-    std::stringstream ss;
-    ss << "QLever backend request failed: ";
-    size_t len = strlen(errbuf);
-    if (len > 0) {
-      LOG(ERROR) << "[REQUESTREADER] " << errbuf;
-      ss << errbuf;
-    } else {
-      LOG(ERROR) << "[REQUESTREADER] " << curl_easy_strerror(res);
-      ss << curl_easy_strerror(res);
-    }
-
-    throw std::runtime_error(ss.str());
-  }
+  performCurlRequest(_curl, _backendUrl, queryFields(query),
+                     "text/tab-separated-values", writeCb, ptr, &_raw,
+                     &exceptionPtr);
 }
 
 // _____________________________________________________________________________
@@ -525,44 +434,16 @@ size_t RequestReader::writeCbString(void* contents, size_t size, size_t nmemb,
 // _____________________________________________________________________________
 std::string RequestReader::requestIndexHash(const std::string& configHash) {
   // TODO: move this function into Reader class
-  CURLcode res;
-  char errbuf[CURL_ERROR_SIZE];
   std::string response;
+  std::string url = _backendUrl + "/?cmd=get-index-id";
 
-  if (_curl) {
-    std::string url = _backendUrl + "/?cmd=get-index-id";
-    petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION,
-                     RequestReader::writeCbString);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, &response);
-    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-
-    res = curl_easy_perform(_curl);
-
-    if (res != CURLE_OK) {
-      size_t len = strlen(errbuf);
-      if (len > 0) {
-        LOG(ERROR) << "[GEOMCACHE] " << errbuf;
-      } else {
-        LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
-      }
-
-      return "";
-    }
-
-    long httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    if (httpCode != 200) {
-      LOG(WARN) << "QLever backend returned status code " << httpCode
-                << " for index hash.";
-      return "";
-    }
-
-    return INDEX_HASH_PREFIX + "|" + configHash + "|" + response;
-  } else {
-    LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request for index hash.";
+  try {
+    performCurlRequest(_curl, url, "", "", RequestReader::writeCbString,
+                       &response, nullptr, nullptr);
+  } catch (const std::exception& e) {
+    LOG(WARN) << "[GEOMCACHE] Could not obtain index hash: " << e.what();
     return "";
   }
+
+  return INDEX_HASH_PREFIX + "|" + configHash + "|" + response;
 }
