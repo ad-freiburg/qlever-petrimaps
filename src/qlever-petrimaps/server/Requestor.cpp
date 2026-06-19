@@ -108,7 +108,7 @@ void Requestor::request() {
       _vals[geomColId] = std::move(reader._vals[_valueFlds[geomColId]]);
 
       _valsMin[geomColId] = std::numeric_limits<double>::max();
-      _valsMax[geomColId] = 0;
+      _valsMax[geomColId] = std::numeric_limits<double>::lowest();
 
       for (auto v : _vals[geomColId]) {
         if (v < _valsMin[geomColId]) _valsMin[geomColId] = v;
@@ -270,12 +270,14 @@ void Requestor::request() {
           if (clusterI > 0) {
             for (size_t m = 0; m < clusterI; m++) {
               const auto& p = _objects[geomColId][oid - m];
-              _pgrid[geomColId].add(_cache->getPoints()[p.first], getVal(geomColId, j), j);
+              _pgrid[geomColId].add(_cache->getPoints()[p.first],
+                                    getVal(geomColId, oid - m), j);
               _clusterObjects[geomColId].push_back({oid - m, {m, clusterI}});
               j++;
             }
           } else {
-            _pgrid[geomColId].add(_cache->getPoints()[geomId], getVal(geomColId, oid), oid);
+            _pgrid[geomColId].add(_cache->getPoints()[geomId],
+                                  getVal(geomColId, oid), oid);
           }
 
           // every 100000 objects, check memory...
@@ -311,7 +313,9 @@ void Requestor::request() {
               j++;
             }
           } else {
-            _pgrid[geomColId].add(geom, getVal(geomColId, i + _objects[geomColId].size()), i + _objects[geomColId].size());
+            _pgrid[geomColId].add(
+                geom, getVal(geomColId, i + _objects[geomColId].size()),
+                i + _objects[geomColId].size());
           }
 
           // every 100000 objects, check memory...
@@ -402,7 +406,8 @@ void Requestor::request() {
                            256;
 
               if (gi == 3 || lastX != sX || lastY != sY) {
-                _lpgrid[geomColId].add(cellX, cellY, getVal(geomColId, i), {sX, sY});
+                _lpgrid[geomColId].add(cellX, cellY, getVal(geomColId, i),
+                                       {sX, sY});
                 lastX = sX;
                 lastY = sY;
               }

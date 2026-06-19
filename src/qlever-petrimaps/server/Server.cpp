@@ -271,7 +271,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   }
 
   if (!r->ready()) {
-      LOG(ERROR) << "Session " << id << " not ready!";
+    LOG(ERROR) << "Session " << id << " not ready!";
     throw std::invalid_argument("Session not ready.");
   }
 

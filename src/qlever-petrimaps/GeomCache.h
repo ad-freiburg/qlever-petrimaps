@@ -24,13 +24,13 @@
 namespace petrimaps {
 
 const static std::string RASTER_META_QUERY_DEFAULT =
-"PREFIX wp: <https://wald.cs.uni-freiburg.de/ontology#>"
-"PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>"
-"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>"
-"SELECT ?s ?w ?h WHERE {"
-"  ?s wp:fieldHeight ?h ."
-"  ?s wp:fieldWidth ?w ."
-"}";
+    "PREFIX wp: <https://wald.cs.uni-freiburg.de/ontology#>"
+    "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>"
+    "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>"
+    "SELECT ?s ?w ?h WHERE {"
+    "  ?s wp:fieldHeight ?h ."
+    "  ?s wp:fieldWidth ?w ."
+    "}";
 
 const static std::string FILL_QUERY_DEFAULT =
     "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
