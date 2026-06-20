@@ -3,7 +3,7 @@
 
 Interactive visualization of SPARQL query results with geospatial information on a map, either as individual objects or as a heatmap. Petrimaps can display **hundreds of millions of objects** interactively, for example, a heatmap of all the streets in a given country, or even in the whole world. Petrimaps is implemented as a middleware. In the [QLever UI](https://github.com/ad-freiburg/qlever-ui), whenever a SPARQL result has WKT literals in its last column, a "Map view" button is displayed, which leads to an instance of Petrimaps.
 
-Here are two example queries: [All railway lines in OSM](https://qlever.cs.uni-freiburg.de/petrimaps/?query=PREFIX+rdf%3A+%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E+PREFIX+geo%3A+%3Chttp%3A%2F%2Fwww.opengis.net%2Font%2Fgeosparql%23%3E+PREFIX+osmkey%3A+%3Chttps%3A%2F%2Fwww.openstreetmap.org%2Fwiki%2FKey%3A%3E+PREFIX+osm%3A+%3Chttps%3A%2F%2Fwww.openstreetmap.org%2F%3E+PREFIX+rdf%3A+%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E+SELECT+%3Fosm_id+%3Fgeometry+WHERE+%7B+%3Fosm_id+osmkey%3Arailway+%3Frail+.+%3Fosm_id+rdf%3Atype+osm%3Away+.+%3Fosm_id+geo%3AhasGeometry%2Fgeo%3AasWKT+%3Fgeometry+%7D&backend=https%3A%2F%2Fqlever.cs.uni-freiburg.de%2Fapi%2Fosm-planet), [All streets in Germany in OSM](https://qlever.cs.uni-freiburg.de/petrimaps/?query=PREFIX+ogc%3A+%3Chttp%3A%2F%2Fwww.opengis.net%2Frdf%23%3E+PREFIX+osmrel%3A+%3Chttps%3A%2F%2Fwww.openstreetmap.org%2Frelation%2F%3E+PREFIX+geo%3A+%3Chttp%3A%2F%2Fwww.opengis.net%2Font%2Fgeosparql%23%3E+PREFIX+osm%3A+%3Chttps%3A%2F%2Fwww.openstreetmap.org%2F%3E+PREFIX+rdf%3A+%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E+PREFIX+osmkey%3A+%3Chttps%3A%2F%2Fwww.openstreetmap.org%2Fwiki%2FKey%3A%3E+SELECT+%3Fosm_id+%3Fshape+WHERE+%7B+osmrel%3A51477+ogc%3AsfContains+%3Fosm_id+.+%3Fosm_id+osmkey%3Ahighway+%3Fhighway+.+%3Fosm_id+rdf%3Atype+osm%3Away+.+%3Fosm_id+geo%3AhasGeometry%2Fgeo%3AasWKT+%3Fshape+%7D&backend=https%3A%2F%2Fqlever.cs.uni-freiburg.de%2Fapi%2Fosm-planet).
+Here are two example queries: [All railway lines in OSM](https://qlever.dev/petrimaps/?query=PREFIX+rdf%3A+%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E+PREFIX+geo%3A+%3Chttp%3A%2F%2Fwww.opengis.net%2Font%2Fgeosparql%23%3E+PREFIX+osmkey%3A+%3Chttps%3A%2F%2Fwww.openstreetmap.org%2Fwiki%2FKey%3A%3E+PREFIX+osm%3A+%3Chttps%3A%2F%2Fwww.openstreetmap.org%2F%3E+PREFIX+rdf%3A+%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E+SELECT+%3Fosm_id+%3Fgeometry+WHERE+%7B+%3Fosm_id+osmkey%3Arailway+%3Frail+.+%3Fosm_id+rdf%3Atype+osm%3Away+.+%3Fosm_id+geo%3AhasGeometry%2Fgeo%3AasWKT+%3Fgeometry+%7D&backend=https%3A%2F%2Fqlever.dev%2Fapi%2Fosm-planet), [All streets in Germany in OSM](https://qlever.dev/petrimaps/?query=PREFIX+ogc%3A+%3Chttp%3A%2F%2Fwww.opengis.net%2Frdf%23%3E+PREFIX+osmrel%3A+%3Chttps%3A%2F%2Fwww.openstreetmap.org%2Frelation%2F%3E+PREFIX+geo%3A+%3Chttp%3A%2F%2Fwww.opengis.net%2Font%2Fgeosparql%23%3E+PREFIX+osm%3A+%3Chttps%3A%2F%2Fwww.openstreetmap.org%2F%3E+PREFIX+rdf%3A+%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E+PREFIX+osmkey%3A+%3Chttps%3A%2F%2Fwww.openstreetmap.org%2Fwiki%2FKey%3A%3E+SELECT+%3Fosm_id+%3Fshape+WHERE+%7B+osmrel%3A51477+ogc%3AsfContains+%3Fosm_id+.+%3Fosm_id+osmkey%3Ahighway+%3Fhighway+.+%3Fosm_id+rdf%3Atype+osm%3Away+.+%3Fosm_id+geo%3AhasGeometry%2Fgeo%3AasWKT+%3Fshape+%7D&backend=https%3A%2F%2Fqlever.dev%2Fapi%2Fosm-planet).
 
 ## Requirements
 * gcc > 5.0 || clang > 3.9
@@ -28,7 +28,19 @@ Compile yourself:
 
 via Docker:
 
+    $ git clone --recurse-submodules https://github.com/ad-freiburg/qlever-petrimaps
+    $ cd qlever-petrimaps
     $ docker build -t petrimaps .
+
+If you already cloned the repository without `--recurse-submodules`, fetch the submodules before building:
+
+    $ git submodule update --init --recursive
+
+A pre-built image is also available on Docker Hub, so you can skip building entirely:
+
+    $ docker run --rm -p 9090:9090 adfreiburg/qlever-petrimaps:latest
+
+Note that `http://localhost:9090` itself won't show much, since petrimaps expects a `?query` and `?backend` parameter (see [Usage](#usage) below) — it's mainly useful at this point to confirm the service is up.
 
 ## Usage
 
