@@ -18,29 +18,28 @@ Here are two example queries: [All railway lines in OSM](https://qlever.dev/petr
 
 ## Installation
 
-Compile yourself:
+First clone the repository including its submodules:
 
     $ git clone --recurse-submodules https://github.com/ad-freiburg/qlever-petrimaps
     $ cd qlever-petrimaps
+
+If you already cloned without `--recurse-submodules`, fetch them with `git submodule update --init --recursive`.
+
+Then either compile yourself:
+
     $ mkdir -p build && cd build
     $ cmake ..
     $ make
 
-via Docker:
+or build via Docker:
 
-    $ git clone --recurse-submodules https://github.com/ad-freiburg/qlever-petrimaps
-    $ cd qlever-petrimaps
     $ docker build -t petrimaps .
-
-If you already cloned the repository without `--recurse-submodules`, fetch the submodules before building:
-
-    $ git submodule update --init --recursive
 
 A pre-built image is also available on Docker Hub, so you can skip building entirely:
 
     $ docker run --rm -p 9090:9090 adfreiburg/qlever-petrimaps:latest
 
-Note that `http://localhost:9090` itself won't show much, since petrimaps expects a `?query` and `?backend` parameter (see [Usage](#usage) below) — it's mainly useful at this point to confirm the service is up.
+Note that `http://localhost:9090` itself won't show much, since petrimaps expects a `?query` and `?backend` parameter (see [Usage](#usage) below). At this point, the URL is useful to confirm the service is up.
 
 ## Usage
 
