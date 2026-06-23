@@ -55,49 +55,6 @@ std::string GeomCache::getCountQuery() const {
 }
 
 // _____________________________________________________________________________
-size_t GeomCache::writeCb(void *contents, size_t size, size_t nmemb,
-                          void *userp) {
-  size_t realsize = size * nmemb;
-
-  try {
-    static_cast<GeomCache *>(userp)->parse(static_cast<const char *>(contents),
-                                           realsize);
-  } catch (...) {
-    static_cast<GeomCache *>(userp)->_exceptionPtr = std::current_exception();
-    return CURLE_WRITE_ERROR;
-  }
-  return realsize;
-}
-
-// _____________________________________________________________________________
-size_t GeomCache::writeCbIds(void *contents, size_t size, size_t nmemb,
-                             void *userp) {
-  size_t realsize = size * nmemb;
-  try {
-    static_cast<GeomCache *>(userp)->parseIds(
-        static_cast<const char *>(contents), realsize);
-  } catch (...) {
-    static_cast<GeomCache *>(userp)->_exceptionPtr = std::current_exception();
-    return CURLE_WRITE_ERROR;
-  }
-  return realsize;
-}
-
-// _____________________________________________________________________________
-size_t GeomCache::writeCbCount(void *contents, size_t size, size_t nmemb,
-                               void *userp) {
-  size_t realsize = size * nmemb;
-  try {
-    static_cast<GeomCache *>(userp)->parseCount(
-        static_cast<const char *>(contents), realsize);
-  } catch (...) {
-    static_cast<GeomCache *>(userp)->_exceptionPtr = std::current_exception();
-    return CURLE_WRITE_ERROR;
-  }
-  return realsize;
-}
-
-// _____________________________________________________________________________
 void GeomCache::parse(const char *c, size_t size) {
   _loadStatusStage = _LoadStatusStages::Parse;
 
@@ -350,9 +307,9 @@ size_t GeomCache::requestSize() {
   auto flds = queryFields(countQuery, 0, 1);
 
   try {
-    performCurlRequest(_curl, _config.backend, flds,
-                       "text/tab-separated-values", GeomCache::writeCbCount,
-                       this, &_raw, &_exceptionPtr);
+    performCurlRequest(
+        _config.backend, flds, "text/tab-separated-values",
+        [this](const char *c, size_t n) { parseCount(c, n); }, &_raw);
   } catch (const std::exception &e) {
     LOG(ERROR) << "[GEOMCACHE] Count query failed: " << e.what();
     return 0;
@@ -375,8 +332,9 @@ void GeomCache::requestPart(size_t offset) {
   _lastBytesReceived = 0;
 
   auto flds = queryFields(getFillQuery(), offset, 10000000);
-  performCurlRequest(_curl, _config.backend, flds, "text/tab-separated-values",
-                     GeomCache::writeCb, this, &_raw, &_exceptionPtr);
+  performCurlRequest(
+      _config.backend, flds, "text/tab-separated-values",
+      [this](const char *c, size_t n) { parse(c, n); }, &_raw);
 }
 
 // _____________________________________________________________________________
@@ -511,7 +469,6 @@ void GeomCache::requestIds() {
   _curUniqueGeom = 0;
   _maxQid = 0;
   _lastQid = -1;
-  _exceptionPtr = 0;
 
   LOG(INFO) << "[GEOMCACHE] Query is " << getFillQuery();
 
@@ -541,8 +498,9 @@ void GeomCache::requestIds() {
 // _____________________________________________________________________________
 void GeomCache::requestIdPart(size_t offset) {
   auto flds = queryFields(getFillQuery(), offset, 100000000);
-  performCurlRequest(_curl, _config.backend, flds, "application/octet-stream",
-                     GeomCache::writeCbIds, this, &_raw, &_exceptionPtr);
+  performCurlRequest(
+      _config.backend, flds, "application/octet-stream",
+      [this](const char *c, size_t n) { parseIds(c, n); }, &_raw);
 }
 
 // _____________________________________________________________________________
@@ -558,11 +516,14 @@ std::string GeomCache::queryFields(std::string query, size_t offset,
     query += " OFFSET " + std::to_string(offset);
   }
 
-  auto esc = curl_easy_escape(_curl, query.c_str(), query.size());
+  // TODO: dont spin up an entire CURL instance here, is this necessary?
+  CURL *curl = curl_easy_init();
+  auto esc = curl_easy_escape(curl, query.c_str(), query.size());
 
   ss << "send=" << std::to_string(MAXROWS) << "&query=" << esc;
 
   curl_free(esc);
+  curl_easy_cleanup(curl);
 
   return ss.str();
 }

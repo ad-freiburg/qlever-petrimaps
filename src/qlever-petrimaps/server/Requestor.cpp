@@ -471,26 +471,12 @@ void Requestor::requestRows(
   RequestReader reader(_cache->getConfig().backend, _maxMemory, 0, 0, 0);
   LOG(INFO) << "[REQUESTOR] Requesting rows for query " << _rcfg.query;
 
-  ReaderCbPair cbPair{&reader, cb};
-
-  reader.requestRows(
-      _rcfg.query,
-      [](void* contents, size_t size, size_t nmemb, void* ptr) {
-        size_t realsize = size * nmemb;
-        auto pr = static_cast<ReaderCbPair*>(ptr);
-        try {
-          // clear rows
-          pr->reader->rows = {};
-          pr->reader->parse(static_cast<const char*>(contents), realsize);
-          pr->cb(pr->reader->rows);
-        } catch (...) {
-          pr->reader->exceptionPtr = std::current_exception();
-          return static_cast<size_t>(CURLE_WRITE_ERROR);
-        }
-
-        return realsize;
-      },
-      &cbPair);
+  reader.requestRows(_rcfg.query, [&reader, &cb](const char* c, size_t n) {
+    // parse this block of rows and give them to the callback
+    reader.rows = {};
+    reader.parse(c, n);
+    cb(reader.rows);
+  });
 }
 
 // _____________________________________________________________________________

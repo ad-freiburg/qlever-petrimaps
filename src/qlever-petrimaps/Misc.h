@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include <exception>
+#include <functional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -66,12 +67,11 @@ inline int16_t isMCoord(int16_t c) {
 std::string normalizeURL(const std::string& inURL);
 std::string canonizeURL(const std::string& inURL);
 
-void performCurlRequest(CURL* curl, const std::string& url,
+void performCurlRequest(const std::string& url,
                         const std::string& postFields,
                         const std::string& acceptHeader,
-                        size_t (*writeCb)(void*, size_t, size_t, void*),
-                        void* writeData, const std::string* raw,
-                        std::exception_ptr* exceptionPtr);
+                        const std::function<void(const char*, size_t)>& parse,
+                        const std::string* raw);
 
 class OutOfMemoryError : public std::exception {
  public:
@@ -164,7 +164,6 @@ struct RequestReader {
                          size_t geomFields, size_t valFields,
                          size_t rasterMetaFields)
       : _backendUrl(backendUrl),
-        _curl(curl_easy_init()),
         _maxMemory(maxMemory),
         _geomFields(geomFields),
         _valFields(valFields),
@@ -172,9 +171,6 @@ struct RequestReader {
     _ids.resize(geomFields);
     _vals.resize(valFields);
     _rasterMetas.resize(rasterMetaFields);
-  }
-  ~RequestReader() {
-    if (_curl) curl_easy_cleanup(_curl);
   }
 
   std::vector<std::string> requestColumns(const std::string& query);
@@ -184,23 +180,14 @@ struct RequestReader {
   std::string requestIndexHash(const std::string& configHash);
   void requestRows(const std::string& qurl);
   void requestRows(const std::string& query,
-                   size_t (*writeCb)(void*, size_t, size_t, void*), void* ptr);
+                   const std::function<void(const char*, size_t)>& parse);
   void parse(const char*, size_t size);
   void parseIds(const char*, size_t size);
   void parseRasterMeta(const char*, size_t size);
 
-  static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
-  static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
-                           void* userp);
-  static size_t writeCbRasterMeta(void* contents, size_t size, size_t nmemb,
-                                  void* userp);
-  static size_t writeCbString(void* contents, size_t size, size_t nmemb,
-                              void* userp);
-
   std::string queryFields(const std::string& query) const;
 
   std::string _backendUrl;
-  CURL* _curl;
 
   std::vector<std::string> _colNames;
   size_t _curCol = 0;
@@ -229,8 +216,6 @@ struct RequestReader {
   size_t _geomFields;
   size_t _valFields;
   size_t _rasterMetaFields;
-
-  std::exception_ptr exceptionPtr;
 };
 
 }  // namespace petrimaps

@@ -94,16 +94,14 @@ inline bool operator!=(const GeomCacheConfig& l, const GeomCacheConfig& r) {
 
 class GeomCache {
  public:
-  GeomCache() : _config(), _curl(0), _curRow(0), _maxMemory(-1) {}
+  GeomCache() : _config(), _curRow(0), _maxMemory(-1) {}
   explicit GeomCache(const GeomCacheConfig& config, size_t maxMemory)
       : _config(config),
-        _curl(curl_easy_init()),
         _curRow(0),
         _maxMemory(maxMemory) {}
 
   GeomCache& operator=(GeomCache&& o) {
     _config = o._config;
-    _curl = curl_easy_init();
     _lines = std::move(o._lines);
     _linePoints = std::move(o._linePoints);
     _points = std::move(o._points);
@@ -111,10 +109,6 @@ class GeomCache {
     _state = o._state;
     return *this;
   };
-
-  ~GeomCache() {
-    if (_curl) curl_easy_cleanup(_curl);
-  }
 
   bool ready() const {
     _m.lock();
@@ -184,7 +178,6 @@ class GeomCache {
 
  private:
   GeomCacheConfig _config;
-  CURL* _curl;
 
   uint8_t _curByte;
   ID _curId;
@@ -197,12 +190,6 @@ class GeomCache {
 
   enum _LoadStatusStages { Parse = 1, ParseIds, FromFile, Finished };
   _LoadStatusStages _loadStatusStage = Parse;
-
-  static size_t writeCb(void* contents, size_t size, size_t nmemb, void* userp);
-  static size_t writeCbIds(void* contents, size_t size, size_t nmemb,
-                           void* userp);
-  static size_t writeCbCount(void* contents, size_t size, size_t nmemb,
-                             void* userp);
 
   // Get the right SPARQL query for the given backend.
   const std::string& getFillQuery() const;
@@ -259,8 +246,6 @@ class GeomCache {
 
   std::string _dangling, _prev, _raw;
   ParseState _state;
-
-  std::exception_ptr _exceptionPtr;
 
   mutable std::mutex _m;
   bool _ready = false;

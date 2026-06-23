@@ -69,13 +69,6 @@ struct ResObj {
   util::geo::MultiPolygon<double> poly;
 };
 
-struct ReaderCbPair {
-  RequestReader* reader;
-  std::function<void(
-      std::vector<std::vector<std::pair<std::string, std::string>>>)>
-      cb;
-};
-
 class Requestor {
  public:
   Requestor() : _maxMemory(-1) {}

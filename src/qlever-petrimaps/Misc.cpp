@@ -22,10 +22,12 @@ const static std::string INDEX_HASH_PREFIX = "_5_";
 
 // _____________________________________________________________________________
 void petrimaps::performCurlRequest(
-    CURL* curl, const std::string& url, const std::string& postFields,
+    const std::string& url, const std::string& postFields,
     const std::string& acceptHeader,
-    size_t (*writeCb)(void*, size_t, size_t, void*), void* writeData,
-    const std::string* raw, std::exception_ptr* exceptionPtr) {
+    const std::function<void(const char*, size_t)>& parse,
+    const std::string* raw) {
+  CURL* curl = curl_easy_init();
+
   if (!curl) {
     throw std::runtime_error("Failed to perform curl request.");
   }
@@ -33,14 +35,40 @@ void petrimaps::performCurlRequest(
   char errbuf[CURL_ERROR_SIZE];
   errbuf[0] = 0;
 
+  // this is a context that holds to things: a std::function for parsing, and
+  // an exception_ptr for storing any exception encountered during parsing (for
+  // later rethrow)
+  struct CallbackContext {
+    const std::function<void(const char*, size_t)>& parse;
+    std::exception_ptr exception;
+  } cbContext{parse, nullptr};
+
   petrimapsCurlSetup(curl);
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+
+  // if we have POST fields, add them
   if (postFields.size()) {
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postFields.c_str());
   }
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCb);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, writeData);
+
+  size_t (*cb)(void* contents, size_t size, size_t nmemb, void* userp) =
+      [](void* contents, size_t size, size_t nmemb, void* userp) -> size_t {
+    size_t realsize = size * nmemb;
+    auto* c = static_cast<CallbackContext*>(userp);
+    try {
+      c->parse(static_cast<const char*>(contents), realsize);
+    } catch (...) {
+      // store exception, then return with an error (aborts curl request)
+      c->exception = std::current_exception();
+      return CURLE_WRITE_ERROR;
+    }
+    return realsize;
+  };
+
+  // any newly read block will be given to the parse() method of the handed cb
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, cb);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &cbContext);
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
 
   struct curl_slist* headers = 0;
@@ -55,6 +83,7 @@ void petrimaps::performCurlRequest(
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
   if (headers) curl_slist_free_all(headers);
+  curl_easy_cleanup(curl);
 
   if (httpCode != 200) {
     std::stringstream ss;
@@ -63,9 +92,8 @@ void petrimaps::performCurlRequest(
     throw std::runtime_error(ss.str());
   }
 
-  // an exception thrown inside the write callback takes precedence over a
-  // generic transport error
-  if (exceptionPtr && *exceptionPtr) std::rethrow_exception(*exceptionPtr);
+  // rethrow any exception encountered during write callback
+  if (cbContext.exception) std::rethrow_exception(cbContext.exception);
 
   if (res != CURLE_OK) {
     std::stringstream ss;
@@ -103,9 +131,9 @@ void RequestReader::requestIds(const std::string& query) {
   _raw.clear();
   _raw.reserve(10000);
 
-  performCurlRequest(_curl, _backendUrl, queryFields(query),
-                     "application/octet-stream", RequestReader::writeCbIds,
-                     this, &_raw, &exceptionPtr);
+  performCurlRequest(
+      _backendUrl, queryFields(query), "application/octet-stream",
+      [this](const char* c, size_t n) { parseIds(c, n); }, &_raw);
 }
 
 // _____________________________________________________________________________
@@ -117,34 +145,36 @@ std::map<size_t, std::pair<double, double>> RequestReader::requestRasterMeta(
   _raw.reserve(10000);
 
   performCurlRequest(
-      _curl, _backendUrl, queryFields(query), "application/octet-stream",
-      RequestReader::writeCbRasterMeta, this, &_raw, &exceptionPtr);
+      _backendUrl, queryFields(query), "application/octet-stream",
+      [this](const char* c, size_t n) { parseRasterMeta(c, n); }, &_raw);
 
   return _curRasterFieldDimensions;
 }
 
 // _____________________________________________________________________________
 void RequestReader::requestRows(const std::string& query) {
-  return requestRows(query, RequestReader::writeCb, this);
+  return requestRows(query, [this](const char* c, size_t n) { parse(c, n); });
 }
 
 // _____________________________________________________________________________
-void RequestReader::requestRows(const std::string& query,
-                                size_t (*writeCb)(void*, size_t, size_t, void*),
-                                void* ptr) {
+void RequestReader::requestRows(
+    const std::string& query,
+    const std::function<void(const char*, size_t)>& parse) {
   _raw.clear();
   _raw.reserve(10000);
 
-  performCurlRequest(_curl, _backendUrl, queryFields(query),
-                     "text/tab-separated-values", writeCb, ptr, &_raw,
-                     &exceptionPtr);
+  performCurlRequest(_backendUrl, queryFields(query),
+                     "text/tab-separated-values", parse, &_raw);
 }
 
 // _____________________________________________________________________________
 std::string RequestReader::queryFields(const std::string& query) const {
-  auto escStr = curl_easy_escape(_curl, query.c_str(), query.size());
+  // TODO: dont spin up an entire CURL instance here, is this necessary?
+  CURL* curl = curl_easy_init();
+  auto escStr = curl_easy_escape(curl, query.c_str(), query.size());
   std::string esc = escStr;
   curl_free(escStr);
+  curl_easy_cleanup(curl);
 
   return "send=18446744073709551615&query=" + esc;
 }
@@ -154,51 +184,6 @@ size_t petrimaps::writeStringCb(void* contents, size_t size, size_t nmemb,
                                 void* userp) {
   ((std::string*)userp)->append((char*)contents, size * nmemb);
   return size * nmemb;
-}
-
-// _____________________________________________________________________________
-size_t RequestReader::writeCb(void* contents, size_t size, size_t nmemb,
-                              void* userp) {
-  size_t realsize = size * nmemb;
-  try {
-    static_cast<RequestReader*>(userp)->parse(
-        static_cast<const char*>(contents), realsize);
-  } catch (...) {
-    static_cast<RequestReader*>(userp)->exceptionPtr = std::current_exception();
-    return CURLE_WRITE_ERROR;
-  }
-
-  return realsize;
-}
-
-// _____________________________________________________________________________
-size_t RequestReader::writeCbIds(void* contents, size_t size, size_t nmemb,
-                                 void* userp) {
-  size_t realsize = size * nmemb;
-  try {
-    static_cast<RequestReader*>(userp)->parseIds(
-        static_cast<const char*>(contents), realsize);
-  } catch (...) {
-    static_cast<RequestReader*>(userp)->exceptionPtr = std::current_exception();
-    return CURLE_WRITE_ERROR;
-  }
-
-  return realsize;
-}
-
-// _____________________________________________________________________________
-size_t RequestReader::writeCbRasterMeta(void* contents, size_t size,
-                                        size_t nmemb, void* userp) {
-  size_t realsize = size * nmemb;
-  try {
-    static_cast<RequestReader*>(userp)->parseRasterMeta(
-        static_cast<const char*>(contents), realsize);
-  } catch (...) {
-    static_cast<RequestReader*>(userp)->exceptionPtr = std::current_exception();
-    return CURLE_WRITE_ERROR;
-  }
-
-  return realsize;
 }
 
 // _____________________________________________________________________________
@@ -425,21 +410,16 @@ std::string petrimaps::canonizeURL(const std::string& inURL) {
 }
 
 // _____________________________________________________________________________
-size_t RequestReader::writeCbString(void* contents, size_t size, size_t nmemb,
-                                    void* userp) {
-  ((std::string*)userp)->append((char*)contents, size * nmemb);
-  return size * nmemb;
-}
-
-// _____________________________________________________________________________
 std::string RequestReader::requestIndexHash(const std::string& configHash) {
   // TODO: move this function into Reader class
   std::string response;
   std::string url = _backendUrl + "/?cmd=get-index-id";
 
   try {
-    performCurlRequest(_curl, url, "", "", RequestReader::writeCbString,
-                       &response, nullptr, nullptr);
+    performCurlRequest(
+        url, "", "",
+        [&response](const char* c, size_t n) { response.append(c, n); },
+        nullptr);
   } catch (const std::exception& e) {
     LOG(WARN) << "[GEOMCACHE] Could not obtain index hash: " << e.what();
     return "";
