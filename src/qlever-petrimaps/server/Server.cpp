@@ -806,7 +806,8 @@ util::http::Answer Server::handleTouchReq(const Params& pars,
     configJson = pars.find("cfg")->second;
   }
 
-  auto backendCfg = getGeomCacheConfig(backend, accessToken, configJson, remoteAddr);
+  auto backendCfg =
+      getGeomCacheConfig(backend, accessToken, configJson, remoteAddr);
 
   createCache(backendCfg);
   std::shared_ptr<GeomCache> cache = _caches[backend];
@@ -1338,7 +1339,8 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleLoadStatusReq(const Params& pars, int sock) const {
+util::http::Answer Server::handleLoadStatusReq(const Params& pars,
+                                               int sock) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
 
@@ -1409,8 +1411,7 @@ double Server::getLoadStatusPercent() const {
 }
 
 // _____________________________________________________________________________
-void Server::createCache(
-                         const GeomCacheConfig& cfg) const {
+void Server::createCache(const GeomCacheConfig& cfg) const {
   std::shared_ptr<GeomCache> cache;
 
   {
@@ -1431,8 +1432,7 @@ void Server::createCache(
 }
 
 // _____________________________________________________________________________
-std::string Server::loadCache(
-                              const GeomCacheConfig& cfg) const {
+std::string Server::loadCache(const GeomCacheConfig& cfg) const {
   std::shared_ptr<GeomCache> cache = _caches[cfg.backend];
 
   try {
@@ -1545,19 +1545,27 @@ GeomCacheConfig Server::getGeomCacheCfgFromJSON(
 GeomCacheConfig Server::getGeomCacheConfig(
     const std::string& backendUrl, const std::string& accessToken,
     const std::string& configJson, const std::string& remoteAddr) const {
-
-  std::lock_guard<std::mutex> guard(_m);
-
   std::string canonizedBackend;
 
-  auto i = _canonizedURLCache.find(backendUrl);
-  if (i != _canonizedURLCache.end()) {
-    canonizedBackend = i->second;
-  } else  {
-     canonizedBackend = canonizeURL(backendUrl, remoteAddr);
-     _canonizedURLCache[backendUrl] = canonizedBackend;
+  // first check if we have it cached
+  {
+    std::lock_guard<std::mutex> guard(_m);
+    auto i = _canonizedURLCache.find(backendUrl);
+    if (i != _canonizedURLCache.end()) {
+      canonizedBackend = i->second;
+    }
   }
 
+  if (canonizedBackend.size() == 0) {
+    // if not cache, perform the canonizeURL request lock-free
+    canonizedBackend = canonizeURL(backendUrl, remoteAddr);
+
+    // only lock for writing
+    std::lock_guard<std::mutex> guard(_m);
+    _canonizedURLCache[backendUrl] = canonizedBackend;
+  }
+
+  std::lock_guard<std::mutex> guard(_m);
   auto cfg = _cacheConfigs.find(canonizedBackend);
   if (cfg != _cacheConfigs.end()) {
     if (configJson.size()) {
