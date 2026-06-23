@@ -65,11 +65,13 @@ inline int16_t isMCoord(int16_t c) {
 }
 
 std::string normalizeURL(const std::string& inURL);
-std::string canonizeURL(const std::string& inURL);
+std::string canonizeURL(const std::string& inURL,
+                        const std::string& remoteAddr);
+std::string remoteAddress(int sock);
 
-void performCurlRequest(const std::string& url,
-                        const std::string& postFields,
+void performCurlRequest(const std::string& url, const std::string& postFields,
                         const std::string& acceptHeader,
+                        const std::string& xForwardHeader,
                         const std::function<void(const char*, size_t)>& parse,
                         const std::string* raw);
 
@@ -111,7 +113,8 @@ inline void petrimapsCurlSetup(CURL* curl) {
 size_t writeStringCb(void* contents, size_t size, size_t nmemb, void* userp);
 
 inline std::string httpRequest(const std::string& url,
-                               const std::string& postFields = "") {
+                               const std::string& postFields = "",
+                               const std::string& xForwardHeader = "") {
   CURL* curl = curl_easy_init();
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
@@ -123,6 +126,12 @@ inline std::string httpRequest(const std::string& url,
   if (postFields.size()) {
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postFields.c_str());
+  }
+  struct curl_slist* headers = 0;
+  if (xForwardHeader.size()) {
+    headers = curl_slist_append(headers,
+                                ("X-Forwarded-For: " + xForwardHeader).c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   }
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeStringCb);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resString);
@@ -137,6 +146,9 @@ inline std::string httpRequest(const std::string& url,
     ss << "Remote server returned status code " << httpCode;
     ss << "\n";
     ss << resString;
+
+    if (headers) curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
     throw std::runtime_error(ss.str());
   }
 
@@ -150,10 +162,12 @@ inline std::string httpRequest(const std::string& url,
       ss << curl_easy_strerror(res);
     }
 
+    if (headers) curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     throw std::runtime_error(ss.str());
   }
 
+  if (headers) curl_slist_free_all(headers);
   curl_easy_cleanup(curl);
 
   return resString;
@@ -174,13 +188,14 @@ struct RequestReader {
   }
 
   std::vector<std::string> requestColumns(const std::string& query);
-  void requestIds(const std::string& qurl);
+  void requestIds(const std::string& qurl, const std::string& remoteAddr);
   std::map<size_t, std::pair<double, double>> requestRasterMeta(
-      const std::string& query);
+      const std::string& query, const std::string& remoteAddr);
   std::string requestIndexHash(const std::string& configHash);
-  void requestRows(const std::string& qurl);
+  void requestRows(const std::string& qurl, const std::string& remoteAddr);
   void requestRows(const std::string& query,
-                   const std::function<void(const char*, size_t)>& parse);
+                   const std::function<void(const char*, size_t)>& parse,
+                   const std::string& remoteAddr);
   void parse(const char*, size_t size);
   void parseIds(const char*, size_t size);
   void parseRasterMeta(const char*, size_t size);

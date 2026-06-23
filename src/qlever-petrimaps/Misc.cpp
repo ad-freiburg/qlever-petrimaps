@@ -2,7 +2,10 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <stdint.h>
+#include <sys/socket.h>
 
 #include <cstring>
 #include <string>
@@ -23,7 +26,7 @@ const static std::string INDEX_HASH_PREFIX = "_5_";
 // _____________________________________________________________________________
 void petrimaps::performCurlRequest(
     const std::string& url, const std::string& postFields,
-    const std::string& acceptHeader,
+    const std::string& acceptHeader, const std::string& xForwardHeader,
     const std::function<void(const char*, size_t)>& parse,
     const std::string* raw) {
   CURL* curl = curl_easy_init();
@@ -74,6 +77,11 @@ void petrimaps::performCurlRequest(
   struct curl_slist* headers = 0;
   if (acceptHeader.size()) {
     headers = curl_slist_append(headers, ("Accept: " + acceptHeader).c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+  }
+  if (xForwardHeader.size()) {
+    headers = curl_slist_append(headers,
+                                ("X-Forwarded-For: " + xForwardHeader).c_str());
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   }
 
@@ -127,44 +135,48 @@ std::vector<std::string> RequestReader::requestColumns(
 }
 
 // _____________________________________________________________________________
-void RequestReader::requestIds(const std::string& query) {
+void RequestReader::requestIds(const std::string& query,
+                               const std::string& remoteAddr) {
   _raw.clear();
   _raw.reserve(10000);
 
   performCurlRequest(
-      _backendUrl, queryFields(query), "application/octet-stream",
+      _backendUrl, queryFields(query), "application/octet-stream", remoteAddr,
       [this](const char* c, size_t n) { parseIds(c, n); }, &_raw);
 }
 
 // _____________________________________________________________________________
 std::map<size_t, std::pair<double, double>> RequestReader::requestRasterMeta(
-    const std::string& query) {
+    const std::string& query, const std::string& remoteAddr) {
   _curRasterFieldDimensions = {};
 
   _raw.clear();
   _raw.reserve(10000);
 
   performCurlRequest(
-      _backendUrl, queryFields(query), "application/octet-stream",
+      _backendUrl, queryFields(query), "application/octet-stream", remoteAddr,
       [this](const char* c, size_t n) { parseRasterMeta(c, n); }, &_raw);
 
   return _curRasterFieldDimensions;
 }
 
 // _____________________________________________________________________________
-void RequestReader::requestRows(const std::string& query) {
-  return requestRows(query, [this](const char* c, size_t n) { parse(c, n); });
+void RequestReader::requestRows(const std::string& query,
+                                const std::string& remoteAddr) {
+  return requestRows(
+      query, [this](const char* c, size_t n) { parse(c, n); }, remoteAddr);
 }
 
 // _____________________________________________________________________________
 void RequestReader::requestRows(
     const std::string& query,
-    const std::function<void(const char*, size_t)>& parse) {
+    const std::function<void(const char*, size_t)>& parse,
+    const std::string& remoteAddr) {
   _raw.clear();
   _raw.reserve(10000);
 
   performCurlRequest(_backendUrl, queryFields(query),
-                     "text/tab-separated-values", parse, &_raw);
+                     "text/tab-separated-values", remoteAddr, parse, &_raw);
 }
 
 // _____________________________________________________________________________
@@ -370,7 +382,8 @@ std::string petrimaps::normalizeURL(const std::string& inURL) {
 }
 
 // _____________________________________________________________________________
-std::string petrimaps::canonizeURL(const std::string& inURL) {
+std::string petrimaps::canonizeURL(const std::string& inURL,
+                                   const std::string& remoteAddr) {
   CURL* curl = curl_easy_init();
   if (!curl) {
     std::stringstream ss;
@@ -383,8 +396,16 @@ std::string petrimaps::canonizeURL(const std::string& inURL) {
   curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
   curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
 
+  struct curl_slist* headers = 0;
+  if (remoteAddr.size()) {
+    headers =
+        curl_slist_append(headers, ("X-Forwarded-For: " + remoteAddr).c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+  }
+
   CURLcode res = curl_easy_perform(curl);
   if (res != CURLE_OK) {
+    if (headers) curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     std::stringstream ss;
     ss << "Could not canonize URL " << inURL;
@@ -397,6 +418,7 @@ std::string petrimaps::canonizeURL(const std::string& inURL) {
   curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &effective);
 
   if (!effective) {
+    if (headers) curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     std::stringstream ss;
     ss << "Could not canonize URL " << inURL;
@@ -405,19 +427,47 @@ std::string petrimaps::canonizeURL(const std::string& inURL) {
 
   std::string ret(effective);
 
+  if (headers) curl_slist_free_all(headers);
   curl_easy_cleanup(curl);
   return normalizeURL(ret);
 }
 
 // _____________________________________________________________________________
+std::string petrimaps::remoteAddress(int sock) {
+  struct sockaddr_storage addr;
+  socklen_t len = sizeof(addr);
+  if (getpeername(sock, reinterpret_cast<struct sockaddr*>(&addr), &len) != 0) {
+    return "";
+  }
+
+  char buf[INET6_ADDRSTRLEN] = {0};
+
+  if (addr.ss_family == AF_INET) {
+    auto* s = reinterpret_cast<struct sockaddr_in*>(&addr);
+    inet_ntop(AF_INET, &s->sin_addr, buf, sizeof(buf));
+  } else if (addr.ss_family == AF_INET6) {
+    auto* s = reinterpret_cast<struct sockaddr_in6*>(&addr);
+    inet_ntop(AF_INET6, &s->sin6_addr, buf, sizeof(buf));
+
+    // unwrap IPv4-mapped IPv6 addresses
+    std::string ip(buf);
+    if (ip.rfind("::ffff:", 0) == 0 && ip.find('.') != std::string::npos)
+      return ip.substr(7);
+
+    return ip;
+  }
+
+  return buf;
+}
+
+// _____________________________________________________________________________
 std::string RequestReader::requestIndexHash(const std::string& configHash) {
-  // TODO: move this function into Reader class
   std::string response;
   std::string url = _backendUrl + "/?cmd=get-index-id";
 
   try {
     performCurlRequest(
-        url, "", "",
+        url, "", "", "",
         [&response](const char* c, size_t n) { response.append(c, n); },
         nullptr);
   } catch (const std::exception& e) {

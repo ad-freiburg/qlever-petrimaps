@@ -308,7 +308,7 @@ size_t GeomCache::requestSize() {
 
   try {
     performCurlRequest(
-        _config.backend, flds, "text/tab-separated-values",
+        _config.backend, flds, "text/tab-separated-values", "",
         [this](const char *c, size_t n) { parseCount(c, n); }, &_raw);
   } catch (const std::exception &e) {
     LOG(ERROR) << "[GEOMCACHE] Count query failed: " << e.what();
@@ -333,7 +333,7 @@ void GeomCache::requestPart(size_t offset) {
 
   auto flds = queryFields(getFillQuery(), offset, 10000000);
   performCurlRequest(
-      _config.backend, flds, "text/tab-separated-values",
+      _config.backend, flds, "text/tab-separated-values", "",
       [this](const char *c, size_t n) { parse(c, n); }, &_raw);
 }
 
@@ -499,7 +499,7 @@ void GeomCache::requestIds() {
 void GeomCache::requestIdPart(size_t offset) {
   auto flds = queryFields(getFillQuery(), offset, 100000000);
   performCurlRequest(
-      _config.backend, flds, "application/octet-stream",
+      _config.backend, flds, "application/octet-stream", "",
       [this](const char *c, size_t n) { parseIds(c, n); }, &_raw);
 }
 
@@ -1080,7 +1080,7 @@ void GeomCache::serializeToDisk(const std::string &fname) const {
 void GeomCache::requestRasterMeta() {
   auto r = RequestReader(getConfig().backend, _maxMemory, 0, 0, 0);
 
-  _rasterMeta = r.requestRasterMeta(getConfig().rasterMetaQuery);
+  _rasterMeta = r.requestRasterMeta(getConfig().rasterMetaQuery, "");
 
   for (const auto &rm : _rasterMeta) {
     LOG(INFO) << "Configured raster " << rm.first << ": " << rm.second.first

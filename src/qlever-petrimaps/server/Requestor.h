@@ -107,15 +107,16 @@ class Requestor {
     }
   }
 
-  void request();
+  void request(const std::string& remoteAddr);
 
   std::vector<std::pair<std::string, std::string>> requestRow(
-      uint64_t row) const;
+      uint64_t row, const std::string& remoteAddr) const;
 
   void requestRows(
       std::function<
           void(std::vector<std::vector<std::pair<std::string, std::string>>>)>
-          cb) const;
+          cb,
+      const std::string& remoteAddr) const;
 
   const petrimaps::Grid<ID_TYPE, float, float>& getPointGrid(
       size_t fieldId) const {
@@ -191,10 +192,12 @@ class Requestor {
   }
 
   const ResObj getNearest(size_t lid, util::geo::DPoint p, double rad,
-                          double res, util::geo::FBox box) const;
+                          double res, util::geo::FBox box,
+                          const std::string& remoteAddr) const;
 
   const ResObj getNearest(util::geo::DPoint p, double rad, double res,
-                          util::geo::FBox box) const;
+                          util::geo::FBox box,
+                          const std::string& remoteAddr) const;
 
   const ResObj getGeom(size_t lid, size_t id, double rad) const;
 

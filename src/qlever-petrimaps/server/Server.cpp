@@ -88,8 +88,6 @@ Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime,
 
 // _____________________________________________________________________________
 util::http::Answer Server::handle(const util::http::Req& req, int con) const {
-  UNUSED(con);
-
   // ignore SIGPIPE
   signal(SIGPIPE, SIG_IGN);
 
@@ -99,25 +97,25 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
     auto cmd = parseUrl(req.url, req.payload, &params);
 
     if (cmd == "/") {
-      a = handleIndexReq(params);
+      a = handleIndexReq(params, con);
     } else if (cmd == "/example") {
-      a = handleExamplePageReq(params);
+      a = handleExamplePageReq(params, con);
     } else if (cmd == "/touch") {
-      a = handleTouchReq(params, req.params);
+      a = handleTouchReq(params, req.params, con);
     } else if (cmd == "/query") {
-      a = handleQueryReq(params, req.params);
+      a = handleQueryReq(params, req.params, con);
     } else if (cmd == "/geojson") {
-      a = handleGeoJSONReq(params);
+      a = handleGeoJSONReq(params, con);
     } else if (cmd == "/clearsession") {
-      a = handleClearSessReq(params, req.params);
+      a = handleClearSessReq(params, req.params, con);
     } else if (cmd == "/clearsessions") {
-      a = handleClearSessReq(params, req.params);
+      a = handleClearSessReq(params, req.params, con);
     } else if (cmd == "/pos") {
-      a = handlePosReq(params);
+      a = handlePosReq(params, con);
     } else if (cmd == "/export") {
       a = handleExportReq(params, con);
     } else if (cmd == "/loadstatus") {
-      a = handleLoadStatusReq(params);
+      a = handleLoadStatusReq(params, con);
     } else if (cmd == "/build.js") {
       a = util::http::Answer(
           "200 OK", std::string(build_js, build_js + sizeof build_js /
@@ -555,7 +553,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
+util::http::Answer Server::handleGeoJSONReq(const Params& pars,
+                                            int sock) const {
+  auto remoteAddr = remoteAddress(sock);
+
   if (pars.count("id") == 0 || pars.find("id")->second.empty())
     throw std::invalid_argument("No session id (?id=) specified.");
   auto id = pars.find("id")->second;
@@ -613,7 +614,7 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
       throw std::invalid_argument("Invalid request.");
     }
 
-    for (auto col : reqor->requestRow(row)) {
+    for (auto col : reqor->requestRow(row, remoteAddr)) {
       dict.dict[col.first] = col.second;
     }
   }
@@ -652,7 +653,9 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars) const {
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handlePosReq(const Params& pars) const {
+util::http::Answer Server::handlePosReq(const Params& pars, int sock) const {
+  auto remoteAddr = remoteAddress(sock);
+
   if (pars.count("x") == 0 || pars.find("x")->second.empty())
     throw std::invalid_argument("No x coord (?x=) specified.");
   float x = std::atof(pars.find("x")->second.c_str());
@@ -715,7 +718,7 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
   }
   // as soon as we are ready, the reqor can be read concurrently
 
-  auto res = reqor->getNearest({x, y}, rad, reso, fbbox);
+  auto res = reqor->getNearest({x, y}, rad, reso, fbbox, remoteAddr);
 
   std::stringstream json;
 
@@ -782,8 +785,11 @@ util::http::Answer Server::handlePosReq(const Params& pars) const {
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleTouchReq(
-    const Params& pars, const HeaderParams& headerParams) const {
+util::http::Answer Server::handleTouchReq(const Params& pars,
+                                          const HeaderParams& headerParams,
+                                          int sock) const {
+  auto remoteAddr = remoteAddress(sock);
+
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
 
@@ -800,9 +806,9 @@ util::http::Answer Server::handleTouchReq(
     configJson = pars.find("cfg")->second;
   }
 
-  auto backendCfg = getGeomCacheConfig(backend, accessToken, configJson);
+  auto backendCfg = getGeomCacheConfig(backend, accessToken, configJson, remoteAddr);
 
-  createCache(backend, backendCfg);
+  createCache(backendCfg);
   std::shared_ptr<GeomCache> cache = _caches[backend];
 
   std::stringstream ss;
@@ -818,8 +824,9 @@ util::http::Answer Server::handleTouchReq(
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleClearSessReq(
-    const Params& pars, const HeaderParams& headerParams) const {
+util::http::Answer Server::handleClearSessReq(const Params& pars,
+                                              const HeaderParams& headerParams,
+                                              int) const {
   std::string id;
   if (pars.count("id") != 0 && !pars.find("id")->second.empty())
     id = pars.find("id")->second;
@@ -848,7 +855,7 @@ util::http::Answer Server::handleClearSessReq(
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleExamplePageReq(const Params&) const {
+util::http::Answer Server::handleExamplePageReq(const Params&, int) const {
   std::string html =
       std::string(example_html,
                   example_html + sizeof example_html / sizeof example_html[0]);
@@ -860,7 +867,7 @@ util::http::Answer Server::handleExamplePageReq(const Params&) const {
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleIndexReq(const Params& pars) const {
+util::http::Answer Server::handleIndexReq(const Params& pars, int) const {
   std::stringstream ss;
   ss << "window.postParams =";
 
@@ -884,9 +891,11 @@ util::http::Answer Server::handleIndexReq(const Params& pars) const {
 
 // _____________________________________________________________________________
 util::http::Answer Server::handleQueryReq(const Params& pars,
-                                          const HeaderParams&) const {
+                                          const HeaderParams&, int sock) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
+
+  auto remoteAddr = remoteAddress(sock);
 
   RequestorConfig rcfg;
 
@@ -929,13 +938,13 @@ util::http::Answer Server::handleQueryReq(const Params& pars,
 
   const std::string& backend = pars.find("backend")->second;
 
-  auto backendCfg = getGeomCacheConfig(backend, "", "");
+  auto backendCfg = getGeomCacheConfig(backend, "", "", remoteAddr);
 
-  LOG(INFO) << "[SERVER] Queried backend is " << backend;
+  LOG(INFO) << "[SERVER] Queried backend is " << backendCfg.backend;
   LOG(INFO) << "[SERVER] Query is:\n" << rcfg.query;
 
-  createCache(backend, backendCfg);
-  std::string indexHash = loadCache(backend, backendCfg);
+  createCache(backendCfg);
+  std::string indexHash = loadCache(backendCfg);
 
   std::string queryId = backend + "$" + indexHash + "$" + rcfg.getHash();
 
@@ -960,7 +969,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars,
   }
 
   try {
-    reqor->request();
+    reqor->request(remoteAddr);
   } catch (OutOfMemoryError& ex) {
     LOG(ERROR) << ex.what() << backendCfg.backend;
 
@@ -1185,6 +1194,8 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
 
   auto aw = util::http::Answer("200 OK", "");
 
+  auto remoteAddr = remoteAddress(sock);
+
   if (pars.count("id") == 0 || pars.find("id")->second.empty())
     throw std::invalid_argument("No session id (?id=) specified.");
   auto id = pars.find("id")->second;
@@ -1306,7 +1317,8 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
           }
           writes += out;
         }
-      });
+      },
+      remoteAddr);
 
   buff = "]}";
   writes = 0;
@@ -1326,15 +1338,17 @@ util::http::Answer Server::handleExportReq(const Params& pars, int sock) const {
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handleLoadStatusReq(const Params& pars) const {
+util::http::Answer Server::handleLoadStatusReq(const Params& pars, int sock) const {
   if (pars.count("backend") == 0 || pars.find("backend")->second.empty())
     throw std::invalid_argument("No backend (?backend=) specified.");
 
+  auto remoteAddr = remoteAddress(sock);
+
   const std::string& backend = pars.find("backend")->second;
 
-  auto backendCfg = getGeomCacheConfig(backend, "", "");
+  auto backendCfg = getGeomCacheConfig(backend, "", "", remoteAddr);
 
-  createCache(backend, backendCfg);
+  createCache(backendCfg);
   std::shared_ptr<GeomCache> cache = _caches[backendCfg.backend];
 
   // We have 3 loading stages:
@@ -1395,38 +1409,38 @@ double Server::getLoadStatusPercent() const {
 }
 
 // _____________________________________________________________________________
-void Server::createCache(const std::string& backend,
+void Server::createCache(
                          const GeomCacheConfig& cfg) const {
   std::shared_ptr<GeomCache> cache;
 
   {
     std::lock_guard<std::mutex> guard(_m);
-    if (_caches.count(backend)) {
-      cache = _caches[backend];
+    if (_caches.count(cfg.backend)) {
+      cache = _caches[cfg.backend];
       // always set config
       if (cache->setConfig(cfg)) {
-        LOG(INFO) << "Updating config for backend '" << backend
+        LOG(INFO) << "Updating config for backend '" << cfg.backend
                   << "', new fill query is:\n"
                   << cfg.fillQuery;
       }
     } else {
       cache = std::shared_ptr<GeomCache>(new GeomCache(cfg, _maxMemory));
-      _caches[backend] = cache;
+      _caches[cfg.backend] = cache;
     }
   }
 }
 
 // _____________________________________________________________________________
-std::string Server::loadCache(const std::string& backend,
-                              const GeomCacheConfig&) const {
-  std::shared_ptr<GeomCache> cache = _caches[backend];
+std::string Server::loadCache(
+                              const GeomCacheConfig& cfg) const {
+  std::shared_ptr<GeomCache> cache = _caches[cfg.backend];
 
   try {
     return cache->load(_cacheDir);
   } catch (...) {
     std::lock_guard<std::mutex> guard(_m);
 
-    auto it = _caches.find(backend);
+    auto it = _caches.find(cfg.backend);
     if (it != _caches.end()) _caches.erase(it);
 
     throw;
@@ -1530,10 +1544,19 @@ GeomCacheConfig Server::getGeomCacheCfgFromJSON(
 // _____________________________________________________________________________
 GeomCacheConfig Server::getGeomCacheConfig(
     const std::string& backendUrl, const std::string& accessToken,
-    const std::string& configJson) const {
-  auto canonizedBackend = canonizeURL(backendUrl);
+    const std::string& configJson, const std::string& remoteAddr) const {
 
   std::lock_guard<std::mutex> guard(_m);
+
+  std::string canonizedBackend;
+
+  auto i = _canonizedURLCache.find(backendUrl);
+  if (i != _canonizedURLCache.end()) {
+    canonizedBackend = i->second;
+  } else  {
+     canonizedBackend = canonizeURL(backendUrl, remoteAddr);
+     _canonizedURLCache[backendUrl] = canonizedBackend;
+  }
 
   auto cfg = _cacheConfigs.find(canonizedBackend);
   if (cfg != _cacheConfigs.end()) {

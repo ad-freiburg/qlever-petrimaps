@@ -37,26 +37,27 @@ class Server : public util::http::Handler {
  private:
   static std::string parseUrl(std::string u, std::string pl, Params* params);
 
-  util::http::Answer handleIndexReq(const Params& pars) const;
-  util::http::Answer handleExamplePageReq(const Params& pars) const;
+  util::http::Answer handleIndexReq(const Params& pars, int sock) const;
+  util::http::Answer handleExamplePageReq(const Params& pars, int sock) const;
   util::http::Answer handleTouchReq(const Params& pars,
-                                    const HeaderParams& headerPars) const;
+                                    const HeaderParams& headerPars,
+                                    int sock) const;
   util::http::Answer handleHeatMapReq(const Params& pars, int sock) const;
   util::http::Answer handleQueryReq(const Params& pars,
-                                    const HeaderParams& headerPars) const;
-  util::http::Answer handleGeoJSONReq(const Params& pars) const;
+                                    const HeaderParams& headerPars,
+                                    int sock) const;
+  util::http::Answer handleGeoJSONReq(const Params& pars, int sock) const;
   util::http::Answer handleClearSessReq(const Params& pars,
-                                        const HeaderParams& headerPars) const;
-  util::http::Answer handlePosReq(const Params& pars) const;
-  util::http::Answer handleLoadReq(const Params& pars) const;
+                                        const HeaderParams& headerPars,
+                                        int sock) const;
+  util::http::Answer handlePosReq(const Params& pars, int sock) const;
+  util::http::Answer handleLoadReq(const Params& pars, int sock) const;
 
   util::http::Answer handleExportReq(const Params& pars, int sock) const;
-  util::http::Answer handleLoadStatusReq(const Params& pars) const;
+  util::http::Answer handleLoadStatusReq(const Params& pars, int sock) const;
 
-  void createCache(const std::string& backend,
-                   const GeomCacheConfig& cfg) const;
-  std::string loadCache(const std::string& backend,
-                        const GeomCacheConfig& cfg) const;
+  void createCache(const GeomCacheConfig& cfg) const;
+  std::string loadCache(const GeomCacheConfig& cfg) const;
 
   void clearSession(const std::string& id) const;
   void clearSessions() const;
@@ -69,7 +70,8 @@ class Server : public util::http::Handler {
 
   GeomCacheConfig getGeomCacheConfig(const std::string& backendUrl,
                                      const std::string& access,
-                                     const std::string& configJson) const;
+                                     const std::string& configJson,
+                                     const std::string& remoteAddr) const;
   RequestorConfig getRequestorCfgFromJSON(const std::string& json) const;
   GeomCacheConfig getGeomCacheCfgFromJSON(const std::string& backend,
                                           const std::string& json) const;
@@ -106,6 +108,8 @@ class Server : public util::http::Handler {
   mutable std::map<std::string, std::shared_ptr<GeomCache>> _caches;
   mutable std::map<std::string, std::shared_ptr<Requestor>> _rs;
   mutable std::map<std::string, std::string> _queryCache;
+
+  mutable std::map<std::string, std::string> _canonizedURLCache;
 
   mutable std::map<std::string, GeomCacheConfig> _cacheConfigs;
   std::string _accessToken;
