@@ -302,9 +302,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   size_t fid = r->getFieldId(field);
 
   checkMem(sizeof(float) * w * h, _maxMemory);
-  heatmap_t* hm = heatmap_new(w, h);
-  hm->max = r->getValRange(fid).second;
-
   double realCellSize = r->getPointGrid(fid).getCellWidth();
   double virtCellSize = res * 2.5;
 
@@ -319,7 +316,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   checkMem(sizeof(unsigned char) * w * h * 4 +
                sizeof(unsigned char) * w * h * 4 * NUM_THREADS * 2,
            _maxMemory);
-  RenderContext rcontext(w, h, style, NUM_THREADS);
+  RenderContext rcontext(w, h, orx, ory, mercW, mercH, style, NUM_THREADS);
 
   // POINTS
   if (intersects(r->getPointGrid(fid).getBBox(), fbbox)) {
@@ -341,29 +338,29 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
           const auto& cp = r->clusterGeom(fid, oid, res);
 
-          auto px = mercToPx(cp, orx, ory, mercW, mercH, w, h);
-          auto ppx = mercToPx(p, orx, ory, mercW, mercH, w, h);
+          auto px = RenderContext::mercToPx(cp, orx, ory, mercW, mercH, w, h);
+          auto ppx = RenderContext::mercToPx(p, orx, ory, mercW, mercH, w, h);
 
-          rcontext.drawPoint(0, px.getX(), px.getY(), w, h, r->getVal(fid, oid),
-                             0, 0);
-          rcontext.drawLine(px.getX(), px.getY(), ppx.getX(), ppx.getY(), w, h);
+          rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid), 0,
+                             0);
+          rcontext.drawLineSegment(px.getX(), px.getY(), ppx.getX(), ppx.getY(),
+                                   w, h);
         } else {
           if (r->isCluster(fid, oid)) oid = r->getCluster(fid, oid).first;
 
           FPoint p = r->getPoint(fid, oid);
           if (!contains(p, fbbox)) continue;
 
-          auto px = mercToPx(p, orx, ory, mercW, mercH, w, h);
+          auto px = RenderContext::mercToPx(p, orx, ory, mercW, mercH, w, h);
 
           if (style == RASTER) {
             auto rasterMeta =
                 r->getRasterMetas(fid, oid, {rasterWidth, rasterHeight});
-            rcontext.drawPoint(0, px.getX(), px.getY(), w, h,
-                               r->getVal(fid, oid), rasterMeta.first,
-                               rasterMeta.second);
+            rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid),
+                               rasterMeta.first, rasterMeta.second);
           } else {
-            rcontext.drawPoint(0, px.getX(), px.getY(), w, h,
-                               r->getVal(fid, oid), 0, 0);
+            rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid), 0,
+                               0);
           }
         }
       }
@@ -385,27 +382,28 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           const auto& cellBox = grid.getBox(x, y);
 
           if (subCellSize == 1) {
-            auto px =
-                mercToPx(cellBox.getLowerLeft(), orx, ory, mercW, mercH, w, h);
+            auto px = RenderContext::mercToPx(cellBox.getLowerLeft(), orx, ory,
+                                              mercW, mercH, w, h);
 
             // TODO: just setting rasterWidth to 1x1 here is not correct
-            rcontext.drawPoint(tid, px.getX(), px.getY(), w, h,
-                               grid.getCellSum(x, y), 1, 1);
+            rcontext.drawPoint(tid, px.getX(), px.getY(), grid.getCellSum(x, y),
+                               1, 1);
           } else {
             for (auto oid : *cell) {
               if (r->isCluster(fid, oid)) oid = r->getCluster(fid, oid).first;
 
               FPoint p = r->getPoint(fid, oid);
-              auto px = mercToPx(p, orx, ory, mercW, mercH, w, h);
+              auto px =
+                  RenderContext::mercToPx(p, orx, ory, mercW, mercH, w, h);
 
               if (style == RASTER) {
                 auto rasterMeta =
                     r->getRasterMetas(fid, oid, {rasterWidth, rasterHeight});
-                rcontext.drawPoint(tid, px.getX(), px.getY(), w, h,
+                rcontext.drawPoint(tid, px.getX(), px.getY(),
                                    r->getVal(fid, oid), rasterMeta.first,
                                    rasterMeta.second);
               } else {
-                rcontext.drawPoint(tid, px.getX(), px.getY(), w, h,
+                rcontext.drawPoint(tid, px.getX(), px.getY(),
                                    r->getVal(fid, oid), 0, 0);
               }
             }
@@ -435,13 +433,12 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         auto oid = r->getObjects(fid)[ret[idx]].second;
         if (!r->lineIntersects(lineId, bbox)) continue;
 
-        const auto& denseLine =
-            densify(r->extractLineGeom(lineId - I_OFFSET), res);
-
-        for (const auto& p : denseLine) {
-          auto pix = mercToPx(p, orx, ory, mercW, mercH, w, h);
-          rcontext.drawPoint(0, pix.getX(), pix.getY(), w, h,
-                             r->getVal(fid, oid), rasterWidth, rasterHeight);
+        if (r->isArea(lineId - I_OFFSET)) {
+          rcontext.drawArea(0, r->extractLineGeom(lineId - I_OFFSET),
+                            r->getVal(fid, oid));
+        } else {
+          rcontext.drawLine(0, r->extractLineGeom(lineId - I_OFFSET),
+                            r->getVal(fid, oid));
         }
       }
     } else {
@@ -461,9 +458,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           const auto& cellBox = lpgrid.getBox(x, y);
 
           if (subCellSize == 1) {
-            auto pix =
-                mercToPx(cellBox.getLowerLeft(), orx, ory, mercW, mercH, w, h);
-            rcontext.drawPoint(tid, pix.getX(), pix.getY(), w, h,
+            auto pix = RenderContext::mercToPx(cellBox.getLowerLeft(), orx, ory,
+                                               mercW, mercH, w, h);
+            rcontext.drawPoint(tid, pix.getX(), pix.getY(),
                                lpgrid.getCellSum(x, y), rasterWidth,
                                rasterHeight);
           } else {
@@ -476,8 +473,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                              bbox.getLowerLeft().getY()) /
                             mercH) *
                                h;
-              rcontext.drawPoint(tid, px, py, w, h, 1, rasterWidth,
-                                 rasterHeight);
+              rcontext.drawPoint(tid, px, py, 1, rasterWidth, rasterHeight);
             }
           }
         }
@@ -486,7 +482,17 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   }
 
   LOG(INFO) << "[SERVER] Adding points to heatmap...";
-  rcontext.writeHeatmap(hm, res);
+  heatmap_t* hm = heatmap_new(w, h);
+  heatmap_t* hmInterior = heatmap_new(w, h);
+  hm->max = r->getValRange(fid).second;
+
+  std::cout << "heatmap max: " << hm->max << std::endl;
+
+  rcontext.writeHeatmap(hm);
+
+  if (style == OBJECTS) {
+    rcontext.writeInteriorObjects(hmInterior);
+  }
   LOG(INFO) << "[SERVER] ...done";
 
   LOG(INFO) << "[SERVER] Rendering heatmap...";
@@ -494,11 +500,25 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   if (style == RASTER) {
     heatmap_render_to(hm, colorScheme, &rcontext.getImage()[0]);
   } else if (style == OBJECTS) {
+    unsigned char discrete_data2[] = {
+        0,         0,         0,         0,         0,         0,
+        0,         0,         objColorR, objColorG, objColorB, 8,
+        objColorR, objColorG, objColorB, 16,        objColorR, objColorG,
+        objColorB, 32,        objColorR, objColorG, objColorB, 64,
+        objColorR, objColorG, objColorB, 80,        objColorR, objColorG,
+        objColorB, 96,        objColorR, objColorG, objColorB, 112,
+        objColorR, objColorG, objColorB, 127};
+    heatmap_colorscheme_t discrete2 = {
+        discrete_data2, sizeof(discrete_data2) / sizeof(discrete_data2[0]) / 4};
+
+    heatmap_render_saturated_to(hmInterior, &discrete2, 1,
+                                &rcontext.getImage()[0]);
+
     unsigned char discrete_data[] = {
         0,         0,         0,         0,         0,         0,
-        0,         0,         objColorR, objColorG, objColorB, 16,
-        objColorR, objColorG, objColorB, 32,        objColorR, objColorG,
-        objColorB, 64,        objColorR, objColorG, objColorB, 128,
+        0,         0,         objColorR, objColorG, objColorB, 128,
+        objColorR, objColorG, objColorB, 128,       objColorR, objColorG,
+        objColorB, 128,       objColorR, objColorG, objColorB, 128,
         objColorR, objColorG, objColorB, 160,       objColorR, objColorG,
         objColorB, 192,       objColorR, objColorG, objColorB, 224,
         objColorR, objColorG, objColorB, 255};
@@ -511,6 +531,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   }
 
   heatmap_free(hm);
+  heatmap_free(hmInterior);
 
   LOG(INFO) << "[SERVER] ...done";
   LOG(INFO) << "[SERVER] Generating PNG...";
@@ -1564,20 +1585,6 @@ GeomCacheConfig Server::getGeomCacheConfig(
         canonizedBackend, petrimaps::getFillQuery(canonizedBackend)};
   }
   return _cacheConfigs[canonizedBackend];
-}
-
-// _____________________________________________________________________________
-util::geo::Point<int> Server::mercToPx(FPoint p, double orx, double ory,
-                                       double mercW, double mercH, int w,
-                                       int h) const {
-  return {((p.getX() - orx) / mercW) * w, h - ((p.getY() - ory) / mercH) * h};
-}
-
-// _____________________________________________________________________________
-util::geo::Point<int> Server::mercToPx(DPoint p, double orx, double ory,
-                                       double mercW, double mercH, int w,
-                                       int h) const {
-  return {((p.getX() - orx) / mercW) * w, h - ((p.getY() - ory) / mercH) * h};
 }
 
 // _____________________________________________________________________________

@@ -2,9 +2,12 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
+#include <algorithm>
 #include <cmath>
-#include <map>
 #include <iostream>
+#include <limits>
+#include <map>
+#include <vector>
 
 // clang-format off
 #include "3rdparty/heatmap.h"
@@ -22,20 +25,29 @@
 #include "3rdparty/colorschemes/gray.h"
 // clang-format on
 #include "RenderContext.h"
+#include "util/geo/Geo.h"
 
 using petrimaps::MapStyle;
 using petrimaps::RenderContext;
 
+const static int AREA_FILL_RES = 10;
+
 // _____________________________________________________________________________
-RenderContext::RenderContext(size_t w, size_t h, MapStyle style,
+RenderContext::RenderContext(size_t w, size_t h, double orx, double ory,
+                             double mercW, double mercH, MapStyle style,
                              size_t numThreads)
     : _points(numThreads),
+      _areaFillPoints(numThreads),
       _weights(numThreads),
       _rasterDims(numThreads),
       _image(w * h * 4),
       _style(style),
       _w(w),
-      _h(h) {
+      _h(h),
+      _orx(orx),
+      _ory(ory),
+      _mercW(mercW),
+      _mercH(mercH) {
   for (size_t i = 0; i < _points.size(); i++) {
     _rasterDims[i].resize(w * h, {1, 1});
     _weights[i].resize(w * h, 0);
@@ -43,41 +55,142 @@ RenderContext::RenderContext(size_t w, size_t h, MapStyle style,
 }
 
 // _____________________________________________________________________________
-void RenderContext::drawPoint(size_t tid, int px, int py, int w, int h,
-                              double weight, double rasterW, double rasterH) {
+void RenderContext::drawPoint(size_t tid, int px, int py, double weight,
+                              double rasterW, double rasterH) {
   if (_style == RASTER) {
-    if (px >= 0 && py >= 0 && px < w && py < h) {
-      _rasterDims[tid][w * py + px] = {rasterW, rasterH};
-      if (_weights[tid][w * py + px] == 0) {
-        _points[tid].push_back(w * py + px);
-        _weights[tid][w * py + px] = weight;
+    if (px >= 0 && py >= 0 && px < _w && py < _h) {
+      _rasterDims[tid][_w * py + px] = {rasterW, rasterH};
+      if (_weights[tid][_w * py + px] == 0) {
+        _points[tid].push_back(_w * py + px);
+        _weights[tid][_w * py + px] = weight;
       } else {
         // not entirely correct, but looks good on very low zoom levels
         // where many raster cells are rendered onto the same pixel
-        _weights[tid][w * py + px] =
-            (_weights[tid][w * py + px] + weight) / 2.0;
+        _weights[tid][_w * py + px] =
+            (_weights[tid][_w * py + px] + weight) / 2.0;
       }
     }
   } else if (_style == OBJECTS) {
     // for the raw style, increase the size of the points a bit
     for (int x = px - 2; x < px + 2; x++) {
       for (int y = py - 2; y < py + 2; y++) {
-        if (x >= 0 && y >= 0 && x < w && y < h) {
-          if (_weights[tid][w * y + x] == 0) _points[tid].push_back(w * y + x);
-          _weights[tid][w * y + x] += weight;
+        if (x >= 0 && y >= 0 && x < _w && y < _h) {
+          if (_weights[tid][_w * y + x] == 0)
+            _points[tid].push_back(_w * y + x);
+          _weights[tid][_w * y + x] += weight;
         }
       }
     }
   } else {
-    if (px >= 0 && py >= 0 && px < w && py < h) {
-      if (_weights[tid][w * py + px] == 0) _points[tid].push_back(w * py + px);
-      _weights[tid][w * py + px] += weight;
+    if (px >= 0 && py >= 0 && px < _w && py < _h) {
+      if (_weights[tid][_w * py + px] == 0)
+        _points[tid].push_back(_w * py + px);
+      _weights[tid][_w * py + px] += weight;
     }
   }
 }
 
 // _____________________________________________________________________________
-void RenderContext::drawLine(int x0, int y0, int x1, int y1, int w, int h) {
+void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
+                             double val) {
+  double res = _mercH / _h;
+  const auto& denseline = util::geo::densify(line, res);
+
+  for (const auto& p : denseline) {
+    auto pix = mercToPx(p, _orx, _ory, _mercW, _mercH, _w, _h);
+    drawPoint(0, pix.getX(), pix.getY(), val, 1, 1);
+  }
+
+  // polygon in pixelspace
+  std::vector<util::geo::Point<int>> pxPoly;
+  pxPoly.reserve(line.size());
+  int minY = std::numeric_limits<int>::max();
+  int maxY = std::numeric_limits<int>::min();
+
+  // no need to use denseline here!
+  for (const auto& p : line) {
+    auto pix = mercToPx(p, _orx, _ory, _mercW, _mercH, _w, _h);
+    pxPoly.push_back(pix);
+    minY = std::min(minY, pix.getY());
+    maxY = std::max(maxY, pix.getY());
+  }
+
+  if (line.size() < 3) return;
+
+  // fill the interior
+
+  // y bounds
+  minY = std::max(minY, 0);
+  maxY = std::min(maxY, static_cast<int>(_h) - 1);
+
+  const size_t n = pxPoly.size();
+  std::vector<double> xs;
+
+  // scanline for each y, in res steps
+  for (double y = minY; y <= maxY; y += AREA_FILL_RES) {
+    xs.clear();
+
+    size_t from = n - 1;
+    size_t to = 0;
+
+    // for each segment [from, to]...
+    while (to < n) {
+      int yFr = pxPoly[from].getY();
+      int yTo = pxPoly[to].getY();
+
+      // .. check if we intersect the y-scanline
+      if ((yTo > y) != (yFr > y)) {
+        double t = (y - yFr) / static_cast<double>(yTo - yFr);
+
+        // store the x intersection
+        double xIsect =
+            pxPoly[from].getX() + t * (pxPoly[to].getX() - pxPoly[from].getX());
+        xs.push_back(xIsect);
+      }
+
+      from = to;
+      to++;
+    }
+
+    // if we have less than 2 intersections, the scanline didnt cut into the
+    // itnerior
+    if (xs.size() < 2) continue;
+
+    // now sort the intersection Xs, they are now pairs of IN,OUT events
+    std::sort(xs.begin(), xs.end());
+
+    size_t row = _w * static_cast<size_t>(y);
+
+    // step over these pairs and fill in between in steps of res
+    for (size_t k = 0; k < xs.size() - 1; k += 2) {
+      double xFr = std::max(xs[k], 0.0);
+      double xTo = std::min(xs[k + 1], static_cast<double>(_w));
+
+      for (double x = xFr; x <= xTo; x += AREA_FILL_RES) {
+        _areaFillPoints[tid].push_back(row + x);
+        if (_style == HEATMAP) {
+          _weights[tid][_w * y + x] += val;
+        }
+      }
+    }
+  }
+}
+
+// _____________________________________________________________________________
+void RenderContext::drawLine(size_t tid, const util::geo::DLine& line,
+                             double val) {
+  double res = _mercH / _h;
+  const auto& denseline = util::geo::densify(line, res);
+
+  for (const auto& p : line) {
+    auto pix = mercToPx(p, _orx, _ory, _mercW, _mercH, _w, _h);
+    drawPoint(0, pix.getX(), pix.getY(), val, 1, 1);
+  }
+}
+
+// _____________________________________________________________________________
+void RenderContext::drawLineSegment(int x0, int y0, int x1, int y1, int w,
+                                    int h) {
   // Bresenham
   int dx = abs(x1 - x0);
   int sx = x0 < x1 ? 1 : -1;
@@ -110,8 +223,27 @@ void RenderContext::drawLine(int x0, int y0, int x1, int y1, int w, int h) {
 }
 
 // _____________________________________________________________________________
-void RenderContext::writeHeatmap(heatmap_t* hm, double res) {
+void RenderContext::writeInteriorObjects(heatmap_t* hm) {
   size_t NUM_THREADS = _points.size();
+  double res = _mercH / _h;
+
+  if (_style == OBJECTS) {
+    auto fillStamp = heatmap_stamp_gen(AREA_FILL_RES);
+    for (size_t i = 0; i < NUM_THREADS; i++) {
+      for (const auto& p : _areaFillPoints[i]) {
+        size_t y = p / _w;
+        size_t x = p - (y * _w);
+        heatmap_add_weighted_point_with_stamp(hm, x, y, 1, fillStamp);
+      }
+    }
+    heatmap_stamp_free(fillStamp);
+  }
+}
+
+// _____________________________________________________________________________
+void RenderContext::writeHeatmap(heatmap_t* hm) {
+  size_t NUM_THREADS = _points.size();
+  double res = _mercH / _h;
 
   if (_style == RASTER) {
     // first, aggregate possible stamp styles
@@ -120,8 +252,8 @@ void RenderContext::writeHeatmap(heatmap_t* hm, double res) {
       for (const auto& p : _points[i]) {
         if (stamps.count(_rasterDims[i][p])) continue;
         if (_weights[i][p] == 0) continue;
-        stamps[_rasterDims[i][p]] = rasterStamp(
-            res, _rasterDims[i][p].first, _rasterDims[i][p].second, _w, _h);
+        stamps[_rasterDims[i][p]] =
+            rasterStamp(_rasterDims[i][p].first, _rasterDims[i][p].second);
       }
     }
 
@@ -147,8 +279,7 @@ void RenderContext::writeHeatmap(heatmap_t* hm, double res) {
       for (const auto& p : _points[i]) {
         size_t y = p / _w;
         size_t x = p - (y * _w);
-        if (_weights[i][p] > 0)
-          heatmap_add_weighted_point_with_stamp(hm, x, y, 1, stamp);
+        heatmap_add_weighted_point_with_stamp(hm, x, y, 1, stamp);
       }
     }
     heatmap_stamp_free(stamp);
@@ -162,13 +293,25 @@ void RenderContext::writeHeatmap(heatmap_t* hm, double res) {
           heatmap_add_weighted_point(hm, x, y, _weights[i][p]);
       }
     }
+
+    auto fillStamp = heatmap_stamp_gen(AREA_FILL_RES);
+    for (size_t i = 0; i < NUM_THREADS; i++) {
+      for (const auto& p : _areaFillPoints[i]) {
+        size_t y = p / _w;
+        size_t x = p - (y * _w);
+        heatmap_add_weighted_point_with_stamp(hm, x, y, _weights[i][p],
+                                              fillStamp);
+      }
+    }
+    heatmap_stamp_free(fillStamp);
   }
 }
 
 // _____________________________________________________________________________
-heatmap_stamp_t* RenderContext::rasterStamp(double res, double w, double h,
-                                            double screenW,
-                                            double screenH) const {
+heatmap_stamp_t* RenderContext::rasterStamp(double w, double h) const {
+  double res = _mercH / _h;
+  double screenW = _w;
+  double screenH = _h;
   if (w < 0) w = 0;
   if (h < 0) h = 0;
   if (screenW < 0) screenW = 0;
