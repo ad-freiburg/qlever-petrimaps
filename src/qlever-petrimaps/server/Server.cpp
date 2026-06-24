@@ -486,8 +486,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   heatmap_t* hmInterior = heatmap_new(w, h);
   hm->max = r->getValRange(fid).second;
 
-  std::cout << "heatmap max: " << hm->max << std::endl;
-
   rcontext.writeHeatmap(hm);
 
   if (style == OBJECTS) {

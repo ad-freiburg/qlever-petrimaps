@@ -161,7 +161,7 @@ void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
 
     size_t row = _w * static_cast<size_t>(y);
 
-    // step over these pairs and fill in between in steps of res
+    // step over these pairs and fill in between in steps of AREA_FILL_RES
     for (size_t k = 0; k < xs.size() - 1; k += 2) {
       double xFr = std::max(xs[k], 0.0);
       double xTo = std::min(xs[k + 1], static_cast<double>(_w));
@@ -169,7 +169,7 @@ void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
       for (double x = xFr; x <= xTo; x += AREA_FILL_RES) {
         _areaFillPoints[tid].push_back(row + x);
         if (_style == HEATMAP) {
-          _weights[tid][_w * y + x] += val;
+          _weights[tid][row + x] += val;
         }
       }
     }
