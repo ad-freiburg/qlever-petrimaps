@@ -129,10 +129,11 @@ inline std::string httpRequest(const std::string& url,
   }
   struct curl_slist* headers = 0;
   if (xForwardHeader.size()) {
+    LOG(INFO) << "[SERVER] Remote address is " << remoteAddr;
     headers = curl_slist_append(headers,
                                 ("X-Real-IP: " + xForwardHeader).c_str());
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   }
+  if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeStringCb);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resString);
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
