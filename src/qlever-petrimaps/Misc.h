@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "util/Misc.h"
+#include "util/log/Log.h"
 
 #ifndef PETRIMAPS_MISC_H_
 #define PETRIMAPS_MISC_H_
@@ -129,7 +130,7 @@ inline std::string httpRequest(const std::string& url,
   }
   struct curl_slist* headers = 0;
   if (xForwardHeader.size()) {
-    LOG(INFO) << "[SERVER] Remote address is " << xForwardHeader;
+    LOG(util::INFO) << "[SERVER] Remote address is " << xForwardHeader;
     headers = curl_slist_append(headers,
                                 ("X-Real-IP: " + xForwardHeader).c_str());
   }
