@@ -81,7 +81,7 @@ void petrimaps::performCurlRequest(
   }
   if (xForwardHeader.size()) {
     headers = curl_slist_append(headers,
-                                ("X-Forwarded-For: " + xForwardHeader).c_str());
+                                ("X-Real-IP: " + xForwardHeader).c_str());
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   }
 
@@ -399,7 +399,7 @@ std::string petrimaps::canonizeURL(const std::string& inURL,
   struct curl_slist* headers = 0;
   if (remoteAddr.size()) {
     headers =
-        curl_slist_append(headers, ("X-Forwarded-For: " + remoteAddr).c_str());
+        curl_slist_append(headers, ("X-Real-IP: " + remoteAddr).c_str());
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   }
 
