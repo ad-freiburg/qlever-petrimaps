@@ -19,7 +19,7 @@ enum MapStyle { HEATMAP, OBJECTS, RASTER };
 
 class RenderContext {
  public:
-  RenderContext(size_t w, size_t h, double orx, double ory, double mercW,
+  RenderContext(int w, int h, double orx, double ory, double mercW,
                 double mercH, MapStyle style, size_t numThreads);
 
   const std::vector<uint32_t>& getPoints(size_t i) { return _points[i]; }
@@ -39,14 +39,12 @@ class RenderContext {
   void writeHeatmap(heatmap_t* hm);
   void writeInteriorObjects(heatmap_t* hm);
 
-  // _____________________________________________________________________________
   static util::geo::Point<int> mercToPx(util::geo::FPoint p, double orx,
                                         double ory, double mercW, double mercH,
                                         int w, int h) {
     return {((p.getX() - orx) / mercW) * w, h - ((p.getY() - ory) / mercH) * h};
   }
 
-  // _____________________________________________________________________________
   static util::geo::Point<int> mercToPx(util::geo::DPoint p, double orx,
                                         double ory, double mercW, double mercH,
                                         int w, int h) {
@@ -63,7 +61,7 @@ class RenderContext {
   std::vector<unsigned char> _image;
   MapStyle _style;
 
-  size_t _w, _h;
+  int _w, _h;
   double _orx, _ory, _mercW, _mercH;
 };
 

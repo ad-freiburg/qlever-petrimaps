@@ -30,10 +30,10 @@
 using petrimaps::MapStyle;
 using petrimaps::RenderContext;
 
-const static int AREA_FILL_RES = 10;
+const static int AREA_FILL_RES = 7;
 
 // _____________________________________________________________________________
-RenderContext::RenderContext(size_t w, size_t h, double orx, double ory,
+RenderContext::RenderContext(int w, int h, double orx, double ory,
                              double mercW, double mercH, MapStyle style,
                              size_t numThreads)
     : _points(numThreads),
@@ -110,6 +110,7 @@ void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
   // no need to use denseline here!
   for (const auto& p : line) {
     auto pix = mercToPx(p, _orx, _ory, _mercW, _mercH, _w, _h);
+    if (pxPoly.back() == pix) continue;
     pxPoly.push_back(pix);
     minY = std::min(minY, pix.getY());
     maxY = std::max(maxY, pix.getY());
@@ -162,6 +163,7 @@ void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
     size_t row = _w * static_cast<size_t>(y);
 
     // step over these pairs and fill in between in steps of AREA_FILL_RES
+    // but keep inside the visible bounds
     for (size_t k = 0; k < xs.size() - 1; k += 2) {
       double xFr = std::max(xs[k], 0.0);
       double xTo = std::min(xs[k + 1], static_cast<double>(_w));
@@ -177,7 +179,7 @@ void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
 }
 
 // _____________________________________________________________________________
-void RenderContext::drawLine(size_t tid, const util::geo::DLine& line,
+void RenderContext::drawLine(size_t, const util::geo::DLine& line,
                              double val) {
   double res = _mercH / _h;
   const auto& denseline = util::geo::densify(line, res);
@@ -225,7 +227,6 @@ void RenderContext::drawLineSegment(int x0, int y0, int x1, int y1, int w,
 // _____________________________________________________________________________
 void RenderContext::writeInteriorObjects(heatmap_t* hm) {
   size_t NUM_THREADS = _points.size();
-  double res = _mercH / _h;
 
   if (_style == OBJECTS) {
     auto fillStamp = heatmap_stamp_gen(AREA_FILL_RES);
@@ -243,7 +244,6 @@ void RenderContext::writeInteriorObjects(heatmap_t* hm) {
 // _____________________________________________________________________________
 void RenderContext::writeHeatmap(heatmap_t* hm) {
   size_t NUM_THREADS = _points.size();
-  double res = _mercH / _h;
 
   if (_style == RASTER) {
     // first, aggregate possible stamp styles
