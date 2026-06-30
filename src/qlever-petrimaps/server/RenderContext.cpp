@@ -54,7 +54,8 @@ RenderContext::RenderContext(int w, int h, double orx, double ory, double mercW,
 }
 
 // _____________________________________________________________________________
-void RenderContext::drawFillPoint(size_t tid, int px, int py, double weight, size_t r) {
+void RenderContext::drawFillPoint(size_t tid, int px, int py, double weight,
+                                  size_t r) {
   if (_style == OBJECTS) {
     // for the raw style, increase the size of the points a bit
     for (int x = px - r; x < px + r; x++) {
@@ -115,7 +116,7 @@ void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
   double res = _mercH / _h;
 
   if (border) {
-    const auto& denseline = util::geo::densify(line, res);
+    const auto& denseline = util::geo::densify(line, res * 3);
 
     for (const auto& p : denseline) {
       auto pix = mercToPx(p, _orx, _ory, _mercW, _mercH, _w, _h);
@@ -162,7 +163,7 @@ void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
 // _____________________________________________________________________________
 void RenderContext::drawLine(size_t, const util::geo::DLine& line, double val) {
   double res = _mercH / _h;
-  const auto& denseline = util::geo::densify(line, res);
+  const auto& denseline = util::geo::densify(line, res * 5);
 
   for (const auto& p : line) {
     auto pix = mercToPx(p, _orx, _ory, _mercW, _mercH, _w, _h);

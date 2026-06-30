@@ -341,8 +341,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           auto px = RenderContext::mercToPx(cp, orx, ory, mercW, mercH, w, h);
           auto ppx = RenderContext::mercToPx(p, orx, ory, mercW, mercH, w, h);
 
-          rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid), 0,
-                             0, 2);
+          rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid), 0, 0,
+                             2);
           rcontext.drawLineSegment(px.getX(), px.getY(), ppx.getX(), ppx.getY(),
                                    w, h);
         } else {
@@ -432,11 +432,11 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         auto lineId = r->getObjects(fid)[ret[idx]].first;
         auto oid = r->getObjects(fid)[ret[idx]].second;
         if (r->isArea(lineId - I_OFFSET)) {
-          rcontext.drawArea(0, r->extractLineGeom(lineId - I_OFFSET, 5 * res),
+          rcontext.drawArea(0, r->extractLineGeom(lineId - I_OFFSET, 3 * res),
                             r->getVal(fid, oid));
         } else {
           if (!r->lineIntersects(lineId, bbox)) continue;
-          rcontext.drawLine(0, r->extractLineGeom(lineId - I_OFFSET, 5 * res),
+          rcontext.drawLine(0, r->extractLineGeom(lineId - I_OFFSET, 3 * res),
                             r->getVal(fid, oid));
         }
       }
