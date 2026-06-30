@@ -72,7 +72,7 @@ std::string remoteAddress(int sock);
 
 void performCurlRequest(const std::string& url, const std::string& postFields,
                         const std::string& acceptHeader,
-                        const std::string& xForwardHeader,
+                        const std::string& xRealIP,
                         const std::function<void(const char*, size_t)>& parse,
                         const std::string* raw);
 
@@ -115,7 +115,7 @@ size_t writeStringCb(void* contents, size_t size, size_t nmemb, void* userp);
 
 inline std::string httpRequest(const std::string& url,
                                const std::string& postFields = "",
-                               const std::string& xForwardHeader = "") {
+                               const std::string& xRealIP = "") {
   CURL* curl = curl_easy_init();
   CURLcode res;
   char errbuf[CURL_ERROR_SIZE];
@@ -129,10 +129,10 @@ inline std::string httpRequest(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postFields.c_str());
   }
   struct curl_slist* headers = 0;
-  if (xForwardHeader.size()) {
-    LOG(util::INFO) << "[SERVER] Remote address is " << xForwardHeader;
+  if (xRealIP.size()) {
+    LOG(util::INFO) << "[SERVER] Remote address is " << xRealIP;
     headers = curl_slist_append(headers,
-                                ("X-Real-IP: " + xForwardHeader).c_str());
+                                ("X-Real-IP: " + xRealIP).c_str());
   }
   if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeStringCb);

@@ -26,7 +26,7 @@ const static std::string INDEX_HASH_PREFIX = "_5_";
 // _____________________________________________________________________________
 void petrimaps::performCurlRequest(
     const std::string& url, const std::string& postFields,
-    const std::string& acceptHeader, const std::string& xForwardHeader,
+    const std::string& acceptHeader, const std::string& xRealIP,
     const std::function<void(const char*, size_t)>& parse,
     const std::string* raw) {
   CURL* curl = curl_easy_init();
@@ -78,10 +78,10 @@ void petrimaps::performCurlRequest(
   if (acceptHeader.size()) {
     headers = curl_slist_append(headers, ("Accept: " + acceptHeader).c_str());
   }
-  if (xForwardHeader.size()) {
-    LOG(INFO) << "[SERVER] Remote address is " << xForwardHeader;
+  if (xRealIP.size()) {
+    LOG(INFO) << "[SERVER] Remote address is " << xRealIP;
     headers = curl_slist_append(headers,
-                                ("X-Real-IP: " + xForwardHeader).c_str());
+                                ("X-Real-IP: " + xRealIP).c_str());
   }
 
   if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
