@@ -123,7 +123,7 @@ function openPopup(data) {
 function getGeoJsonLayer(geom) {
     const color = "#e6930e";
     return L.geoJSON(geom, {
-        style: {color : color, fillColor: color, weight: 7, fillOpacity: 0.2},
+        style: {color : color, fillColor: color, weight: 8, fillOpacity: 0.6},
         pointToLayer: function (feature, latlng) {
             return L.circleMarker(latlng, {
                 radius: 8,
@@ -131,7 +131,7 @@ function getGeoJsonLayer(geom) {
                 color: color,
                 weight: 4,
                 opacity: 1,
-                fillOpacity: 0.2
+                fillOpacity: 0.6
             });}
     });
 }

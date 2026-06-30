@@ -91,6 +91,7 @@ void Requestor::request() {
   _dynamicPoints.resize(_geomColumns.size());
   _pgrid.resize(_geomColumns.size());
   _lgrid.resize(_geomColumns.size());
+  _agrid.resize(_geomColumns.size());
   _lpgrid.resize(_geomColumns.size());
   _numObjects.resize(_geomColumns.size());
   _clusterObjects.resize(_geomColumns.size());
@@ -232,6 +233,7 @@ void Requestor::request() {
     checkMem(8 * (pxWidth * pyHeight), _maxMemory);
     checkMem(8 * (lxWidth * lyHeight), _maxMemory);
     checkMem(8 * (lxWidth * lyHeight), _maxMemory);
+    // checkMem(8 * (lxWidth * lyHeight), _maxMemory);
 
     util::geo::FBox fLineBbox = {
         {lineBbox.getLowerLeft().getX(), lineBbox.getLowerLeft().getY()},
@@ -240,6 +242,8 @@ void Requestor::request() {
     _pgrid[geomColId] =
         petrimaps::Grid<ID_TYPE, float, float>(GRID_SIZE, GRID_SIZE, pointBbox);
     _lgrid[geomColId] =
+        petrimaps::Grid<ID_TYPE, float, float>(GRID_SIZE, GRID_SIZE, fLineBbox);
+    _agrid[geomColId] =
         petrimaps::Grid<ID_TYPE, float, float>(GRID_SIZE, GRID_SIZE, fLineBbox);
     _lpgrid[geomColId] =
         petrimaps::Grid<util::geo::Point<uint8_t>, float, float>(
@@ -364,6 +368,9 @@ void Requestor::request() {
           if (l.first >= I_OFFSET &&
               l.first < std::numeric_limits<ID_TYPE>::max()) {
             auto geomId = l.first - I_OFFSET;
+            bool lineIsArea = isArea(geomId);
+
+            util::geo::FPolygon poly;
 
             size_t start = _cache->getLine(geomId);
             size_t end = _cache->getLineEnd(geomId);
@@ -373,8 +380,8 @@ void Requestor::request() {
 
             size_t gi = 0;
 
-            uint8_t lastX = 0;
-            uint8_t lastY = 0;
+            int lastX = 0;
+            int lastY = 0;
 
             for (size_t li = start; li < end; li++) {
               const auto& cur = _cache->getLinePoints()[li];
@@ -393,6 +400,8 @@ void Requestor::request() {
                   (mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
                   (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
 
+              if (lineIsArea) poly.getOuter().push_back(curP);
+
               size_t cellX = _lpgrid[geomColId].getCellXFromX(curP.getX());
               size_t cellY = _lpgrid[geomColId].getCellYFromY(curP.getY());
 
@@ -405,12 +414,22 @@ void Requestor::request() {
                             cellY * _lpgrid[geomColId].getCellHeight()) /
                            256;
 
-              if (gi == 3 || lastX != sX || lastY != sY) {
+              const auto& cellBox = _lpgrid[geomColId].getBox(cellX, cellY);
+
+              int fullX = cellBox.getLowerLeft().getX() + sX * 256;
+              int fullY = cellBox.getLowerLeft().getY() + sY * 256;
+
+              if (gi == 3 || lastX != fullX || lastY != fullY) {
                 _lpgrid[geomColId].add(cellX, cellY, getVal(geomColId, i),
                                        {sX, sY});
-                lastX = sX;
-                lastY = sY;
+                lastX = fullX;
+                lastY = fullY;
               }
+            }
+
+            if (lineIsArea && util::geo::area(poly) > (5000.0 * 5000.0)) {
+              auto fbox = util::geo::getBoundingBox(poly);
+              _agrid[geomColId].add(fbox, getVal(geomColId, i), i);
             }
           }
           i++;
@@ -780,7 +799,7 @@ const ResObj Requestor::getGeom(size_t fieldId, size_t id, double rad) const {
 }
 
 // _____________________________________________________________________________
-util::geo::DLine Requestor::extractLineGeom(size_t lineId) const {
+util::geo::DLine Requestor::extractLineGeom(size_t lineId, double minD) const {
   util::geo::DLine dline;
 
   size_t start = _cache->getLine(lineId);
@@ -807,6 +826,10 @@ util::geo::DLine Requestor::extractLineGeom(size_t lineId) const {
 
     util::geo::DPoint curP((mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
                            (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
+
+    if (dline.size() && i < end - 1 &&
+        util::geo::dist(dline.back(), curP) < minD)
+      continue;
     dline.push_back(curP);
   }
 

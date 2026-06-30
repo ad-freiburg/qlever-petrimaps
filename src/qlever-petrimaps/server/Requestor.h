@@ -139,6 +139,11 @@ class Requestor {
     return _lpgrid[fieldId];
   }
 
+  const petrimaps::Grid<ID_TYPE, float, float>&
+  getAreaGrid(size_t fieldId) const {
+    return _agrid[fieldId];
+  }
+
   const std::vector<std::pair<ID_TYPE, ID_TYPE>>& getObjects(
       size_t fieldId) const {
     return _objects[fieldId];
@@ -213,7 +218,7 @@ class Requestor {
                                                double res) const;
   util::geo::MultiPoint<double> geomPointGeoms(size_t lid, size_t oid) const;
 
-  util::geo::DLine extractLineGeom(size_t lineId) const;
+  util::geo::DLine extractLineGeom(size_t lineId, double minD = 0) const;
   bool isArea(size_t lineId) const;
 
   size_t getNumObjects() const {
@@ -296,6 +301,7 @@ class Requestor {
 
   std::vector<petrimaps::Grid<ID_TYPE, float, float>> _pgrid;
   std::vector<petrimaps::Grid<ID_TYPE, float, float>> _lgrid;
+  std::vector<petrimaps::Grid<ID_TYPE, float, float>> _agrid;
   std::vector<petrimaps::Grid<util::geo::Point<uint8_t>, float, float>> _lpgrid;
 
   bool _ready = false;

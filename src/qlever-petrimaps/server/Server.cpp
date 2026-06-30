@@ -342,7 +342,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           auto ppx = RenderContext::mercToPx(p, orx, ory, mercW, mercH, w, h);
 
           rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid), 0,
-                             0);
+                             0, 2);
           rcontext.drawLineSegment(px.getX(), px.getY(), ppx.getX(), ppx.getY(),
                                    w, h);
         } else {
@@ -357,10 +357,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
             auto rasterMeta =
                 r->getRasterMetas(fid, oid, {rasterWidth, rasterHeight});
             rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid),
-                               rasterMeta.first, rasterMeta.second);
+                               rasterMeta.first, rasterMeta.second, 2);
           } else {
             rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid), 0,
-                               0);
+                               0, 2);
           }
         }
       }
@@ -387,7 +387,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
             // TODO: just setting rasterWidth to 1x1 here is not correct
             rcontext.drawPoint(tid, px.getX(), px.getY(), grid.getCellSum(x, y),
-                               1, 1);
+                               1, 1, 2);
           } else {
             for (auto oid : *cell) {
               if (r->isCluster(fid, oid)) oid = r->getCluster(fid, oid).first;
@@ -401,10 +401,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                     r->getRasterMetas(fid, oid, {rasterWidth, rasterHeight});
                 rcontext.drawPoint(tid, px.getX(), px.getY(),
                                    r->getVal(fid, oid), rasterMeta.first,
-                                   rasterMeta.second);
+                                   rasterMeta.second, 2);
               } else {
                 rcontext.drawPoint(tid, px.getX(), px.getY(),
-                                   r->getVal(fid, oid), 0, 0);
+                                   r->getVal(fid, oid), 0, 0, 2);
               }
             }
           }
@@ -431,18 +431,18 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
         auto lineId = r->getObjects(fid)[ret[idx]].first;
         auto oid = r->getObjects(fid)[ret[idx]].second;
-        if (!r->lineIntersects(lineId, bbox)) continue;
-
         if (r->isArea(lineId - I_OFFSET)) {
-          rcontext.drawArea(0, r->extractLineGeom(lineId - I_OFFSET),
+          rcontext.drawArea(0, r->extractLineGeom(lineId - I_OFFSET, 5 * res),
                             r->getVal(fid, oid));
         } else {
-          rcontext.drawLine(0, r->extractLineGeom(lineId - I_OFFSET),
+          if (!r->lineIntersects(lineId, bbox)) continue;
+          rcontext.drawLine(0, r->extractLineGeom(lineId - I_OFFSET, 5 * res),
                             r->getVal(fid, oid));
         }
       }
     } else {
       const auto& lpgrid = r->getLinePointGrid(fid);
+      const auto& agrid = r->getAreaGrid(fid);
       auto iBox = intersection(lpgrid.getBBox(), fbbox);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
@@ -477,6 +477,22 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
             }
           }
         }
+      }
+
+      std::vector<ID_TYPE> ret;
+
+      // retrieve very large areas for fill
+      agrid.get(fbbox, &ret);
+
+      // sort to avoid duplicates
+      std::sort(ret.begin(), ret.end());
+
+      for (size_t idx = 0; idx < ret.size(); idx++) {
+        if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
+        auto lineId = r->getObjects(fid)[ret[idx]].first;
+        auto oid = r->getObjects(fid)[ret[idx]].second;
+        auto geom = r->extractLineGeom(lineId - I_OFFSET, 10 * res);
+        rcontext.drawArea(0, geom, r->getVal(fid, oid), false);
       }
     }
   }

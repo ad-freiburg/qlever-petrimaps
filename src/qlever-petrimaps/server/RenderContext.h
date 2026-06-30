@@ -32,10 +32,12 @@ class RenderContext {
   }
   std::vector<unsigned char>& getImage() { return _image; }
   void drawPoint(size_t tid, int px, int py, double weight, double rasterW,
-                 double rasterH);
+                 double rasterH, size_t r = 1);
+  void drawFillPoint(size_t tid, int px, int py, double weight, size_t r = 1);
   void drawLineSegment(int x0, int y0, int x1, int y1, int w, int h);
   void drawLine(size_t tid, const util::geo::DLine& line, double val);
-  void drawArea(size_t tid, const util::geo::DLine& line, double val);
+  void drawArea(size_t tid, const util::geo::DLine& line, double val,
+                bool border = true);
   void writeHeatmap(heatmap_t* hm);
   void writeInteriorObjects(heatmap_t* hm);
 

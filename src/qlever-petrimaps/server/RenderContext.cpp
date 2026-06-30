@@ -30,12 +30,11 @@
 using petrimaps::MapStyle;
 using petrimaps::RenderContext;
 
-const static int AREA_FILL_RES = 7;
+const static int AREA_FILL_RES = 3;
 
 // _____________________________________________________________________________
-RenderContext::RenderContext(int w, int h, double orx, double ory,
-                             double mercW, double mercH, MapStyle style,
-                             size_t numThreads)
+RenderContext::RenderContext(int w, int h, double orx, double ory, double mercW,
+                             double mercH, MapStyle style, size_t numThreads)
     : _points(numThreads),
       _areaFillPoints(numThreads),
       _weights(numThreads),
@@ -55,8 +54,28 @@ RenderContext::RenderContext(int w, int h, double orx, double ory,
 }
 
 // _____________________________________________________________________________
+void RenderContext::drawFillPoint(size_t tid, int px, int py, double weight, size_t r) {
+  if (_style == OBJECTS) {
+    // for the raw style, increase the size of the points a bit
+    for (int x = px - r; x < px + r; x++) {
+      for (int y = py - r; y < py + r; y++) {
+        if (x >= 0 && y >= 0 && x < _w && y < _h) {
+          _areaFillPoints[tid].push_back(_w * y + x);
+        }
+      }
+    }
+  } else if (_style == HEATMAP) {
+    if (px >= 0 && py >= 0 && px < _w && py < _h) {
+      if (_weights[tid][_w * py + px] == 0)
+        _areaFillPoints[tid].push_back(_w * py + px);
+      _weights[tid][_w * py + px] += weight;
+    }
+  }
+}
+
+// _____________________________________________________________________________
 void RenderContext::drawPoint(size_t tid, int px, int py, double weight,
-                              double rasterW, double rasterH) {
+                              double rasterW, double rasterH, size_t r) {
   if (_style == RASTER) {
     if (px >= 0 && py >= 0 && px < _w && py < _h) {
       _rasterDims[tid][_w * py + px] = {rasterW, rasterH};
@@ -72,8 +91,8 @@ void RenderContext::drawPoint(size_t tid, int px, int py, double weight,
     }
   } else if (_style == OBJECTS) {
     // for the raw style, increase the size of the points a bit
-    for (int x = px - 2; x < px + 2; x++) {
-      for (int y = py - 2; y < py + 2; y++) {
+    for (int x = px - r; x < px + r; x++) {
+      for (int y = py - r; y < py + r; y++) {
         if (x >= 0 && y >= 0 && x < _w && y < _h) {
           if (_weights[tid][_w * y + x] == 0)
             _points[tid].push_back(_w * y + x);
@@ -92,95 +111,56 @@ void RenderContext::drawPoint(size_t tid, int px, int py, double weight,
 
 // _____________________________________________________________________________
 void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
-                             double val) {
+                             double val, bool border) {
   double res = _mercH / _h;
-  const auto& denseline = util::geo::densify(line, res);
 
-  for (const auto& p : denseline) {
-    auto pix = mercToPx(p, _orx, _ory, _mercW, _mercH, _w, _h);
-    drawPoint(0, pix.getX(), pix.getY(), val, 1, 1);
+  if (border) {
+    const auto& denseline = util::geo::densify(line, res);
+
+    for (const auto& p : denseline) {
+      auto pix = mercToPx(p, _orx, _ory, _mercW, _mercH, _w, _h);
+      drawPoint(0, pix.getX(), pix.getY(), val, 1, 1);
+    }
   }
 
   // polygon in pixelspace
-  std::vector<util::geo::Point<int>> pxPoly;
-  pxPoly.reserve(line.size());
+  util::geo::IPolygon pxPoly;
   int minY = std::numeric_limits<int>::max();
   int maxY = std::numeric_limits<int>::min();
+  int minX = std::numeric_limits<int>::max();
+  int maxX = std::numeric_limits<int>::min();
 
   // no need to use denseline here!
   for (const auto& p : line) {
     auto pix = mercToPx(p, _orx, _ory, _mercW, _mercH, _w, _h);
-    if (pxPoly.back() == pix) continue;
-    pxPoly.push_back(pix);
+    if (pxPoly.getOuter().size() && pxPoly.getOuter().back() == pix) continue;
+    pxPoly.getOuter().push_back(pix);
     minY = std::min(minY, pix.getY());
     maxY = std::max(maxY, pix.getY());
+    minX = std::min(minX, pix.getX());
+    maxX = std::max(maxX, pix.getX());
   }
 
   if (line.size() < 3) return;
 
   // fill the interior
 
-  // y bounds
+  // bounds
   minY = std::max(minY, 0);
   maxY = std::min(maxY, static_cast<int>(_h) - 1);
+  minX = std::max(minX, 0);
+  maxX = std::min(maxX, static_cast<int>(_w) - 1);
 
-  const size_t n = pxPoly.size();
-  std::vector<double> xs;
+  auto fillPoints = fillPolygon(pxPoly, AREA_FILL_RES,
+                                util::geo::IBox({minX, minY}, {maxX, maxY}));
 
-  // scanline for each y, in res steps
-  for (double y = minY; y <= maxY; y += AREA_FILL_RES) {
-    xs.clear();
-
-    size_t from = n - 1;
-    size_t to = 0;
-
-    // for each segment [from, to]...
-    while (to < n) {
-      int yFr = pxPoly[from].getY();
-      int yTo = pxPoly[to].getY();
-
-      // .. check if we intersect the y-scanline
-      if ((yTo > y) != (yFr > y)) {
-        double t = (y - yFr) / static_cast<double>(yTo - yFr);
-
-        // store the x intersection
-        double xIsect =
-            pxPoly[from].getX() + t * (pxPoly[to].getX() - pxPoly[from].getX());
-        xs.push_back(xIsect);
-      }
-
-      from = to;
-      to++;
-    }
-
-    // if we have less than 2 intersections, the scanline didnt cut into the
-    // itnerior
-    if (xs.size() < 2) continue;
-
-    // now sort the intersection Xs, they are now pairs of IN,OUT events
-    std::sort(xs.begin(), xs.end());
-
-    size_t row = _w * static_cast<size_t>(y);
-
-    // step over these pairs and fill in between in steps of AREA_FILL_RES
-    // but keep inside the visible bounds
-    for (size_t k = 0; k < xs.size() - 1; k += 2) {
-      double xFr = std::max(xs[k], 0.0);
-      double xTo = std::min(xs[k + 1], static_cast<double>(_w));
-
-      for (double x = xFr; x <= xTo; x += AREA_FILL_RES) {
-        _areaFillPoints[tid].push_back(row + x);
-        if (_style == HEATMAP) {
-          _weights[tid][row + x] += val;
-        }
-      }
-    }
+  for (const auto& o : fillPoints) {
+    drawFillPoint(tid, o.getX(), o.getY(), val);
   }
 }
 
 // _____________________________________________________________________________
-void RenderContext::drawLine(size_t, const util::geo::DLine& line,
-                             double val) {
+void RenderContext::drawLine(size_t, const util::geo::DLine& line, double val) {
   double res = _mercH / _h;
   const auto& denseline = util::geo::densify(line, res);
 
@@ -229,7 +209,7 @@ void RenderContext::writeInteriorObjects(heatmap_t* hm) {
   size_t NUM_THREADS = _points.size();
 
   if (_style == OBJECTS) {
-    auto fillStamp = heatmap_stamp_gen(AREA_FILL_RES);
+    auto fillStamp = heatmap_stamp_gen(AREA_FILL_RES - 2);
     for (size_t i = 0; i < NUM_THREADS; i++) {
       for (const auto& p : _areaFillPoints[i]) {
         size_t y = p / _w;
@@ -274,7 +254,7 @@ void RenderContext::writeHeatmap(heatmap_t* hm) {
 
     for (auto stamp : stamps) heatmap_stamp_free(stamp.second);
   } else if (_style == OBJECTS) {
-    auto stamp = heatmap_stamp_gen(3);
+    auto stamp = heatmap_stamp_gen(2);
     for (size_t i = 0; i < NUM_THREADS; i++) {
       for (const auto& p : _points[i]) {
         size_t y = p / _w;
