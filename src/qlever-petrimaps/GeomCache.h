@@ -156,7 +156,7 @@ class GeomCache {
 
   void serializeToDisk(const std::string& fname) const;
 
-  void fromDisk(const std::string& fname);
+  void fromDisk(const std::string& fname, size_t blockSize = 1024 * 1024);
 
   size_t getLine(ID_TYPE id) const { return _lines[id]; }
   bool setConfig(const GeomCacheConfig& cfg) {
