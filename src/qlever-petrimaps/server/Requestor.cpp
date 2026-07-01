@@ -827,7 +827,7 @@ util::geo::DLine Requestor::extractLineGeom(size_t lineId, double minD) const {
     util::geo::DPoint curP((mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
                            (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
 
-    if (dline.size() && i < end - 1 &&
+    if (dline.size() && minD > 0 && i < end - 1 &&
         util::geo::dist(dline.back(), curP) < minD)
       continue;
     dline.push_back(curP);
