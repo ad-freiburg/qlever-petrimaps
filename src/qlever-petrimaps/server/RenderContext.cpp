@@ -57,7 +57,7 @@ RenderContext::RenderContext(int w, int h, double orx, double ory, double mercW,
 
 // _____________________________________________________________________________
 void RenderContext::drawFillPoint(size_t tid, int px, int py, double weight,
-                                  size_t r) {
+                                  int r) {
   if (_style == OBJECTS) {
     // for the raw style, increase the size of the points a bit
     for (int x = px - r; x < px + r; x++) {
@@ -99,7 +99,7 @@ void RenderContext::writeInteriorObjects(heatmap_t* hm) {
 
 // _____________________________________________________________________________
 void RenderContext::drawPoint(size_t tid, int px, int py, double weight,
-                              double rasterW, double rasterH, size_t r) {
+                              double rasterW, double rasterH, int r) {
   if (_style == RASTER) {
     if (px >= 0 && py >= 0 && px < _w && py < _h) {
       _rasterDims[tid][_w * py + px] = {rasterW, rasterH};
@@ -137,8 +137,6 @@ void RenderContext::drawPoint(size_t tid, int px, int py, double weight,
 void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
                              double val, bool border, bool inner) {
   if (_style == OBJECTS) val = 1;
-
-  double res = _mercH / _h;
 
   // polygon in pixelspace
   util::geo::IPolygon pxPoly;

@@ -31,8 +31,8 @@ class RenderContext {
   }
   std::vector<unsigned char>& getImage() { return _image; }
   void drawPoint(size_t tid, int px, int py, double weight, double rasterW,
-                 double rasterH, size_t r = 1);
-  void drawFillPoint(size_t tid, int px, int py, double weight, size_t r = 1);
+                 double rasterH, int r = 1);
+  void drawFillPoint(size_t tid, int px, int py, double weight, int r = 1);
   void drawLineSegment(int x0, int y0, int x1, int y1, int w, int h);
   void drawLine(size_t tid, const util::geo::DLine& line, double val);
   void drawArea(size_t tid, const util::geo::DLine& line, double val,
