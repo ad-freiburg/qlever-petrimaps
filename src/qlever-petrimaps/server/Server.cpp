@@ -427,16 +427,23 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
       // sort to avoid duplicates
       std::sort(ret.begin(), ret.end());
 
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t idx = 0; idx < ret.size(); idx++) {
+        size_t tid = omp_get_thread_num();
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
         auto lineId = r->getObjects(fid)[ret[idx]].first;
         auto oid = r->getObjects(fid)[ret[idx]].second;
-        if (r->isArea(lineId - I_OFFSET)) {
-          rcontext.drawArea(0, r->extractLineGeom(lineId - I_OFFSET, 3 * res),
+        if (r->isArea(lineId - I_OFFSET) &&
+            !r->isInnerArea(lineId - I_OFFSET)) {
+          rcontext.drawArea(tid, r->extractLineGeom(lineId - I_OFFSET, 3 * res),
                             r->getVal(fid, oid));
+        } else if (r->isArea(lineId - I_OFFSET) &&
+                   r->isInnerArea(lineId - I_OFFSET)) {
+          rcontext.drawArea(tid, r->extractLineGeom(lineId - I_OFFSET, 3 * res),
+                            r->getVal(fid, oid), true, true);
         } else {
           if (!r->lineIntersects(lineId, bbox)) continue;
-          rcontext.drawLine(0, r->extractLineGeom(lineId - I_OFFSET, 3 * res),
+          rcontext.drawLine(tid, r->extractLineGeom(lineId - I_OFFSET, 3 * res),
                             r->getVal(fid, oid));
         }
       }
@@ -492,7 +499,11 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         auto lineId = r->getObjects(fid)[ret[idx]].first;
         auto oid = r->getObjects(fid)[ret[idx]].second;
         auto geom = r->extractLineGeom(lineId - I_OFFSET, 10 * res);
-        rcontext.drawArea(0, geom, r->getVal(fid, oid), false);
+        if (r->isInnerArea(lineId - I_OFFSET)) {
+          rcontext.drawArea(0, geom, r->getVal(fid, oid), false, true);
+        } else {
+          rcontext.drawArea(0, geom, r->getVal(fid, oid), false);
+        }
       }
     }
   }

@@ -18,7 +18,7 @@ using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
 // change on each index-breaking change to the code base
-const static std::string INDEX_HASH_PREFIX = "_5_";
+const static std::string INDEX_HASH_PREFIX = "_6_";
 
 // _____________________________________________________________________________
 std::vector<std::string> RequestReader::requestColumns(

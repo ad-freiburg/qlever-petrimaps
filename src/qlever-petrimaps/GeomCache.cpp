@@ -748,7 +748,7 @@ void GeomCache::addMultiPolygon(const util::geo::MultiPolygon<double> &mp,
         _linesF.write(reinterpret_cast<const char *>(&_linePointsFSize),
                       sizeof(size_t));
         _linesFSize++;
-        insertLine(line, true);
+        insertLine(line, true, true);
 
         if (_linesFSize - 1 >= std::numeric_limits<ID_TYPE>::max() - I_OFFSET) {
           std::stringstream ss;
@@ -844,7 +844,7 @@ void GeomCache::addPolygon(const util::geo::Polygon<double> &poly, size_t *i) {
       _linesF.write(reinterpret_cast<const char *>(&_linePointsFSize),
                     sizeof(size_t));
       _linesFSize++;
-      insertLine(inner, true);
+      insertLine(inner, true, true);
 
       if (_linesFSize - 1 >= std::numeric_limits<ID_TYPE>::max() - I_OFFSET) {
         std::stringstream ss;
@@ -918,7 +918,8 @@ GeomCache::getRelObjects(const std::vector<IdMapping> &ids) const {
 }
 
 // _____________________________________________________________________________
-void GeomCache::insertLine(const util::geo::DLine &lR, bool isArea) {
+void GeomCache::insertLine(const util::geo::DLine &lR, bool isArea,
+                           bool isInner) {
   // we also add the line's bounding box here to also
   // compress that
   const auto &bbox = util::geo::getBoundingBox(lR);
@@ -1024,6 +1025,8 @@ void GeomCache::insertLine(const util::geo::DLine &lR, bool isArea) {
   // other types)
   if (isArea) {
     util::geo::Point<int16_t> p{mCoord(0), mCoord(0)};
+    if (isInner) p = {mCoord(1), mCoord(1)};
+
     _linePointsF.write(reinterpret_cast<const char *>(&p),
                        sizeof(util::geo::Point<int16_t>));
     _linePointsFSize++;

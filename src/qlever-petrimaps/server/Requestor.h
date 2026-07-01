@@ -220,6 +220,7 @@ class Requestor {
 
   util::geo::DLine extractLineGeom(size_t lineId, double minD = 0) const;
   bool isArea(size_t lineId) const;
+  bool isInnerArea(size_t lineId) const;
 
   size_t getNumObjects() const {
     size_t ret = 0;

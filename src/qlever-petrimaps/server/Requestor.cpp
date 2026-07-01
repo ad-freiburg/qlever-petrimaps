@@ -427,7 +427,7 @@ void Requestor::request() {
               }
             }
 
-            if (lineIsArea && util::geo::area(poly) > (5000.0 * 5000.0)) {
+            if (lineIsArea && util::geo::area(poly) > (4000.0 * 4000.0)) {
               auto fbox = util::geo::getBoundingBox(poly);
               _agrid[geomColId].add(fbox, getVal(geomColId, i), i);
             }
@@ -843,6 +843,16 @@ bool Requestor::isArea(size_t lineId) const {
   if (end == 0) return false;
 
   return isMCoord(_cache->getLinePoints()[end - 1].getX());
+}
+
+// _____________________________________________________________________________
+bool Requestor::isInnerArea(size_t lineId) const {
+  size_t end = _cache->getLineEnd(lineId);
+
+  if (end == 0) return false;
+
+  return isMCoord(_cache->getLinePoints()[end - 1].getX()) &&
+         rmCoord(_cache->getLinePoints()[end - 1].getX()) == 1;
 }
 
 // _____________________________________________________________________________

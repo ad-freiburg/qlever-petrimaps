@@ -222,7 +222,7 @@ class GeomCache {
   void addLineString(const util::geo::Line<double>& l, size_t* i);
   void addMultiPolygon(const util::geo::MultiPolygon<double>& mp, size_t* i);
 
-  void insertLine(const util::geo::DLine& l, bool isArea);
+  void insertLine(const util::geo::DLine& l, bool isArea, bool isInner = false);
 
   static std::vector<size_t> getGeomStarts(const std::string& str, size_t a);
 
