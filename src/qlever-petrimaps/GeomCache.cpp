@@ -1092,8 +1092,11 @@ std::string GeomCache::fillQueryFromDisk(const std::string &fname) {
 }
 
 // _____________________________________________________________________________
-void GeomCache::fromDisk(const std::string &fname) {
+void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
   _loadStatusStage = _LoadStatusStages::FromFile;
+
+  // a block size of 0 means "single blokc"
+  if (blockSize == 0) blockSize = std::numeric_limits<size_t>::max();
   _points.clear();
   _linePoints.clear();
   _lines.clear();
@@ -1166,43 +1169,38 @@ void GeomCache::fromDisk(const std::string &fname) {
   _totalSize = numPoints + numLinePoints + numLines + numQidToId;
   _curRow = 0;
 
-  // read data from file
+  // read data from files, directly into the vector, in blocks of blockSize
+  auto readBlocks = [&](char *data, size_t num, size_t elemSize) {
+    for (size_t i = 0; i < num; i += blockSize) {
+      size_t n = std::min(blockSize, num - i);
+      f.read(data + i * elemSize, elemSize * n);
+      if (!f) throw std::runtime_error("Corrupted cache file");
+      _curRow += n;
+    }
+  };
+
   // points
   f.seekg(posPoints);
   if (!f) throw std::runtime_error("Corrupted cache file");
-  for (size_t i = 0; i < numPoints; i++) {
-    f.read(reinterpret_cast<char *>(&_points[i]), sizeof(util::geo::FPoint));
-    if (!f) throw std::runtime_error("Corrupted cache file");
-    _curRow += 1;
-  }
+  readBlocks(reinterpret_cast<char *>(_points.data()), numPoints,
+             sizeof(util::geo::FPoint));
 
   // linePoints
   f.seekg(posLinePoints);
   if (!f) throw std::runtime_error("Corrupted cache file");
-  for (size_t i = 0; i < numLinePoints; i++) {
-    f.read(reinterpret_cast<char *>(&_linePoints[i]),
-           sizeof(util::geo::Point<int16_t>));
-    if (!f) throw std::runtime_error("Corrupted cache file");
-    _curRow += 1;
-  }
+  readBlocks(reinterpret_cast<char *>(_linePoints.data()), numLinePoints,
+             sizeof(util::geo::Point<int16_t>));
 
   // lines
   f.seekg(posLines);
   if (!f) throw std::runtime_error("Corrupted cache file");
-  for (size_t i = 0; i < numLines; i++) {
-    f.read(reinterpret_cast<char *>(&_lines[i]), sizeof(size_t));
-    if (!f) throw std::runtime_error("Corrupted cache file");
-    _curRow += 1;
-  }
+  readBlocks(reinterpret_cast<char *>(_lines.data()), numLines, sizeof(size_t));
 
   // qidToId
   f.seekg(posQidToId);
   if (!f) throw std::runtime_error("Corrupted cache file");
-  for (size_t i = 0; i < numQidToId; i++) {
-    f.read(reinterpret_cast<char *>(&_qidToId[i]), sizeof(IdMapping));
-    if (!f) throw std::runtime_error("Corrupted cache file");
-    _curRow += 1;
-  }
+  readBlocks(reinterpret_cast<char *>(_qidToId.data()), numQidToId,
+             sizeof(IdMapping));
 
   f.close();
 }
