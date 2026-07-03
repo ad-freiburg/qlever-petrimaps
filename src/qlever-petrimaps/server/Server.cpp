@@ -342,7 +342,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           auto ppx = RenderContext::mercToPx(p, orx, ory, mercW, mercH, w, h);
 
           rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid), 0, 0,
-                             2);
+                             1);
           rcontext.drawLineSegment(px.getX(), px.getY(), ppx.getX(), ppx.getY(),
                                    w, h);
         } else {
@@ -357,10 +357,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
             auto rasterMeta =
                 r->getRasterMetas(fid, oid, {rasterWidth, rasterHeight});
             rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid),
-                               rasterMeta.first, rasterMeta.second, 2);
+                               rasterMeta.first, rasterMeta.second, 1);
           } else {
             rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid), 0,
-                               0, 2);
+                               0, 1);
           }
         }
       }
@@ -387,7 +387,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
             // TODO: just setting rasterWidth to 1x1 here is not correct
             rcontext.drawPoint(tid, px.getX(), px.getY(), grid.getCellSum(x, y),
-                               1, 1, 2);
+                               1, 1, 1);
           } else {
             for (auto oid : *cell) {
               if (r->isCluster(fid, oid)) oid = r->getCluster(fid, oid).first;
@@ -401,10 +401,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                     r->getRasterMetas(fid, oid, {rasterWidth, rasterHeight});
                 rcontext.drawPoint(tid, px.getX(), px.getY(),
                                    r->getVal(fid, oid), rasterMeta.first,
-                                   rasterMeta.second, 2);
+                                   rasterMeta.second, 1);
               } else {
                 rcontext.drawPoint(tid, px.getX(), px.getY(),
-                                   r->getVal(fid, oid), 0, 0, 2);
+                                   r->getVal(fid, oid), 0, 0, 1);
               }
             }
           }
@@ -470,7 +470,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                                                mercW, mercH, w, h);
             rcontext.drawPoint(tid, pix.getX(), pix.getY(),
                                lpgrid.getCellSum(x, y), rasterWidth,
-                               rasterHeight);
+                               rasterHeight, 0);
           } else {
             for (const auto& p : *cell) {
               int px = ((cellBox.getLowerLeft().getX() + p.getX() * 256 -
@@ -481,7 +481,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                              bbox.getLowerLeft().getY()) /
                             mercH) *
                                h;
-              rcontext.drawPoint(tid, px, py, 1, rasterWidth, rasterHeight);
+              rcontext.drawPoint(tid, px, py, 1, rasterWidth, rasterHeight, 0);
             }
           }
         }
@@ -499,11 +499,11 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
         auto lineId = r->getObjects(fid)[ret[idx]].first;
         auto oid = r->getObjects(fid)[ret[idx]].second;
-        auto geom = r->extractLineGeom(lineId - I_OFFSET, 10 * res);
+        auto geom = r->extractLineGeom(lineId - I_OFFSET, res);
         if (r->isInnerArea(lineId - I_OFFSET)) {
-          rcontext.drawArea(0, geom, r->getVal(fid, oid), false, true);
+          rcontext.drawArea(0, geom, r->getVal(fid, oid), true, true);
         } else {
-          rcontext.drawArea(0, geom, r->getVal(fid, oid), false);
+          rcontext.drawArea(0, geom, r->getVal(fid, oid), true);
         }
       }
     }
@@ -526,7 +526,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   if (style == RASTER) {
     heatmap_render_to(hm, colorScheme, &rcontext.getImage()[0]);
   } else if (style == OBJECTS) {
-    unsigned char discrete_data2[] = {
+    unsigned char fillColors[] = {
         0,         0,         0,         0,         0,         0,
         0,         0,         objColorR, objColorG, objColorB, 8,
         objColorR, objColorG, objColorB, 16,        objColorR, objColorG,
@@ -534,24 +534,25 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         objColorR, objColorG, objColorB, 80,        objColorR, objColorG,
         objColorB, 96,        objColorR, objColorG, objColorB, 112,
         objColorR, objColorG, objColorB, 127};
-    heatmap_colorscheme_t discrete2 = {
-        discrete_data2, sizeof(discrete_data2) / sizeof(discrete_data2[0]) / 4};
+    heatmap_colorscheme_t fillColorScheme = {
+        fillColors, sizeof(fillColors) / sizeof(fillColors[0]) / 4};
 
-    heatmap_render_saturated_to(hmInterior, &discrete2, 1,
+    heatmap_render_saturated_to(hmInterior, &fillColorScheme, 1,
                                 &rcontext.getImage()[0]);
 
-    unsigned char discrete_data[] = {
+    unsigned char borderColors[] = {
         0,         0,         0,         0,         0,         0,
-        0,         0,         objColorR, objColorG, objColorB, 128,
-        objColorR, objColorG, objColorB, 128,       objColorR, objColorG,
-        objColorB, 128,       objColorR, objColorG, objColorB, 128,
+        0,         0,         objColorR, objColorG, objColorB, 64,
+        objColorR, objColorG, objColorB, 64,        objColorR, objColorG,
+        objColorB, 64,        objColorR, objColorG, objColorB, 128,
         objColorR, objColorG, objColorB, 160,       objColorR, objColorG,
         objColorB, 192,       objColorR, objColorG, objColorB, 224,
         objColorR, objColorG, objColorB, 255};
-    heatmap_colorscheme_t discrete = {
-        discrete_data, sizeof(discrete_data) / sizeof(discrete_data[0]) / 4};
+    heatmap_colorscheme_t borderColorScheme = {
+        borderColors, sizeof(borderColors) / sizeof(borderColors[0]) / 4};
 
-    heatmap_render_saturated_to(hm, &discrete, 1, &rcontext.getImage()[0]);
+    heatmap_render_saturated_to(hm, &borderColorScheme, 1,
+                                &rcontext.getImage()[0]);
   } else {
     heatmap_render_to(hm, colorScheme, &rcontext.getImage()[0]);
   }

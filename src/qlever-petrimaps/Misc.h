@@ -129,6 +129,7 @@ inline std::string httpRequest(const std::string& url,
     ss << "Remote server returned status code " << httpCode;
     ss << "\n";
     ss << resString;
+    curl_easy_cleanup(curl);
     throw std::runtime_error(ss.str());
   }
 
@@ -142,9 +143,11 @@ inline std::string httpRequest(const std::string& url,
       ss << curl_easy_strerror(res);
     }
 
+    curl_easy_cleanup(curl);
     throw std::runtime_error(ss.str());
   }
 
+  curl_easy_cleanup(curl);
   return resString;
 }
 

@@ -427,7 +427,7 @@ void Requestor::request() {
               }
             }
 
-            if (lineIsArea && util::geo::area(poly) > (4000.0 * 4000.0)) {
+            if (lineIsArea && util::geo::area(poly) > (2000.0 * 2000.0)) {
               auto fbox = util::geo::getBoundingBox(poly);
               _agrid[geomColId].add(fbox, getVal(geomColId, i), i);
             }
