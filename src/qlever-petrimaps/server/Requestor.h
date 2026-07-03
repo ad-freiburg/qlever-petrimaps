@@ -139,8 +139,8 @@ class Requestor {
     return _lpgrid[fieldId];
   }
 
-  const petrimaps::Grid<ID_TYPE, float, float>&
-  getAreaGrid(size_t fieldId) const {
+  const petrimaps::Grid<ID_TYPE, float, float>& getAreaGrid(
+      size_t fieldId) const {
     return _agrid[fieldId];
   }
 
@@ -194,7 +194,9 @@ class Requestor {
 
   size_t getLineEnd(ID_TYPE id) const { return _cache->getLineEnd(id); }
 
-  const std::vector<util::geo::Point<int16_t>>& getLinePoints() const {
+  const std::vector<util::geo::Point<int16_t>,
+                    util::no_init_allocator<util::geo::Point<int16_t>>>&
+  getLinePoints() const {
     return _cache->getLinePoints();
   }
 
