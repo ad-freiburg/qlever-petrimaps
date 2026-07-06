@@ -2,7 +2,10 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <stdint.h>
+#include <sys/socket.h>
 
 #include <cstring>
 #include <string>
@@ -19,6 +22,100 @@ using util::LogLevel::WARN;
 
 // change on each index-breaking change to the code base
 const static std::string INDEX_HASH_PREFIX = "_6_";
+
+// _____________________________________________________________________________
+void petrimaps::performCurlRequest(
+    const std::string& url, const std::string& postFields,
+    const std::string& acceptHeader, const std::string& xRealIP,
+    const std::function<void(const char*, size_t)>& parse,
+    const std::string* raw) {
+  CURL* curl = curl_easy_init();
+
+  if (!curl) {
+    throw std::runtime_error("Failed to perform curl request.");
+  }
+
+  char errbuf[CURL_ERROR_SIZE];
+  errbuf[0] = 0;
+
+  // this is a context that holds to things: a std::function for parsing, and
+  // an exception_ptr for storing any exception encountered during parsing (for
+  // later rethrow)
+  struct CallbackContext {
+    const std::function<void(const char*, size_t)>& parse;
+    std::exception_ptr exception;
+  } cbContext{parse, nullptr};
+
+  petrimapsCurlSetup(curl);
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+
+  // if we have POST fields, add them
+  if (postFields.size()) {
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postFields.c_str());
+  }
+
+  size_t (*cb)(void* contents, size_t size, size_t nmemb, void* userp) =
+      [](void* contents, size_t size, size_t nmemb, void* userp) -> size_t {
+    size_t realsize = size * nmemb;
+    auto* c = static_cast<CallbackContext*>(userp);
+    try {
+      c->parse(static_cast<const char*>(contents), realsize);
+    } catch (...) {
+      // store exception, then return with an error (aborts curl request)
+      c->exception = std::current_exception();
+      return CURLE_WRITE_ERROR;
+    }
+    return realsize;
+  };
+
+  // any newly read block will be given to the parse() method of the handed cb
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, cb);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &cbContext);
+  curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+
+  struct curl_slist* headers = 0;
+  if (acceptHeader.size()) {
+    headers = curl_slist_append(headers, ("Accept: " + acceptHeader).c_str());
+  }
+  if (xRealIP.size()) {
+    headers = curl_slist_append(headers,
+                                ("X-Real-IP: " + xRealIP).c_str());
+  }
+
+  if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+  CURLcode res = curl_easy_perform(curl);
+
+  long httpCode = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+  if (headers) curl_slist_free_all(headers);
+  curl_easy_cleanup(curl);
+
+  if (httpCode != 200) {
+    std::stringstream ss;
+    ss << "QLever backend returned status code " << httpCode;
+    if (raw) ss << "\n" << *raw;
+    throw std::runtime_error(ss.str());
+  }
+
+  // rethrow any exception encountered during write callback
+  if (cbContext.exception) std::rethrow_exception(cbContext.exception);
+
+  if (res != CURLE_OK) {
+    std::stringstream ss;
+    ss << "QLever backend request failed: ";
+    if (strlen(errbuf) > 0) {
+      LOG(ERROR) << "[CURL] " << errbuf;
+      ss << errbuf;
+    } else {
+      LOG(ERROR) << "[CURL] " << curl_easy_strerror(res);
+      ss << curl_easy_strerror(res);
+    }
+    throw std::runtime_error(ss.str());
+  }
+}
 
 // _____________________________________________________________________________
 std::vector<std::string> RequestReader::requestColumns(
@@ -38,204 +135,58 @@ std::vector<std::string> RequestReader::requestColumns(
 }
 
 // _____________________________________________________________________________
-void RequestReader::requestIds(const std::string& query) {
-  CURLcode res;
-  char errbuf[CURL_ERROR_SIZE];
-
+void RequestReader::requestIds(const std::string& query,
+                               const std::string& remoteAddr) {
   _raw.clear();
   _raw.reserve(10000);
 
-  if (_curl) {
-    auto flds = queryFields(query);
-    petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, _backendUrl.c_str());
-    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, RequestReader::writeCbIds);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
-
-    // set headers
-    struct curl_slist* headers = 0;
-    headers = curl_slist_append(headers, "Accept: application/octet-stream");
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
-
-    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    res = curl_easy_perform(_curl);
-
-    long httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    curl_slist_free_all(headers);
-
-    if (httpCode != 200) {
-      std::stringstream ss;
-      ss << "QLever backend returned status code " << httpCode;
-      ss << "\n";
-      ss << _raw;
-      throw std::runtime_error(ss.str());
-    }
-
-    if (exceptionPtr) std::rethrow_exception(exceptionPtr);
-
-  } else {
-    LOG(ERROR) << "[REQUESTREADER] Failed to perform curl request.";
-    return;
-  }
-
-  if (res != CURLE_OK) {
-    std::stringstream ss;
-    ss << "QLever backend request failed: ";
-    size_t len = strlen(errbuf);
-    if (len > 0) {
-      LOG(ERROR) << "[REQUESTREADER] " << errbuf;
-      ss << errbuf;
-    } else {
-      LOG(ERROR) << "[REQUESTREADER] " << curl_easy_strerror(res);
-      ss << curl_easy_strerror(res);
-    }
-
-    throw std::runtime_error(ss.str());
-  }
+  performCurlRequest(
+      _backendUrl, queryFields(query), "application/octet-stream", remoteAddr,
+      [this](const char* c, size_t n) { parseIds(c, n); }, &_raw);
 }
 
 // _____________________________________________________________________________
 std::map<size_t, std::pair<double, double>> RequestReader::requestRasterMeta(
-    const std::string& query) {
-  CURLcode res;
-  char errbuf[CURL_ERROR_SIZE];
+    const std::string& query, const std::string& remoteAddr) {
   _curRasterFieldDimensions = {};
 
   _raw.clear();
   _raw.reserve(10000);
 
-  if (_curl) {
-    auto flds = queryFields(query);
-    petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, _backendUrl.c_str());
-    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION,
-                     RequestReader::writeCbRasterMeta);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
-
-    // set headers
-    struct curl_slist* headers = 0;
-    headers = curl_slist_append(headers, "Accept: application/octet-stream");
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
-
-    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    res = curl_easy_perform(_curl);
-
-    long httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    curl_slist_free_all(headers);
-
-    if (httpCode != 200) {
-      std::stringstream ss;
-      ss << "QLever backend returned status code " << httpCode;
-      ss << "\n";
-      ss << _raw;
-      throw std::runtime_error(ss.str());
-    }
-
-    if (exceptionPtr) std::rethrow_exception(exceptionPtr);
-
-  } else {
-    LOG(ERROR) << "[REQUESTREADER] Failed to perform curl request.";
-    return {};
-  }
-
-  if (res != CURLE_OK) {
-    std::stringstream ss;
-    ss << "QLever backend request failed: ";
-    size_t len = strlen(errbuf);
-    if (len > 0) {
-      LOG(ERROR) << "[REQUESTREADER] " << errbuf;
-      ss << errbuf;
-    } else {
-      LOG(ERROR) << "[REQUESTREADER] " << curl_easy_strerror(res);
-      ss << curl_easy_strerror(res);
-    }
-
-    throw std::runtime_error(ss.str());
-  }
+  performCurlRequest(
+      _backendUrl, queryFields(query), "application/octet-stream", remoteAddr,
+      [this](const char* c, size_t n) { parseRasterMeta(c, n); }, &_raw);
 
   return _curRasterFieldDimensions;
 }
 
 // _____________________________________________________________________________
-void RequestReader::requestRows(const std::string& query) {
-  return requestRows(query, RequestReader::writeCb, this);
+void RequestReader::requestRows(const std::string& query,
+                                const std::string& remoteAddr) {
+  return requestRows(
+      query, [this](const char* c, size_t n) { parse(c, n); }, remoteAddr);
 }
 
 // _____________________________________________________________________________
-void RequestReader::requestRows(const std::string& query,
-                                size_t (*writeCb)(void*, size_t, size_t, void*),
-                                void* ptr) {
-  CURLcode res;
-  char errbuf[CURL_ERROR_SIZE];
-
+void RequestReader::requestRows(
+    const std::string& query,
+    const std::function<void(const char*, size_t)>& parse,
+    const std::string& remoteAddr) {
   _raw.clear();
   _raw.reserve(10000);
 
-  if (_curl) {
-    auto flds = queryFields(query);
-    petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, _backendUrl.c_str());
-    curl_easy_setopt(_curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, flds.c_str());
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, writeCb);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, ptr);
-
-    // set headers
-    struct curl_slist* headers = 0;
-    headers = curl_slist_append(headers, "Accept: text/tab-separated-values");
-    curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, headers);
-
-    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-    res = curl_easy_perform(_curl);
-
-    long httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    curl_slist_free_all(headers);
-
-    if (httpCode != 200) {
-      std::stringstream ss;
-      ss << "QLever backend returned status code " << httpCode;
-      ss << "\n";
-      ss << _raw;
-      throw std::runtime_error(ss.str());
-    }
-
-    if (exceptionPtr) std::rethrow_exception(exceptionPtr);
-  } else {
-    LOG(ERROR) << "[REQUESTREADER] Failed to perform curl request.";
-    return;
-  }
-
-  if (res != CURLE_OK) {
-    std::stringstream ss;
-    ss << "QLever backend request failed: ";
-    size_t len = strlen(errbuf);
-    if (len > 0) {
-      LOG(ERROR) << "[REQUESTREADER] " << errbuf;
-      ss << errbuf;
-    } else {
-      LOG(ERROR) << "[REQUESTREADER] " << curl_easy_strerror(res);
-      ss << curl_easy_strerror(res);
-    }
-
-    throw std::runtime_error(ss.str());
-  }
+  performCurlRequest(_backendUrl, queryFields(query),
+                     "text/tab-separated-values", remoteAddr, parse, &_raw);
 }
 
 // _____________________________________________________________________________
 std::string RequestReader::queryFields(const std::string& query) const {
-  auto escStr = curl_easy_escape(_curl, query.c_str(), query.size());
+  // TODO: dont spin up an entire CURL instance here, is this necessary?
+  CURL* curl = curl_easy_init();
+  auto escStr = curl_easy_escape(curl, query.c_str(), query.size());
   std::string esc = escStr;
   curl_free(escStr);
+  curl_easy_cleanup(curl);
 
   return "send=18446744073709551615&query=" + esc;
 }
@@ -245,51 +196,6 @@ size_t petrimaps::writeStringCb(void* contents, size_t size, size_t nmemb,
                                 void* userp) {
   ((std::string*)userp)->append((char*)contents, size * nmemb);
   return size * nmemb;
-}
-
-// _____________________________________________________________________________
-size_t RequestReader::writeCb(void* contents, size_t size, size_t nmemb,
-                              void* userp) {
-  size_t realsize = size * nmemb;
-  try {
-    static_cast<RequestReader*>(userp)->parse(
-        static_cast<const char*>(contents), realsize);
-  } catch (...) {
-    static_cast<RequestReader*>(userp)->exceptionPtr = std::current_exception();
-    return CURLE_WRITE_ERROR;
-  }
-
-  return realsize;
-}
-
-// _____________________________________________________________________________
-size_t RequestReader::writeCbIds(void* contents, size_t size, size_t nmemb,
-                                 void* userp) {
-  size_t realsize = size * nmemb;
-  try {
-    static_cast<RequestReader*>(userp)->parseIds(
-        static_cast<const char*>(contents), realsize);
-  } catch (...) {
-    static_cast<RequestReader*>(userp)->exceptionPtr = std::current_exception();
-    return CURLE_WRITE_ERROR;
-  }
-
-  return realsize;
-}
-
-// _____________________________________________________________________________
-size_t RequestReader::writeCbRasterMeta(void* contents, size_t size,
-                                        size_t nmemb, void* userp) {
-  size_t realsize = size * nmemb;
-  try {
-    static_cast<RequestReader*>(userp)->parseRasterMeta(
-        static_cast<const char*>(contents), realsize);
-  } catch (...) {
-    static_cast<RequestReader*>(userp)->exceptionPtr = std::current_exception();
-    return CURLE_WRITE_ERROR;
-  }
-
-  return realsize;
 }
 
 // _____________________________________________________________________________
@@ -476,7 +382,8 @@ std::string petrimaps::normalizeURL(const std::string& inURL) {
 }
 
 // _____________________________________________________________________________
-std::string petrimaps::canonizeURL(const std::string& inURL) {
+std::string petrimaps::canonizeURL(const std::string& inURL,
+                                   const std::string& remoteAddr) {
   CURL* curl = curl_easy_init();
   if (!curl) {
     std::stringstream ss;
@@ -489,8 +396,17 @@ std::string petrimaps::canonizeURL(const std::string& inURL) {
   curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
   curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
 
+  struct curl_slist* headers = 0;
+  if (remoteAddr.size()) {
+    headers =
+        curl_slist_append(headers, ("X-Real-IP: " + remoteAddr).c_str());
+  }
+
+  if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
   CURLcode res = curl_easy_perform(curl);
   if (res != CURLE_OK) {
+    if (headers) curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     std::stringstream ss;
     ss << "Could not canonize URL " << inURL;
@@ -503,6 +419,7 @@ std::string petrimaps::canonizeURL(const std::string& inURL) {
   curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &effective);
 
   if (!effective) {
+    if (headers) curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     std::stringstream ss;
     ss << "Could not canonize URL " << inURL;
@@ -511,58 +428,55 @@ std::string petrimaps::canonizeURL(const std::string& inURL) {
 
   std::string ret(effective);
 
+  if (headers) curl_slist_free_all(headers);
   curl_easy_cleanup(curl);
   return normalizeURL(ret);
 }
 
 // _____________________________________________________________________________
-size_t RequestReader::writeCbString(void* contents, size_t size, size_t nmemb,
-                                    void* userp) {
-  ((std::string*)userp)->append((char*)contents, size * nmemb);
-  return size * nmemb;
+std::string petrimaps::remoteAddress(int sock, const HeaderParams& headers) {
+  auto it = headers.find("X-Real-IP");
+  if (it != headers.end()) return it->second;
+  struct sockaddr_storage addr;
+  socklen_t len = sizeof(addr);
+  if (getpeername(sock, reinterpret_cast<struct sockaddr*>(&addr), &len) != 0) {
+    return "";
+  }
+
+  char buf[INET6_ADDRSTRLEN] = {0};
+
+  if (addr.ss_family == AF_INET) {
+    auto* s = reinterpret_cast<struct sockaddr_in*>(&addr);
+    inet_ntop(AF_INET, &s->sin_addr, buf, sizeof(buf));
+  } else if (addr.ss_family == AF_INET6) {
+    auto* s = reinterpret_cast<struct sockaddr_in6*>(&addr);
+    inet_ntop(AF_INET6, &s->sin6_addr, buf, sizeof(buf));
+
+    // unwrap IPv4-mapped IPv6 addresses
+    std::string ip(buf);
+    if (ip.rfind("::ffff:", 0) == 0 && ip.find('.') != std::string::npos)
+      return ip.substr(7);
+
+    return ip;
+  }
+
+  return buf;
 }
 
 // _____________________________________________________________________________
 std::string RequestReader::requestIndexHash(const std::string& configHash) {
-  // TODO: move this function into Reader class
-  CURLcode res;
-  char errbuf[CURL_ERROR_SIZE];
   std::string response;
+  std::string url = _backendUrl + "/?cmd=get-index-id";
 
-  if (_curl) {
-    std::string url = _backendUrl + "/?cmd=get-index-id";
-    petrimapsCurlSetup(_curl);
-    curl_easy_setopt(_curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION,
-                     RequestReader::writeCbString);
-    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, &response);
-    curl_easy_setopt(_curl, CURLOPT_ERRORBUFFER, errbuf);
-
-    res = curl_easy_perform(_curl);
-
-    if (res != CURLE_OK) {
-      size_t len = strlen(errbuf);
-      if (len > 0) {
-        LOG(ERROR) << "[GEOMCACHE] " << errbuf;
-      } else {
-        LOG(ERROR) << "[GEOMCACHE] " << curl_easy_strerror(res);
-      }
-
-      return "";
-    }
-
-    long httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
-
-    if (httpCode != 200) {
-      LOG(WARN) << "QLever backend returned status code " << httpCode
-                << " for index hash.";
-      return "";
-    }
-
-    return INDEX_HASH_PREFIX + "|" + configHash + "|" + response;
-  } else {
-    LOG(ERROR) << "[GEOMCACHE] Failed to perform curl request for index hash.";
+  try {
+    performCurlRequest(
+        url, "", "", "",
+        [&response](const char* c, size_t n) { response.append(c, n); },
+        nullptr);
+  } catch (const std::exception& e) {
+    LOG(WARN) << "[GEOMCACHE] Could not obtain index hash: " << e.what();
     return "";
   }
+
+  return INDEX_HASH_PREFIX + "|" + configHash + "|" + response;
 }

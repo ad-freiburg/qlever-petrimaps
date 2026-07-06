@@ -49,7 +49,7 @@ petrimaps::GeomCacheConfig cacheConfigFromDisk(const std::string& fname) {
   std::string canonized;
 
   try {
-    canonized = petrimaps::canonizeURL(url);
+    canonized = petrimaps::canonizeURL(url, "");
   } catch (std::runtime_error& e) {
     LOG(WARN) << fname << "' seems to be a legacy cache file, delete it!";
     throw;
