@@ -103,16 +103,20 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
     } else if (cmd == "/touch") {
       a = handleTouchReq(params, req.params, con);
     } else if (cmd == "/query") {
+      LOG(INFO) << "Query request from " << remoteAddress(con);
       a = handleQueryReq(params, req.params, con);
     } else if (cmd == "/geojson") {
+      LOG(INFO) << "Geojson request from " << remoteAddress(con);
       a = handleGeoJSONReq(params, con);
     } else if (cmd == "/clearsession") {
       a = handleClearSessReq(params, req.params, con);
     } else if (cmd == "/clearsessions") {
       a = handleClearSessReq(params, req.params, con);
     } else if (cmd == "/pos") {
+      LOG(INFO) << "Position request from " << remoteAddress(con);
       a = handlePosReq(params, con);
     } else if (cmd == "/export") {
+      LOG(INFO) << "Export request from " << remoteAddress(con);
       a = handleExportReq(params, con);
     } else if (cmd == "/loadstatus") {
       a = handleLoadStatusReq(params, con);

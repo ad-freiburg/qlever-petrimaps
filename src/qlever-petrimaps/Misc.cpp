@@ -79,7 +79,6 @@ void petrimaps::performCurlRequest(
     headers = curl_slist_append(headers, ("Accept: " + acceptHeader).c_str());
   }
   if (xRealIP.size()) {
-    LOG(INFO) << "[SERVER] Remote address is " << xRealIP;
     headers = curl_slist_append(headers,
                                 ("X-Real-IP: " + xRealIP).c_str());
   }
@@ -399,7 +398,6 @@ std::string petrimaps::canonizeURL(const std::string& inURL,
 
   struct curl_slist* headers = 0;
   if (remoteAddr.size()) {
-    LOG(INFO) << "[SERVER] Remote address is " << remoteAddr;
     headers =
         curl_slist_append(headers, ("X-Real-IP: " + remoteAddr).c_str());
   }
