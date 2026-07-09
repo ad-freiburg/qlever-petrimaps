@@ -305,7 +305,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   checkMem(sizeof(float) * w * h, _maxMemory);
   double realCellSize = r->getPointGrid(fid).getCellWidth();
-  double virtCellSize = res * 2.5;
+  double virtCellSize = res * 1.5;
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
@@ -539,21 +539,36 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
     heatmap_colorscheme_t fillColorScheme = {
         fillColors, sizeof(fillColors) / sizeof(fillColors[0]) / 4};
 
-    heatmap_render_saturated_to(hmInterior, &fillColorScheme, 1,
-                                &rcontext.getImage()[0]);
+    unsigned char borderColors2[] = {
+        0,         0,         0,         0,         0,         0,
+        0,         0,         objColorR, objColorG, objColorB, 0,
+        objColorR, objColorG, objColorB, 0,         objColorR, objColorG,
+        objColorB, 0,         objColorR, objColorG, objColorB, 0,
+        objColorR, objColorG, objColorB, 0,         objColorR, objColorG,
+        objColorB, 0,         objColorR, objColorG, objColorB, 0,
+        objColorR, objColorG, objColorB, 255};
+    heatmap_colorscheme_t borderColor2Scheme = {
+        borderColors2, sizeof(borderColors2) / sizeof(borderColors2[0]) / 4};
 
     unsigned char borderColors[] = {
-        0,         0,         0,         0,         0,         0,
-        0,         0,         objColorR, objColorG, objColorB, 64,
+        0, 0,
+        0, 0,         objColorR, objColorG,
+        objColorB, 64,        objColorR, objColorG, objColorB, 64,
         objColorR, objColorG, objColorB, 64,        objColorR, objColorG,
         objColorB, 64,        objColorR, objColorG, objColorB, 128,
         objColorR, objColorG, objColorB, 160,       objColorR, objColorG,
-        objColorB, 192,       objColorR, objColorG, objColorB, 224,
-        objColorR, objColorG, objColorB, 255};
+        objColorB, 192,       objColorR, objColorG, objColorB, 192,
+        objColorR, objColorG, objColorB, 192};
     heatmap_colorscheme_t borderColorScheme = {
         borderColors, sizeof(borderColors) / sizeof(borderColors[0]) / 4};
 
     heatmap_render_saturated_to(hm, &borderColorScheme, 1,
+                                &rcontext.getImage()[0]);
+
+    heatmap_render_saturated_to(hmInterior, &fillColorScheme, 1,
+                                &rcontext.getImage()[0]);
+
+    heatmap_render_saturated_to(hm, &borderColor2Scheme, 1,
                                 &rcontext.getImage()[0]);
   } else {
     heatmap_render_to(hm, colorScheme, &rcontext.getImage()[0]);

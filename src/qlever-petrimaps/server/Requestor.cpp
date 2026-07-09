@@ -370,8 +370,6 @@ void Requestor::request(const std::string& remoteAddr) {
             auto geomId = l.first - I_OFFSET;
             bool lineIsArea = isArea(geomId);
 
-            util::geo::FPolygon poly;
-
             size_t start = _cache->getLine(geomId);
             size_t end = _cache->getLineEnd(geomId);
 
@@ -382,6 +380,12 @@ void Requestor::request(const std::string& remoteAddr) {
 
             int lastX = 0;
             int lastY = 0;
+
+            double val = getVal(geomColId, i);
+
+            double area = 0;
+            util::geo::FBox fbox;
+            util::geo::FPoint lastP;
 
             for (size_t li = start; li < end; li++) {
               const auto& cur = _cache->getLinePoints()[li];
@@ -400,7 +404,12 @@ void Requestor::request(const std::string& remoteAddr) {
                   (mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
                   (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
 
-              if (lineIsArea) poly.getOuter().push_back(curP);
+              if (lineIsArea && gi != 3) {
+                area += (lastP.getX() + curP.getX()) * (lastP.getY() - curP.getY());
+                fbox = extendBox(curP, fbox);
+              }
+
+              lastP = curP;
 
               size_t cellX = _lpgrid[geomColId].getCellXFromX(curP.getX());
               size_t cellY = _lpgrid[geomColId].getCellYFromY(curP.getY());
@@ -420,16 +429,14 @@ void Requestor::request(const std::string& remoteAddr) {
               int fullY = cellBox.getLowerLeft().getY() + sY * 256;
 
               if (gi == 3 || lastX != fullX || lastY != fullY) {
-                _lpgrid[geomColId].add(cellX, cellY, getVal(geomColId, i),
-                                       {sX, sY});
+                _lpgrid[geomColId].add(cellX, cellY, val, {sX, sY});
                 lastX = fullX;
                 lastY = fullY;
               }
             }
 
-            if (lineIsArea && util::geo::area(poly) > (2000.0 * 2000.0)) {
-              auto fbox = util::geo::getBoundingBox(poly);
-              _agrid[geomColId].add(fbox, getVal(geomColId, i), i);
+            if (lineIsArea && fabs(area) > (2000.0 * 2000.0)) {
+              _agrid[geomColId].add(fbox, val, i);
             }
           }
           i++;

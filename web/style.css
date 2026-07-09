@@ -649,6 +649,15 @@ h1, #msg-heading {
     z-index: 99999;
     padding: 50px;
     box-shadow: 4px 4px 9px -6px #000000;
+    transition: all 0.1s;
+    transition-behavior: allow-discrete;
+    display: none;
+    opacity: 0;
+}
+
+#msg.show {
+    opacity : 1;
+    display: block;
 }
 
 #msg-info-heading {

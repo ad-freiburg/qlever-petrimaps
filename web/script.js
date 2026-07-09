@@ -31,10 +31,10 @@ let map = L.map('m', {
     renderer: L.canvas(),
     preferCanvas: true
 }).setView([47.9965, 7.8469], 3);
-map.attributionControl.setPrefix('University of Freiburg');
+map.attributionControl.setPrefix('<a rel="noreferrer" target="_blank" href="//ad.cs.uni-freiburg.de">University of Freiburg</a>');
 
 let osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a rel="noreferrer" target="_blank" href="#">OpenStreetMap</a>',
+    attribution: '&copy; <a rel="noreferrer" target="_blank" href="//openstreetmap.org">OpenStreetMap</a>',
     maxZoom: 19,
     opacity:0.9
 }).addTo(map);
@@ -141,7 +141,6 @@ function getGeoJsonLayer(geom) {
 
 function showError(err) {
     msg = err.toString();
-    document.getElementById("msg").style.display = "block";
     document.getElementById("msg-info").style.display = "none";
     document.getElementById("load").style.display = "none";
     const heading = document.getElementById("msg-heading");
@@ -475,12 +474,13 @@ async function fetchLoadStatus() {
         });
 }
 
+document.getElementById("msg").classList.add("show");
 fetchResults();
 fetchLoadStatusInterval(333);
 
 function _onLayerLoad(e) {
     clearInterval(loadStatusIntervalId);
-    document.getElementById("msg").style.display = "none";
+    document.getElementById("msg").classList.remove("show");
 }
 
 document.getElementById("ex-geojson").onclick = function() {
