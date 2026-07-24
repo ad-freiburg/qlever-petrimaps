@@ -169,7 +169,7 @@ void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
   minX = std::max(minX, 0);
   maxX = std::min(maxX, static_cast<int>(_w) - 1);
 
-  auto fillPoints = fillPolygon(pxPoly, 1,
+  auto fillPoints = fill(pxPoly, 1,
                                 util::geo::IBox({minX, minY}, {maxX, maxY}));
 
   for (const auto& o : fillPoints) {
