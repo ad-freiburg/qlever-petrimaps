@@ -315,10 +315,13 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   LOG(INFO) << "[SERVER] Virt cell size: " << virtCellSize;
   LOG(INFO) << "[SERVER] Num virt cells: " << subCellSize * subCellSize;
 
+  ObjectStyle objectStyle{3, 2, 0.5, 1};
+
   checkMem(sizeof(unsigned char) * w * h * 4 +
                sizeof(unsigned char) * w * h * 4 * NUM_THREADS * 2,
            _maxMemory);
-  RenderContext rcontext(w, h, orx, ory, mercW, mercH, style, NUM_THREADS);
+  RenderContext rcontext(w, h, orx, ory, mercW, mercH, style, objectStyle,
+                         NUM_THREADS);
 
   // POINTS
   if (intersects(r->getPointGrid(fid).getBBox(), fbbox)) {
@@ -389,7 +392,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
             // TODO: just setting rasterWidth to 1x1 here is not correct
             rcontext.drawPoint(tid, px.getX(), px.getY(), grid.getCellSum(x, y),
-                               1, 1, 1);
+                               1, 1, 0.5);
           } else {
             for (auto oid : *cell) {
               if (r->isCluster(fid, oid)) oid = r->getCluster(fid, oid).first;
@@ -403,10 +406,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                     r->getRasterMetas(fid, oid, {rasterWidth, rasterHeight});
                 rcontext.drawPoint(tid, px.getX(), px.getY(),
                                    r->getVal(fid, oid), rasterMeta.first,
-                                   rasterMeta.second, 1);
+                                   rasterMeta.second, 0.5);
               } else {
                 rcontext.drawPoint(tid, px.getX(), px.getY(),
-                                   r->getVal(fid, oid), 0, 0, 1);
+                                   r->getVal(fid, oid), 0, 0, 0.5);
               }
             }
           }
@@ -470,9 +473,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           if (subCellSize == 1) {
             auto pix = RenderContext::mercToPx(cellBox.getLowerLeft(), orx, ory,
                                                mercW, mercH, w, h);
-            rcontext.drawPoint(tid, pix.getX(), pix.getY(),
-                               lpgrid.getCellSum(x, y), rasterWidth,
-                               rasterHeight, 0);
+            rcontext.drawLinePoint(tid, pix.getX(), pix.getY(),
+                                   lpgrid.getCellSum(x, y), rasterWidth,
+                                   rasterHeight);
           } else {
             for (const auto& p : *cell) {
               int px = ((cellBox.getLowerLeft().getX() + p.getX() * 256 -
@@ -483,7 +486,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                              bbox.getLowerLeft().getY()) /
                             mercH) *
                                h;
-              rcontext.drawPoint(tid, px, py, 1, rasterWidth, rasterHeight, 0);
+              rcontext.drawLinePoint(tid, px, py, 1, rasterWidth, rasterHeight);
             }
           }
         }
@@ -529,36 +532,44 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
     heatmap_render_to(hm, colorScheme, &rcontext.getImage()[0]);
   } else if (style == OBJECTS) {
     unsigned char fillColors[] = {
-        0,         0,         0,         0,         0,         0,
-        0,         0,         objColorR, objColorG, objColorB, 8,
-        objColorR, objColorG, objColorB, 16,        objColorR, objColorG,
-        objColorB, 32,        objColorR, objColorG, objColorB, 64,
-        objColorR, objColorG, objColorB, 80,        objColorR, objColorG,
-        objColorB, 96,        objColorR, objColorG, objColorB, 112,
-        objColorR, objColorG, objColorB, 127};
+        0,         0,         0,         0,
+        0,         0,         0,         0,
+        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity * 0.06,
+        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity * 0.12,
+        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity * 0.25,
+        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity * 0.5,
+        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity * 0.65,
+        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity * 0.8,
+        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity * 0.9,
+        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity};
     heatmap_colorscheme_t fillColorScheme = {
         fillColors, sizeof(fillColors) / sizeof(fillColors[0]) / 4};
 
     unsigned char borderColors2[] = {
-        0,         0,         0,         0,         0,         0,
-        0,         0,         objColorR, objColorG, objColorB, 0,
-        objColorR, objColorG, objColorB, 0,         objColorR, objColorG,
-        objColorB, 0,         objColorR, objColorG, objColorB, 0,
-        objColorR, objColorG, objColorB, 0,         objColorR, objColorG,
-        objColorB, 0,         objColorR, objColorG, objColorB, 0,
-        objColorR, objColorG, objColorB, 255};
+        0,         0,         0,         0,
+        0,         0,         0,         0,
+        objColorR, objColorG, objColorB, 0,
+        objColorR, objColorG, objColorB, 0,
+        objColorR, objColorG, objColorB, 0,
+        objColorR, objColorG, objColorB, 0,
+        objColorR, objColorG, objColorB, 0,
+        objColorR, objColorG, objColorB, 0,
+        objColorR, objColorG, objColorB, 0,
+        objColorR, objColorG, objColorB, 255 * objectStyle.lineOpacity};
     heatmap_colorscheme_t borderColor2Scheme = {
         borderColors2, sizeof(borderColors2) / sizeof(borderColors2[0]) / 4};
 
     unsigned char borderColors[] = {
-        0, 0,
-        0, 0,         objColorR, objColorG,
-        objColorB, 64,        objColorR, objColorG, objColorB, 64,
-        objColorR, objColorG, objColorB, 64,        objColorR, objColorG,
-        objColorB, 64,        objColorR, objColorG, objColorB, 128,
-        objColorR, objColorG, objColorB, 160,       objColorR, objColorG,
-        objColorB, 192,       objColorR, objColorG, objColorB, 192,
-        objColorR, objColorG, objColorB, 192};
+        0,         0,         0,         0,
+        objColorR, objColorG, objColorB, 64 * objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 64 * objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 64 * objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 64 * objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 128 * objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 160 * objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 192 * objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 192 * objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 192 * objectStyle.lineOpacity};
     heatmap_colorscheme_t borderColorScheme = {
         borderColors, sizeof(borderColors) / sizeof(borderColors[0]) / 4};
 
