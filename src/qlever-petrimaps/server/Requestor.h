@@ -25,6 +25,7 @@ struct FieldConfig {
   std::string geomField = "";
   std::string id = "";
   std::string name = "";
+  std::string group = "";
   std::string valueField = "";
   std::string rasterMetaField = "";
   std::string toggle = "";
@@ -48,7 +49,7 @@ struct RequestorConfig {
     std::string fieldsStr;
     for (const auto& field : fields)
       fieldsStr += field.geomField + "|" + field.valueField + "|" +
-                   std::to_string(field.rasterW) + "|" +
+                   field.group + "|" + std::to_string(field.rasterW) + "|" +
                    std::to_string(field.rasterH) + "|" + field.color + "|" +
                    field.id + "|" + field.name + "|" + field.style + "|" +
                    field.colorscheme + "|" + field.toggle;
@@ -78,25 +79,22 @@ class Requestor {
         _rcfg(rcfg),
         _maxMemory(maxMemory),
         _createdAt(std::chrono::system_clock::now()) {
-    auto columns = getColumns(_rcfg.query);
+    auto columns = getColumns(_cache->getConfig().backend, _rcfg.query);
     for (size_t i = 0; i < columns.size(); i++) _columnsMap[columns[i]] = i;
 
-    if (_rcfg.fields.size() == 0) {
-      _geomColumns = {columns.back()};
-      _rcfg.fields.push_back({columns.back()});
-    } else {
-      for (const auto& field : _rcfg.fields) {
-        if (!_columnsMap.count(field.geomFieldRaw())) continue;
-        _geomColumns.push_back(field.geomField);
-        if (_columnsMap.count(field.valueField)) {
-          _valueFlds[_geomColumns.size() - 1] = _valueColumns.size();
-          _valueColumns.push_back(field.valueField);
-        }
-        if (_columnsMap.count(field.rasterMetaField)) {
-          _rasterMetaFlds[_geomColumns.size() - 1] = _rasterMetaColumns.size();
-          _rasterMetaColumns.push_back(field.rasterMetaField);
-        }
+    for (const auto& field : _rcfg.fields) {
+      if (!_columnsMap.count(field.geomFieldRaw())) continue;
+      _geomColumns.push_back(field.geomField);
+      if (_columnsMap.count(field.valueField)) {
+        _valueFlds[_geomColumns.size() - 1] = _valueColumns.size();
+        _valueColumns.push_back(field.valueField);
       }
+      if (_columnsMap.count(field.rasterMetaField)) {
+        _rasterMetaFlds[_geomColumns.size() - 1] = _rasterMetaColumns.size();
+        _rasterMetaColumns.push_back(field.rasterMetaField);
+      }
+      _fields.push_back(field);
+      _layerIdToLid[field.id] = _fields.size() - 1;
     }
 
     LOG(util::LogLevel::INFO)
@@ -230,23 +228,27 @@ class Requestor {
   size_t getNumObjects(size_t lid) const { return _numObjects[lid]; }
   util::geo::DPoint clusterGeom(size_t fieldId, size_t oid, double res) const;
 
-  std::vector<std::string> getColumns(std::string query) const;
+  static std::vector<std::string> getColumns(const std::string& backend,
+                                             std::string query);
 
   double getVal(size_t lid, size_t oid) const;
   std::pair<double, double> getRasterMetas(size_t lid, size_t oid,
                                            std::pair<double, double> def) const;
 
-  size_t getFieldId(const std::string& field) {
-    auto it = _geoColToLid.find(field);
-    std::stringstream ss;
-    ss << "Field '" << field << "' not found";
-    if (it == _geoColToLid.end()) throw std::runtime_error(ss.str());
-    return it->second;
-  }
   size_t getNumFields() const { return _pgrid.size(); }
   bool lineIntersects(size_t lid, const util::geo::DBox& bbox) const;
 
-  const std::vector<FieldConfig> getFields() const { return _rcfg.fields; }
+  const std::vector<FieldConfig>& getFields() const { return _fields; }
+
+  size_t getFieldById(const std::string& id) {
+    auto it = _layerIdToLid.find(id);
+    if (it == _layerIdToLid.end()) {
+      std::stringstream ss;
+      ss << "Field '" << id << "' not found";
+      throw std::runtime_error(ss.str());
+    }
+    return it->second;
+  }
   std::pair<double, double> getValRange(size_t fid) const;
 
   std::chrono::time_point<std::chrono::system_clock> createdAt() const {
@@ -265,6 +267,7 @@ class Requestor {
 
   std::shared_ptr<const GeomCache> _cache;
   RequestorConfig _rcfg;
+  std::vector<FieldConfig> _fields;
 
   size_t _maxMemory;
 
@@ -295,6 +298,7 @@ class Requestor {
   std::vector<std::string> _rasterMetaColumns;
   std::map<std::string, size_t> _columnsMap;
   std::map<std::string, size_t> _geoColToLid;
+  std::map<std::string, size_t> _layerIdToLid;
   std::map<size_t, size_t> _valueFlds;
   std::map<size_t, size_t> _rasterMetaFlds;
 

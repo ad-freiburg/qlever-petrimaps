@@ -182,11 +182,12 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   std::string layers = pars.find("layers")->second;
 
   std::string id;
-  std::string field;
 
-  auto parts = util::split(layers, '-');
+  auto parts = util::split(layers, ',');
+  if (parts.size() > 1)
+    throw std::invalid_argument("Multiple layers not supported");
+
   if (parts.size()) id = parts[0];
-  if (parts.size() > 1) field = parts[1];
 
   MapStyle style = HEATMAP;
   auto colorScheme = heatmap_cs_Spectral_mixed_exp;
@@ -195,71 +196,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   int objColorR = 0, objColorG = 0, objColorB = 0;
 
-  if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
-    auto parts = util::split(pars.find("styles")->second, '-');
-
-    if (parts[0] == "objects") style = OBJECTS;
-    if (parts[0] == "raster") style = RASTER;
-
-    if (style == RASTER && parts.size() > 1) {
-      // in web mercator units (pseudometers)!
-      auto xy = util::split(parts[1], 'x');
-      if (xy.size() > 1) {
-        rasterWidth = ::atof(xy[0].c_str());
-        rasterHeight = ::atof(xy[1].c_str());
-      }
-    }
-
-    if (style == OBJECTS && parts.size() > 1) {
-      if (parts[1].size() == 6) {
-        objColorR = hexToInt(parts[1][0]) * 16 + hexToInt(parts[1][1]);
-        objColorG = hexToInt(parts[1][2]) * 16 + hexToInt(parts[1][3]);
-        objColorB = hexToInt(parts[1][4]) * 16 + hexToInt(parts[1][5]);
-      }
-    }
-
-    if (style == HEATMAP && parts.size() > 1) {
-      if (parts[1] == "spectralexp")
-        colorScheme = heatmap_cs_Spectral_mixed_exp;
-      if (parts[1] == "spectral") colorScheme = heatmap_cs_Spectral_mixed;
-      if (parts[1] == "RdYlGn") colorScheme = heatmap_cs_RdYlGn_mixed;
-      if (parts[1] == "RdYlGnexp") colorScheme = heatmap_cs_RdYlGn_mixed_exp;
-      if (parts[1] == "w2b") colorScheme = heatmap_cs_w2b_opaque;
-      if (parts[1] == "b2w") colorScheme = heatmap_cs_b2w_opaque;
-      if (parts[1] == "RdYlBu") colorScheme = heatmap_cs_RdYlBu_mixed;
-      if (parts[1] == "RdGy") colorScheme = heatmap_cs_RdGy_mixed;
-      if (parts[1] == "YlOrRd") colorScheme = heatmap_cs_YlOrRd_mixed;
-      if (parts[1] == "Blues") colorScheme = heatmap_cs_Blues_mixed;
-      if (parts[1] == "Greens") colorScheme = heatmap_cs_Greens_mixed;
-      if (parts[1] == "Greys") colorScheme = heatmap_cs_Greys_mixed;
-      if (parts[1] == "Oranges") colorScheme = heatmap_cs_Oranges_mixed;
-      if (parts[1] == "Reds") colorScheme = heatmap_cs_Reds_mixed;
-
-      if (parts[1] == "RdYlBuexp") colorScheme = heatmap_cs_RdYlBu_mixed_exp;
-      if (parts[1] == "RdGyexp") colorScheme = heatmap_cs_RdGy_mixed_exp;
-      if (parts[1] == "YlOrRdexp") colorScheme = heatmap_cs_YlOrRd_mixed_exp;
-      if (parts[1] == "Bluesexp") colorScheme = heatmap_cs_Blues_mixed_exp;
-      if (parts[1] == "Greensexp") colorScheme = heatmap_cs_Greens_mixed_exp;
-      if (parts[1] == "Greysexp") colorScheme = heatmap_cs_Greys_mixed_exp;
-      if (parts[1] == "Orangesexp") colorScheme = heatmap_cs_Oranges_mixed_exp;
-      if (parts[1] == "Redsexp") colorScheme = heatmap_cs_Reds_mixed_exp;
-    }
-
-    if (style == RASTER && parts.size() > 2) {
-      if (parts[2] == "spectral") colorScheme = heatmap_cs_Spectral_discrete;
-      if (parts[2] == "RdYlGn") colorScheme = heatmap_cs_RdYlGn_discrete;
-      if (parts[2] == "RdYlBu") colorScheme = heatmap_cs_RdYlBu_discrete;
-      if (parts[2] == "RdGy") colorScheme = heatmap_cs_RdGy_discrete;
-      if (parts[2] == "YlOrRd") colorScheme = heatmap_cs_YlOrRd_discrete;
-      if (parts[2] == "Blues") colorScheme = heatmap_cs_Blues_discrete;
-      if (parts[2] == "Greens") colorScheme = heatmap_cs_Greens_discrete;
-      if (parts[2] == "Greys") colorScheme = heatmap_cs_Greys_discrete;
-      if (parts[2] == "Oranges") colorScheme = heatmap_cs_Oranges_discrete;
-      if (parts[2] == "Reds") colorScheme = heatmap_cs_Reds_discrete;
-    }
-  }
-
-  if (box.size() != 4) throw std::invalid_argument("Invalid request.");
+  FieldConfig fcfg;
+  size_t fid = 0;
 
   std::shared_ptr<Requestor> r;
   {
@@ -277,7 +215,85 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
     throw std::invalid_argument("Session not ready.");
   }
 
-  LOG(INFO) << "[SERVER] Begin heat for session " << id;
+  if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
+    auto layerId = pars.find("styles")->second;
+    fid = r->getFieldById(layerId);
+  }
+
+  fcfg = r->getFields()[fid];
+
+  if (fcfg.style == "objects") style = OBJECTS;
+  if (fcfg.style == "raster") style = RASTER;
+
+  if (style == RASTER && parts.size() > 1) {
+    // in web mercator units (pseudometers)!
+    auto xy = util::split(parts[1], 'x');
+    if (xy.size() > 1) {
+      rasterWidth = ::atof(xy[0].c_str());
+      rasterHeight = ::atof(xy[1].c_str());
+    }
+  }
+
+  if (style == OBJECTS) {
+    if (fcfg.color.size() == 6) {
+      objColorR = hexToInt(fcfg.color[0]) * 16 + hexToInt(fcfg.color[1]);
+      objColorG = hexToInt(fcfg.color[2]) * 16 + hexToInt(fcfg.color[3]);
+      objColorB = hexToInt(fcfg.color[4]) * 16 + hexToInt(fcfg.color[5]);
+    }
+  }
+
+  if (style == HEATMAP) {
+    if (fcfg.colorscheme == "spectralexp")
+      colorScheme = heatmap_cs_Spectral_mixed_exp;
+    if (fcfg.colorscheme == "spectral") colorScheme = heatmap_cs_Spectral_mixed;
+    if (fcfg.colorscheme == "RdYlGn") colorScheme = heatmap_cs_RdYlGn_mixed;
+    if (fcfg.colorscheme == "RdYlGnexp")
+      colorScheme = heatmap_cs_RdYlGn_mixed_exp;
+    if (fcfg.colorscheme == "w2b") colorScheme = heatmap_cs_w2b_opaque;
+    if (fcfg.colorscheme == "b2w") colorScheme = heatmap_cs_b2w_opaque;
+    if (fcfg.colorscheme == "RdYlBu") colorScheme = heatmap_cs_RdYlBu_mixed;
+    if (fcfg.colorscheme == "RdGy") colorScheme = heatmap_cs_RdGy_mixed;
+    if (fcfg.colorscheme == "YlOrRd") colorScheme = heatmap_cs_YlOrRd_mixed;
+    if (fcfg.colorscheme == "Blues") colorScheme = heatmap_cs_Blues_mixed;
+    if (fcfg.colorscheme == "Greens") colorScheme = heatmap_cs_Greens_mixed;
+    if (fcfg.colorscheme == "Greys") colorScheme = heatmap_cs_Greys_mixed;
+    if (fcfg.colorscheme == "Oranges") colorScheme = heatmap_cs_Oranges_mixed;
+    if (fcfg.colorscheme == "Reds") colorScheme = heatmap_cs_Reds_mixed;
+
+    if (fcfg.colorscheme == "RdYlBuexp")
+      colorScheme = heatmap_cs_RdYlBu_mixed_exp;
+    if (fcfg.colorscheme == "RdGyexp") colorScheme = heatmap_cs_RdGy_mixed_exp;
+    if (fcfg.colorscheme == "YlOrRdexp")
+      colorScheme = heatmap_cs_YlOrRd_mixed_exp;
+    if (fcfg.colorscheme == "Bluesexp")
+      colorScheme = heatmap_cs_Blues_mixed_exp;
+    if (fcfg.colorscheme == "Greensexp")
+      colorScheme = heatmap_cs_Greens_mixed_exp;
+    if (fcfg.colorscheme == "Greysexp")
+      colorScheme = heatmap_cs_Greys_mixed_exp;
+    if (fcfg.colorscheme == "Orangesexp")
+      colorScheme = heatmap_cs_Oranges_mixed_exp;
+    if (fcfg.colorscheme == "Redsexp") colorScheme = heatmap_cs_Reds_mixed_exp;
+  }
+
+  if (style == RASTER) {
+    if (fcfg.colorscheme == "spectral")
+      colorScheme = heatmap_cs_Spectral_discrete;
+    if (fcfg.colorscheme == "RdYlGn") colorScheme = heatmap_cs_RdYlGn_discrete;
+    if (fcfg.colorscheme == "RdYlBu") colorScheme = heatmap_cs_RdYlBu_discrete;
+    if (fcfg.colorscheme == "RdGy") colorScheme = heatmap_cs_RdGy_discrete;
+    if (fcfg.colorscheme == "YlOrRd") colorScheme = heatmap_cs_YlOrRd_discrete;
+    if (fcfg.colorscheme == "Blues") colorScheme = heatmap_cs_Blues_discrete;
+    if (fcfg.colorscheme == "Greens") colorScheme = heatmap_cs_Greens_discrete;
+    if (fcfg.colorscheme == "Greys") colorScheme = heatmap_cs_Greys_discrete;
+    if (fcfg.colorscheme == "Oranges")
+      colorScheme = heatmap_cs_Oranges_discrete;
+    if (fcfg.colorscheme == "Reds") colorScheme = heatmap_cs_Reds_discrete;
+  }
+
+  if (box.size() != 4) throw std::invalid_argument("Invalid request.");
+
+  LOG(INFO) << "[SERVER] Begin heatmap generation for session " << id;
 
   double x1 = std::atof(box[0].c_str());
   double y1 = std::atof(box[1].c_str());
@@ -300,8 +316,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   if (h <= 0 || h > 3000) throw std::invalid_argument("Invalid request");
 
   double res = mercH / h;
-
-  size_t fid = r->getFieldId(field);
 
   checkMem(sizeof(float) * w * h, _maxMemory);
   double realCellSize = r->getPointGrid(fid).getCellWidth();
@@ -674,7 +688,7 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars,
     throw std::invalid_argument("Session not ready.");
   }
 
-  size_t fid = reqor->getFieldId(layer);
+  size_t fid = reqor->getFieldById(layer);
 
   // as soon as we are ready, the reqor can be read concurrently
   auto res = reqor->getGeom(fid, gid, rad);
@@ -982,46 +996,19 @@ util::http::Answer Server::handleQueryReq(const Params& pars,
 
   RequestorConfig rcfg;
 
-  // backwards compatibility
-  if (pars.count("fields") != 0) {
-    for (auto raw : util::split(pars.find("fields")->second, ';')) {
-      auto parts = util::split(raw, ',');
-      if (parts.size() == 0) continue;
-      rcfg.fields.push_back({
-          parts[0],                          // geomField
-          getFreeLayerId(),                  // id
-          "",                                // name
-          parts.size() > 1 ? parts[1] : "",  // valueField
-                                             // ..., rest defaults
-      });
-    }
-  }
+  const std::string& backend = pars.find("backend")->second;
 
-  if (pars.count("rasterw") != 0 && pars.count("rasterh") != 0) {
-    double rasterW = ::atof(pars.find("rasterw")->second.c_str());
-    double rasterH = ::atof(pars.find("rasterh")->second.c_str());
-
-    // set the same rasterw and rasterh for all fields
-    for (auto& fld : rcfg.fields) {
-      fld.rasterW = rasterW;
-      fld.rasterH = rasterH;
-    }
-  }
+  auto backendCfg = getGeomCacheConfig(backend, "", "", remoteAddr);
 
   if (pars.count("cfg") != 0 && !pars.find("cfg")->second.empty()) {
     rcfg = getRequestorCfgFromJSON(pars.find("cfg")->second);
-  }
-
-  if (pars.count("query") != 0 && !pars.find("query")->second.empty()) {
-    rcfg.query = pars.find("query")->second;
+  } else if (pars.count("query") != 0 && !pars.find("query")->second.empty()) {
+    rcfg =
+        getDefaultRequestorCfg(backendCfg.backend, pars.find("query")->second);
   }
 
   if (rcfg.query.size() == 0)
     throw std::invalid_argument("No query specified.");
-
-  const std::string& backend = pars.find("backend")->second;
-
-  auto backendCfg = getGeomCacheConfig(backend, "", "", remoteAddr);
 
   LOG(INFO) << "[SERVER] Queried backend is " << backendCfg.backend;
   LOG(INFO) << "[SERVER] Query is:\n" << rcfg.query;
@@ -1091,17 +1078,18 @@ util::http::Answer Server::handleQueryReq(const Params& pars,
        << ",\"autothreshold\":" << _autoThreshold << ",\"layers\": [";
 
   bool first = false;
-  for (const auto& fld : reqor->getFields()) {
+  for (size_t fid = 0; fid < reqor->getNumFields(); fid++) {
+    const auto& fld = reqor->getFields()[fid];
     if (first) json << ",";
     first = true;
     json << "{";
     json << "\"id\":\"" << fld.id << "\",";
     json << "\"geomfield\":\"" << fld.geomField << "\",";
     json << "\"name\":\"" << fld.name << "\",";
+    json << "\"group\":\"" << fld.group << "\",";
     json << "\"color\":\"" << fld.color << "\",";
     json << "\"colorscheme\":\"" << fld.colorscheme << "\",";
-    json << "\"numobjects\":\""
-         << reqor->getNumObjects(reqor->getFieldId(fld.geomField)) << "\",";
+    json << "\"numobjects\":\"" << reqor->getNumObjects(fid) << "\",";
     json << "\"style\":\"" << fld.style << "\",";
     json << "\"toggle\":\"" << fld.toggle << "\"";
     if (fld.rasterW != 0 && fld.rasterH != 0)
@@ -1587,6 +1575,8 @@ RequestorConfig Server::getRequestorCfgFromJSON(
             if (layer.value().contains("style"))
               curField.style = layer.value()["style"].get<std::string>();
             if (curField.name.size() == 0) curField.name = curField.geomField;
+
+            // always assign an ID
             if (curField.id.size() == 0) curField.id = getFreeLayerId();
             ret.fields.push_back(curField);
           }
@@ -1680,6 +1670,57 @@ GeomCacheConfig Server::getGeomCacheConfig(
         canonizedBackend, petrimaps::getFillQuery(canonizedBackend)};
   }
   return _cacheConfigs[canonizedBackend];
+}
+
+// _____________________________________________________________________________
+RequestorConfig Server::getDefaultRequestorCfg(const std::string& backend,
+                                               const std::string& query) const {
+  RequestorConfig ret;
+  ret.query = query;
+
+  auto cols = Requestor::getColumns(backend, query);
+  if (cols.size() == 0) return ret;
+
+  const std::vector<std::string> heatmapStyles{
+      "spectralexp", "spectral",   "RdYlGn", "RdYlGnexp", "RdYlBu", "RdYlBuexp",
+      "w2b",         "b2w",        "RdGy",   "RdGyexp",   "YlOrRd", "YlOrRdexp",
+      "Blues",       "Bluesexp",   "Greens", "Greensexp", "Greys",  "Greysexp",
+      "Oranges",     "Orangesexp", "Reds",   "Redsexp"};
+
+  FieldConfig autoField;
+  autoField.geomField = cols.back();
+  autoField.id = "auto";
+  autoField.name = "Auto";
+  autoField.group = "Auto";
+  autoField.color = "3388ff";
+  autoField.style = "auto";
+
+  FieldConfig objectField;
+  autoField.geomField = cols.back();
+  autoField.id = "objects";
+  autoField.name = "Objects";
+  autoField.group = "Objects";
+  autoField.color = "3388ff";
+  autoField.style = "objects";
+
+  ret.fields.push_back(autoField);
+  ret.fields.push_back(objectField);
+
+  size_t i = 0;
+
+  for (const auto& heatmapStyle : heatmapStyles) {
+    i++;
+    if (i > 2) break;
+    FieldConfig heatField;
+    heatField.geomField = cols.back();
+    heatField.group = "Heatmap";
+    heatField.id = std::string("heatmap-") + heatmapStyle;
+    heatField.name = heatmapStyle;
+    heatField.colorscheme = heatmapStyle;
+    ret.fields.push_back(heatField);
+  }
+
+  return ret;
 }
 
 // _____________________________________________________________________________

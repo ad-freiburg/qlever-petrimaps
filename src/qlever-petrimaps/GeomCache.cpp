@@ -1043,7 +1043,7 @@ void GeomCache::serializeToDisk(const std::string &fname) const {
   std::ofstream f;
   f.open(fname, std::ios::binary);
 
-  std::string h = _indexHash;
+  std::string h = _indexHash.substr(0, 99);
   h.insert(h.end(), 99 - h.size(), ' ');
 
   // null byte is 100

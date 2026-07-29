@@ -405,7 +405,8 @@ void Requestor::request(const std::string& remoteAddr) {
                   (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
 
               if (lineIsArea && gi != 3) {
-                area += (lastP.getX() + curP.getX()) * (lastP.getY() - curP.getY());
+                area +=
+                    (lastP.getX() + curP.getX()) * (lastP.getY() - curP.getY());
                 fbox = extendBox(curP, fbox);
               }
 
@@ -510,7 +511,8 @@ void Requestor::requestRows(
 }
 
 // _____________________________________________________________________________
-std::vector<std::string> Requestor::getColumns(std::string query) const {
+std::vector<std::string> Requestor::getColumns(const std::string& backend,
+                                               std::string query) {
   std::regex expr("select[^{]*(\\*|[\\?$][A-Z0-9_\\-+]*)+[^{]*\\s*\\{",
                   std::regex_constants::icase);
 
@@ -520,7 +522,7 @@ std::vector<std::string> Requestor::getColumns(std::string query) const {
 
   query += " LIMIT 0";
 
-  RequestReader reader(_cache->getConfig().backend, _maxMemory, 0, 0, 0);
+  RequestReader reader(backend, -1, 0, 0, 0);
   return reader.requestColumns(query);
 }
 
