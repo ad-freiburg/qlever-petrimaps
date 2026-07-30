@@ -196,8 +196,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   int objColorR = 0, objColorG = 0, objColorB = 0;
 
-  FieldConfig fcfg;
-  size_t fid = 0;
+  LayerConfig lcfg;
+  size_t lid = 0;
 
   std::shared_ptr<Requestor> r;
   {
@@ -217,13 +217,13 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
     auto layerId = pars.find("styles")->second;
-    fid = r->getFieldById(layerId);
+    lid = r->getLidById(layerId);
   }
 
-  fcfg = r->getFields()[fid];
+  lcfg = r->getLayers()[lid];
 
-  if (fcfg.style == "objects") style = OBJECTS;
-  if (fcfg.style == "raster") style = RASTER;
+  if (lcfg.style == "objects") style = OBJECTS;
+  if (lcfg.style == "raster") style = RASTER;
 
   if (style == RASTER && parts.size() > 1) {
     // in web mercator units (pseudometers)!
@@ -235,60 +235,60 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   }
 
   if (style == OBJECTS) {
-    if (fcfg.color.size() == 6) {
-      objColorR = hexToInt(fcfg.color[0]) * 16 + hexToInt(fcfg.color[1]);
-      objColorG = hexToInt(fcfg.color[2]) * 16 + hexToInt(fcfg.color[3]);
-      objColorB = hexToInt(fcfg.color[4]) * 16 + hexToInt(fcfg.color[5]);
+    if (lcfg.color.size() == 6) {
+      objColorR = hexToInt(lcfg.color[0]) * 16 + hexToInt(lcfg.color[1]);
+      objColorG = hexToInt(lcfg.color[2]) * 16 + hexToInt(lcfg.color[3]);
+      objColorB = hexToInt(lcfg.color[4]) * 16 + hexToInt(lcfg.color[5]);
     }
   }
 
   if (style == HEATMAP) {
-    if (fcfg.colorscheme == "spectralexp")
+    if (lcfg.colorscheme == "spectralexp")
       colorScheme = heatmap_cs_Spectral_mixed_exp;
-    if (fcfg.colorscheme == "spectral") colorScheme = heatmap_cs_Spectral_mixed;
-    if (fcfg.colorscheme == "RdYlGn") colorScheme = heatmap_cs_RdYlGn_mixed;
-    if (fcfg.colorscheme == "RdYlGnexp")
+    if (lcfg.colorscheme == "spectral") colorScheme = heatmap_cs_Spectral_mixed;
+    if (lcfg.colorscheme == "RdYlGn") colorScheme = heatmap_cs_RdYlGn_mixed;
+    if (lcfg.colorscheme == "RdYlGnexp")
       colorScheme = heatmap_cs_RdYlGn_mixed_exp;
-    if (fcfg.colorscheme == "w2b") colorScheme = heatmap_cs_w2b_opaque;
-    if (fcfg.colorscheme == "b2w") colorScheme = heatmap_cs_b2w_opaque;
-    if (fcfg.colorscheme == "RdYlBu") colorScheme = heatmap_cs_RdYlBu_mixed;
-    if (fcfg.colorscheme == "RdGy") colorScheme = heatmap_cs_RdGy_mixed;
-    if (fcfg.colorscheme == "YlOrRd") colorScheme = heatmap_cs_YlOrRd_mixed;
-    if (fcfg.colorscheme == "Blues") colorScheme = heatmap_cs_Blues_mixed;
-    if (fcfg.colorscheme == "Greens") colorScheme = heatmap_cs_Greens_mixed;
-    if (fcfg.colorscheme == "Greys") colorScheme = heatmap_cs_Greys_mixed;
-    if (fcfg.colorscheme == "Oranges") colorScheme = heatmap_cs_Oranges_mixed;
-    if (fcfg.colorscheme == "Reds") colorScheme = heatmap_cs_Reds_mixed;
+    if (lcfg.colorscheme == "w2b") colorScheme = heatmap_cs_w2b_opaque;
+    if (lcfg.colorscheme == "b2w") colorScheme = heatmap_cs_b2w_opaque;
+    if (lcfg.colorscheme == "RdYlBu") colorScheme = heatmap_cs_RdYlBu_mixed;
+    if (lcfg.colorscheme == "RdGy") colorScheme = heatmap_cs_RdGy_mixed;
+    if (lcfg.colorscheme == "YlOrRd") colorScheme = heatmap_cs_YlOrRd_mixed;
+    if (lcfg.colorscheme == "Blues") colorScheme = heatmap_cs_Blues_mixed;
+    if (lcfg.colorscheme == "Greens") colorScheme = heatmap_cs_Greens_mixed;
+    if (lcfg.colorscheme == "Greys") colorScheme = heatmap_cs_Greys_mixed;
+    if (lcfg.colorscheme == "Oranges") colorScheme = heatmap_cs_Oranges_mixed;
+    if (lcfg.colorscheme == "Reds") colorScheme = heatmap_cs_Reds_mixed;
 
-    if (fcfg.colorscheme == "RdYlBuexp")
+    if (lcfg.colorscheme == "RdYlBuexp")
       colorScheme = heatmap_cs_RdYlBu_mixed_exp;
-    if (fcfg.colorscheme == "RdGyexp") colorScheme = heatmap_cs_RdGy_mixed_exp;
-    if (fcfg.colorscheme == "YlOrRdexp")
+    if (lcfg.colorscheme == "RdGyexp") colorScheme = heatmap_cs_RdGy_mixed_exp;
+    if (lcfg.colorscheme == "YlOrRdexp")
       colorScheme = heatmap_cs_YlOrRd_mixed_exp;
-    if (fcfg.colorscheme == "Bluesexp")
+    if (lcfg.colorscheme == "Bluesexp")
       colorScheme = heatmap_cs_Blues_mixed_exp;
-    if (fcfg.colorscheme == "Greensexp")
+    if (lcfg.colorscheme == "Greensexp")
       colorScheme = heatmap_cs_Greens_mixed_exp;
-    if (fcfg.colorscheme == "Greysexp")
+    if (lcfg.colorscheme == "Greysexp")
       colorScheme = heatmap_cs_Greys_mixed_exp;
-    if (fcfg.colorscheme == "Orangesexp")
+    if (lcfg.colorscheme == "Orangesexp")
       colorScheme = heatmap_cs_Oranges_mixed_exp;
-    if (fcfg.colorscheme == "Redsexp") colorScheme = heatmap_cs_Reds_mixed_exp;
+    if (lcfg.colorscheme == "Redsexp") colorScheme = heatmap_cs_Reds_mixed_exp;
   }
 
   if (style == RASTER) {
-    if (fcfg.colorscheme == "spectral")
+    if (lcfg.colorscheme == "spectral")
       colorScheme = heatmap_cs_Spectral_discrete;
-    if (fcfg.colorscheme == "RdYlGn") colorScheme = heatmap_cs_RdYlGn_discrete;
-    if (fcfg.colorscheme == "RdYlBu") colorScheme = heatmap_cs_RdYlBu_discrete;
-    if (fcfg.colorscheme == "RdGy") colorScheme = heatmap_cs_RdGy_discrete;
-    if (fcfg.colorscheme == "YlOrRd") colorScheme = heatmap_cs_YlOrRd_discrete;
-    if (fcfg.colorscheme == "Blues") colorScheme = heatmap_cs_Blues_discrete;
-    if (fcfg.colorscheme == "Greens") colorScheme = heatmap_cs_Greens_discrete;
-    if (fcfg.colorscheme == "Greys") colorScheme = heatmap_cs_Greys_discrete;
-    if (fcfg.colorscheme == "Oranges")
+    if (lcfg.colorscheme == "RdYlGn") colorScheme = heatmap_cs_RdYlGn_discrete;
+    if (lcfg.colorscheme == "RdYlBu") colorScheme = heatmap_cs_RdYlBu_discrete;
+    if (lcfg.colorscheme == "RdGy") colorScheme = heatmap_cs_RdGy_discrete;
+    if (lcfg.colorscheme == "YlOrRd") colorScheme = heatmap_cs_YlOrRd_discrete;
+    if (lcfg.colorscheme == "Blues") colorScheme = heatmap_cs_Blues_discrete;
+    if (lcfg.colorscheme == "Greens") colorScheme = heatmap_cs_Greens_discrete;
+    if (lcfg.colorscheme == "Greys") colorScheme = heatmap_cs_Greys_discrete;
+    if (lcfg.colorscheme == "Oranges")
       colorScheme = heatmap_cs_Oranges_discrete;
-    if (fcfg.colorscheme == "Reds") colorScheme = heatmap_cs_Reds_discrete;
+    if (lcfg.colorscheme == "Reds") colorScheme = heatmap_cs_Reds_discrete;
   }
 
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
@@ -318,7 +318,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   double res = mercH / h;
 
   checkMem(sizeof(float) * w * h, _maxMemory);
-  double realCellSize = r->getPointGrid(fid).getCellWidth();
+  double realCellSize = r->getPointGrid(lid).getCellWidth();
   double virtCellSize = res * 1.5;
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
@@ -338,55 +338,55 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                          NUM_THREADS);
 
   // POINTS
-  if (intersects(r->getPointGrid(fid).getBBox(), fbbox)) {
+  if (intersects(r->getPointGrid(lid).getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display points...";
     if (res < THRESHOLD) {
       std::vector<ID_TYPE> ret;
 
       // duplicates are not possible with points, so no sorting here
-      r->getPointGrid(fid).get(fbbox, &ret);
+      r->getPointGrid(lid).get(fbbox, &ret);
 
       for (size_t j = 0; j < ret.size(); j++) {
         size_t oid = ret[j];
 
-        if (r->isCluster(fid, oid) && style == OBJECTS) {
-          size_t refOid = r->getCluster(fid, oid).first;
+        if (r->isCluster(lid, oid) && style == OBJECTS) {
+          size_t refOid = r->getCluster(lid, oid).first;
 
-          FPoint p = r->getPoint(fid, refOid);
+          FPoint p = r->getPoint(lid, refOid);
           if (!contains(p, fbbox)) continue;
 
-          const auto& cp = r->clusterGeom(fid, oid, res);
+          const auto& cp = r->clusterGeom(lid, oid, res);
 
           auto px = RenderContext::mercToPx(cp, orx, ory, mercW, mercH, w, h);
           auto ppx = RenderContext::mercToPx(p, orx, ory, mercW, mercH, w, h);
 
-          rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid), 0, 0,
+          rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(lid, oid), 0, 0,
                              1);
           rcontext.drawLineSegment(px.getX(), px.getY(), ppx.getX(), ppx.getY(),
                                    w, h);
         } else {
-          if (r->isCluster(fid, oid)) oid = r->getCluster(fid, oid).first;
+          if (r->isCluster(lid, oid)) oid = r->getCluster(lid, oid).first;
 
-          FPoint p = r->getPoint(fid, oid);
+          FPoint p = r->getPoint(lid, oid);
           if (!contains(p, fbbox)) continue;
 
           auto px = RenderContext::mercToPx(p, orx, ory, mercW, mercH, w, h);
 
           if (style == RASTER) {
             auto rasterMeta =
-                r->getRasterMetas(fid, oid, {rasterWidth, rasterHeight});
-            rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid),
+                r->getRasterMetas(lid, oid, {rasterWidth, rasterHeight});
+            rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(lid, oid),
                                rasterMeta.first, rasterMeta.second, 1);
           } else {
-            rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid), 0,
+            rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(lid, oid), 0,
                                0, 1);
           }
         }
       }
     } else {
       // they intersect, we checked this above
-      auto iBox = intersection(r->getPointGrid(fid).getBBox(), fbbox);
-      const auto& grid = r->getPointGrid(fid);
+      auto iBox = intersection(r->getPointGrid(lid).getBBox(), fbbox);
+      const auto& grid = r->getPointGrid(lid);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t x = grid.getCellXFromX(iBox.getLowerLeft().getX());
@@ -409,21 +409,21 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                                1, 1, 0.5);
           } else {
             for (auto oid : *cell) {
-              if (r->isCluster(fid, oid)) oid = r->getCluster(fid, oid).first;
+              if (r->isCluster(lid, oid)) oid = r->getCluster(lid, oid).first;
 
-              FPoint p = r->getPoint(fid, oid);
+              FPoint p = r->getPoint(lid, oid);
               auto px =
                   RenderContext::mercToPx(p, orx, ory, mercW, mercH, w, h);
 
               if (style == RASTER) {
                 auto rasterMeta =
-                    r->getRasterMetas(fid, oid, {rasterWidth, rasterHeight});
+                    r->getRasterMetas(lid, oid, {rasterWidth, rasterHeight});
                 rcontext.drawPoint(tid, px.getX(), px.getY(),
-                                   r->getVal(fid, oid), rasterMeta.first,
+                                   r->getVal(lid, oid), rasterMeta.first,
                                    rasterMeta.second, 0.5);
               } else {
                 rcontext.drawPoint(tid, px.getX(), px.getY(),
-                                   r->getVal(fid, oid), 0, 0, 0.5);
+                                   r->getVal(lid, oid), 0, 0, 0.5);
               }
             }
           }
@@ -433,7 +433,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   }
 
   // LINES
-  const auto& lgrid = r->getLineGrid(fid);
+  const auto& lgrid = r->getLineGrid(lid);
 
   if (intersects(lgrid.getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display lines...";
@@ -448,28 +448,28 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
       for (size_t idx = 0; idx < ret.size(); idx++) {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
-        auto lineId = r->getObjects(fid)[ret[idx]].first;
-        auto oid = r->getObjects(fid)[ret[idx]].second;
+        auto lineId = r->getObjects(lid)[ret[idx]].first;
+        auto oid = r->getObjects(lid)[ret[idx]].second;
         if (!util::geo::intersects(r->getLineBBox(lineId - I_OFFSET), bbox))
           continue;
 
         if (r->isArea(lineId - I_OFFSET) &&
             !r->isInnerArea(lineId - I_OFFSET)) {
           rcontext.drawArea(0, r->extractLineGeom(lineId - I_OFFSET, 3 * res),
-                            r->getVal(fid, oid));
+                            r->getVal(lid, oid));
         } else if (r->isArea(lineId - I_OFFSET) &&
                    r->isInnerArea(lineId - I_OFFSET)) {
           rcontext.drawArea(0, r->extractLineGeom(lineId - I_OFFSET, 3 * res),
-                            r->getVal(fid, oid), true, true);
+                            r->getVal(lid, oid), true, true);
         } else {
           if (!r->lineIntersects(lineId, bbox)) continue;
           rcontext.drawLine(0, r->extractLineGeom(lineId - I_OFFSET, 3 * res),
-                            r->getVal(fid, oid));
+                            r->getVal(lid, oid));
         }
       }
     } else {
-      const auto& lpgrid = r->getLinePointGrid(fid);
-      const auto& agrid = r->getAreaGrid(fid);
+      const auto& lpgrid = r->getLinePointGrid(lid);
+      const auto& agrid = r->getAreaGrid(lid);
       auto iBox = intersection(lpgrid.getBBox(), fbbox);
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
@@ -516,13 +516,13 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
       for (size_t idx = 0; idx < ret.size(); idx++) {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
-        auto lineId = r->getObjects(fid)[ret[idx]].first;
-        auto oid = r->getObjects(fid)[ret[idx]].second;
+        auto lineId = r->getObjects(lid)[ret[idx]].first;
+        auto oid = r->getObjects(lid)[ret[idx]].second;
         auto geom = r->extractLineGeom(lineId - I_OFFSET, res);
         if (r->isInnerArea(lineId - I_OFFSET)) {
-          rcontext.drawArea(0, geom, r->getVal(fid, oid), true, true);
+          rcontext.drawArea(0, geom, r->getVal(lid, oid), true, true);
         } else {
-          rcontext.drawArea(0, geom, r->getVal(fid, oid), true);
+          rcontext.drawArea(0, geom, r->getVal(lid, oid), true);
         }
       }
     }
@@ -531,7 +531,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   LOG(INFO) << "[SERVER] Adding points to heatmap...";
   heatmap_t* hm = heatmap_new(w, h);
   heatmap_t* hmInterior = heatmap_new(w, h);
-  hm->max = r->getValRange(fid).second;
+  hm->max = r->getValRange(lid).second;
 
   rcontext.writeHeatmap(hm);
 
@@ -688,20 +688,20 @@ util::http::Answer Server::handleGeoJSONReq(const Params& pars,
     throw std::invalid_argument("Session not ready.");
   }
 
-  size_t fid = reqor->getFieldById(layer);
+  size_t lid = reqor->getLidById(layer);
 
   // as soon as we are ready, the reqor can be read concurrently
-  auto res = reqor->getGeom(fid, gid, rad);
+  auto res = reqor->getGeom(lid, gid, rad);
 
   util::json::Val dict;
 
   if (!noExport) {
     size_t row;
-    if (gid < reqor->getObjects(fid).size()) {
-      row = reqor->getObjects(fid)[gid].second;
-    } else if (gid - reqor->getObjects(fid).size() <
-               reqor->getDynamicPoints(fid).size()) {
-      row = reqor->getDynamicPoints(fid)[gid - reqor->getObjects(fid).size()]
+    if (gid < reqor->getObjects(lid).size()) {
+      row = reqor->getObjects(lid)[gid].second;
+    } else if (gid - reqor->getObjects(lid).size() <
+               reqor->getDynamicPoints(lid).size()) {
+      row = reqor->getDynamicPoints(lid)[gid - reqor->getObjects(lid).size()]
                 .second;
     } else {
       throw std::invalid_argument("Invalid request.");
@@ -821,7 +821,7 @@ util::http::Answer Server::handlePosReq(const Params& pars,
 
   if (res.has) {
     json << "{\"id\" :" << res.id;
-    json << ",\"geomfield\" :\"" << reqor->getFields()[res.fieldId].geomField
+    json << ",\"geomfield\" :\"" << reqor->getLayers()[res.fieldId].geomField
          << "\"";
     json << ",\"attrs\" : [";
 
@@ -1056,9 +1056,9 @@ util::http::Answer Server::handleQueryReq(const Params& pars,
 
   util::geo::FBox bbox;
 
-  for (size_t fid = 0; fid < reqor->getNumFields(); fid++) {
-    bbox = extendBox(reqor->getPointGrid(fid).getBBox(), bbox);
-    bbox = extendBox(reqor->getLineGrid(fid).getBBox(), bbox);
+  for (size_t lid = 0; lid < reqor->getNumLayers(); lid++) {
+    bbox = extendBox(reqor->getPointGrid(lid).getBBox(), bbox);
+    bbox = extendBox(reqor->getLineGrid(lid).getBBox(), bbox);
   }
 
   size_t numObjs = reqor->getNumObjects();
@@ -1078,22 +1078,23 @@ util::http::Answer Server::handleQueryReq(const Params& pars,
        << ",\"autothreshold\":" << _autoThreshold << ",\"layers\": [";
 
   bool first = false;
-  for (size_t fid = 0; fid < reqor->getNumFields(); fid++) {
-    const auto& fld = reqor->getFields()[fid];
+  for (size_t lid = 0; lid < reqor->getNumLayers(); lid++) {
+    const auto& layer = reqor->getLayers()[lid];
     if (first) json << ",";
     first = true;
     json << "{";
-    json << "\"id\":\"" << fld.id << "\",";
-    json << "\"geomfield\":\"" << fld.geomField << "\",";
-    json << "\"name\":\"" << fld.name << "\",";
-    json << "\"group\":\"" << fld.group << "\",";
-    json << "\"color\":\"" << fld.color << "\",";
-    json << "\"colorscheme\":\"" << fld.colorscheme << "\",";
-    json << "\"numobjects\":\"" << reqor->getNumObjects(fid) << "\",";
-    json << "\"style\":\"" << fld.style << "\",";
-    json << "\"toggle\":\"" << fld.toggle << "\"";
-    if (fld.rasterW != 0 && fld.rasterH != 0)
-      json << ",\"rasterw\":" << fld.rasterW << ", \"rasterh\":" << fld.rasterH;
+    json << "\"id\":\"" << layer.id << "\",";
+    json << "\"geomfield\":\"" << layer.geomField << "\",";
+    json << "\"name\":\"" << layer.name << "\",";
+    json << "\"group\":\"" << layer.group << "\",";
+    json << "\"color\":\"" << layer.color << "\",";
+    json << "\"colorscheme\":\"" << layer.colorscheme << "\",";
+    json << "\"numobjects\":\"" << reqor->getNumObjects(lid) << "\",";
+    json << "\"style\":\"" << layer.style << "\",";
+    json << "\"toggle\":\"" << layer.toggle << "\"";
+    if (layer.rasterW != 0 && layer.rasterH != 0)
+      json << ",\"rasterw\":" << layer.rasterW
+           << ", \"rasterh\":" << layer.rasterH;
     json << "}";
   }
 
@@ -1525,8 +1526,6 @@ RequestorConfig Server::getRequestorCfgFromJSON(
     const std::string& jsonStr) const {
   RequestorConfig ret;
 
-  std::multiset<std::string> geomFields;
-
   try {
     nlohmann::json data = nlohmann::json::parse(jsonStr);
 
@@ -1542,19 +1541,10 @@ RequestorConfig Server::getRequestorCfgFromJSON(
               ss << "Could not parse requestor config '" << jsonStr << "'";
               throw std::runtime_error(ss.str());
             }
-            FieldConfig curField;
+            LayerConfig curField;
             if (layer.value().contains("id")) curField.id = layer.value()["id"];
-            if (layer.value().contains("geomfield")) {
+            if (layer.value().contains("geomfield"))
               curField.geomField = layer.value()["geomfield"];
-              if (geomFields.count(curField.geomField)) {
-                geomFields.insert(curField.geomField);
-                curField.geomField =
-                    std::string(layer.value()["geomfield"]) + ":" +
-                    std::to_string(geomFields.count(curField.geomField));
-              } else {
-                geomFields.insert(curField.geomField);
-              }
-            }
             if (layer.value().contains("name"))
               curField.name = layer.value()["name"];
             if (layer.value().contains("weightfield"))
@@ -1578,7 +1568,7 @@ RequestorConfig Server::getRequestorCfgFromJSON(
 
             // always assign an ID
             if (curField.id.size() == 0) curField.id = getFreeLayerId();
-            ret.fields.push_back(curField);
+            ret.layers.push_back(curField);
           }
         }
       }
@@ -1687,37 +1677,33 @@ RequestorConfig Server::getDefaultRequestorCfg(const std::string& backend,
       "Blues",       "Bluesexp",   "Greens", "Greensexp", "Greys",  "Greysexp",
       "Oranges",     "Orangesexp", "Reds",   "Redsexp"};
 
-  FieldConfig autoField;
-  autoField.geomField = cols.back();
-  autoField.id = "auto";
-  autoField.name = "Auto";
-  autoField.group = "Auto";
-  autoField.color = "3388ff";
-  autoField.style = "auto";
+  LayerConfig autoLayer;
+  autoLayer.geomField = cols.back();
+  autoLayer.id = "auto";
+  autoLayer.name = "Auto";
+  autoLayer.group = "Auto";
+  autoLayer.color = "3388ff";
+  autoLayer.style = "auto";
 
-  FieldConfig objectField;
-  autoField.geomField = cols.back();
-  autoField.id = "objects";
-  autoField.name = "Objects";
-  autoField.group = "Objects";
-  autoField.color = "3388ff";
-  autoField.style = "objects";
+  LayerConfig objectLayer;
+  autoLayer.geomField = cols.back();
+  autoLayer.id = "objects";
+  autoLayer.name = "Objects";
+  autoLayer.group = "Objects";
+  autoLayer.color = "3388ff";
+  autoLayer.style = "objects";
 
-  ret.fields.push_back(autoField);
-  ret.fields.push_back(objectField);
-
-  size_t i = 0;
+  ret.layers.push_back(autoLayer);
+  ret.layers.push_back(objectLayer);
 
   for (const auto& heatmapStyle : heatmapStyles) {
-    i++;
-    if (i > 2) break;
-    FieldConfig heatField;
-    heatField.geomField = cols.back();
-    heatField.group = "Heatmap";
-    heatField.id = std::string("heatmap-") + heatmapStyle;
-    heatField.name = heatmapStyle;
-    heatField.colorscheme = heatmapStyle;
-    ret.fields.push_back(heatField);
+    LayerConfig heatLayer;
+    heatLayer.geomField = cols.back();
+    heatLayer.group = "Heatmap";
+    heatLayer.id = std::string("heatmap-") + heatmapStyle;
+    heatLayer.name = heatmapStyle;
+    heatLayer.colorscheme = heatmapStyle;
+    ret.layers.push_back(heatLayer);
   }
 
   return ret;
