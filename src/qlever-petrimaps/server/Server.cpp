@@ -220,10 +220,39 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
     lid = r->getLidById(layerId);
   }
 
+  if (box.size() != 4) throw std::invalid_argument("Invalid request.");
+
+  LOG(INFO) << "[SERVER] Begin heatmap generation for session " << id;
+
+  double x1 = std::atof(box[0].c_str());
+  double y1 = std::atof(box[1].c_str());
+  double x2 = std::atof(box[2].c_str());
+  double y2 = std::atof(box[3].c_str());
+
+  double mercW = fabs(x2 - x1);
+  double mercH = fabs(y2 - y1);
+
+  auto bbox = DBox({x1, y1}, {x2, y2});
+  auto fbbox = FBox({x1, y1}, {x2, y2});
+
+  double orx = bbox.getLowerLeft().getX();
+  double ory = bbox.getLowerLeft().getY();
+
+  int w = atoi(pars.find("width")->second.c_str());
+  int h = atoi(pars.find("height")->second.c_str());
+
+  if (w <= 0 || w > 3000) throw std::invalid_argument("Invalid request");
+  if (h <= 0 || h > 3000) throw std::invalid_argument("Invalid request");
+
+  double res = mercH / h;
+
   lcfg = r->getLayers()[lid];
 
   if (lcfg.style == "objects") style = OBJECTS;
   if (lcfg.style == "raster") style = RASTER;
+  if (lcfg.style == "auto" && res < THRESHOLD &&
+      r->getNumObjects(lid) > _autoThreshold)
+    style = OBJECTS;
 
   if (style == RASTER && parts.size() > 1) {
     // in web mercator units (pseudometers)!
@@ -291,32 +320,6 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
     if (lcfg.colorscheme == "Reds") colorScheme = heatmap_cs_Reds_discrete;
   }
 
-  if (box.size() != 4) throw std::invalid_argument("Invalid request.");
-
-  LOG(INFO) << "[SERVER] Begin heatmap generation for session " << id;
-
-  double x1 = std::atof(box[0].c_str());
-  double y1 = std::atof(box[1].c_str());
-  double x2 = std::atof(box[2].c_str());
-  double y2 = std::atof(box[3].c_str());
-
-  double mercW = fabs(x2 - x1);
-  double mercH = fabs(y2 - y1);
-
-  auto bbox = DBox({x1, y1}, {x2, y2});
-  auto fbbox = FBox({x1, y1}, {x2, y2});
-
-  double orx = bbox.getLowerLeft().getX();
-  double ory = bbox.getLowerLeft().getY();
-
-  int w = atoi(pars.find("width")->second.c_str());
-  int h = atoi(pars.find("height")->second.c_str());
-
-  if (w <= 0 || w > 3000) throw std::invalid_argument("Invalid request");
-  if (h <= 0 || h > 3000) throw std::invalid_argument("Invalid request");
-
-  double res = mercH / h;
-
   checkMem(sizeof(float) * w * h, _maxMemory);
   double realCellSize = r->getPointGrid(lid).getCellWidth();
   double virtCellSize = res * 1.5;
@@ -329,12 +332,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   LOG(INFO) << "[SERVER] Virt cell size: " << virtCellSize;
   LOG(INFO) << "[SERVER] Num virt cells: " << subCellSize * subCellSize;
 
-  ObjectStyle objectStyle{3, 2, 0.5, 1};
-
   checkMem(sizeof(unsigned char) * w * h * 4 +
                sizeof(unsigned char) * w * h * 4 * NUM_THREADS * 2,
            _maxMemory);
-  RenderContext rcontext(w, h, orx, ory, mercW, mercH, style, objectStyle,
+  RenderContext rcontext(w, h, orx, ory, mercW, mercH, style, lcfg.objectStyle,
                          NUM_THREADS);
 
   // POINTS
@@ -546,16 +547,26 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
     heatmap_render_to(hm, colorScheme, &rcontext.getImage()[0]);
   } else if (style == OBJECTS) {
     unsigned char fillColors[] = {
-        0,         0,         0,         0,
-        0,         0,         0,         0,
-        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity * 0.06,
-        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity * 0.12,
-        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity * 0.25,
-        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity * 0.5,
-        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity * 0.65,
-        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity * 0.8,
-        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity * 0.9,
-        objColorR, objColorG, objColorB, 256 * objectStyle.fillOpacity};
+        0,         0,
+        0,         0,
+        0,         0,
+        0,         0,
+        objColorR, objColorG,
+        objColorB, 256 * lcfg.objectStyle.fillOpacity * 0.06,
+        objColorR, objColorG,
+        objColorB, 256 * lcfg.objectStyle.fillOpacity * 0.12,
+        objColorR, objColorG,
+        objColorB, 256 * lcfg.objectStyle.fillOpacity * 0.25,
+        objColorR, objColorG,
+        objColorB, 256 * lcfg.objectStyle.fillOpacity * 0.5,
+        objColorR, objColorG,
+        objColorB, 256 * lcfg.objectStyle.fillOpacity * 0.65,
+        objColorR, objColorG,
+        objColorB, 256 * lcfg.objectStyle.fillOpacity * 0.8,
+        objColorR, objColorG,
+        objColorB, 256 * lcfg.objectStyle.fillOpacity * 0.9,
+        objColorR, objColorG,
+        objColorB, 256 * lcfg.objectStyle.fillOpacity};
     heatmap_colorscheme_t fillColorScheme = {
         fillColors, sizeof(fillColors) / sizeof(fillColors[0]) / 4};
 
@@ -569,21 +580,21 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         objColorR, objColorG, objColorB, 0,
         objColorR, objColorG, objColorB, 0,
         objColorR, objColorG, objColorB, 0,
-        objColorR, objColorG, objColorB, 255 * objectStyle.lineOpacity};
+        objColorR, objColorG, objColorB, 255 * lcfg.objectStyle.lineOpacity};
     heatmap_colorscheme_t borderColor2Scheme = {
         borderColors2, sizeof(borderColors2) / sizeof(borderColors2[0]) / 4};
 
     unsigned char borderColors[] = {
         0,         0,         0,         0,
-        objColorR, objColorG, objColorB, 64 * objectStyle.lineOpacity,
-        objColorR, objColorG, objColorB, 64 * objectStyle.lineOpacity,
-        objColorR, objColorG, objColorB, 64 * objectStyle.lineOpacity,
-        objColorR, objColorG, objColorB, 64 * objectStyle.lineOpacity,
-        objColorR, objColorG, objColorB, 128 * objectStyle.lineOpacity,
-        objColorR, objColorG, objColorB, 160 * objectStyle.lineOpacity,
-        objColorR, objColorG, objColorB, 192 * objectStyle.lineOpacity,
-        objColorR, objColorG, objColorB, 192 * objectStyle.lineOpacity,
-        objColorR, objColorG, objColorB, 192 * objectStyle.lineOpacity};
+        objColorR, objColorG, objColorB, 64 * lcfg.objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 64 * lcfg.objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 64 * lcfg.objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 64 * lcfg.objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 128 * lcfg.objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 160 * lcfg.objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 192 * lcfg.objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 192 * lcfg.objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 192 * lcfg.objectStyle.lineOpacity};
     heatmap_colorscheme_t borderColorScheme = {
         borderColors, sizeof(borderColors) / sizeof(borderColors[0]) / 4};
 
@@ -1074,8 +1085,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars,
   std::stringstream json;
   json << std::fixed << "{\"qid\" : \"" << sessionId << "\",\"bounds\":[["
        << llX << "," << llY << "],[" << urX << "," << urY << "]]"
-       << ",\"numobjects\":" << numObjs
-       << ",\"autothreshold\":" << _autoThreshold << ",\"layers\": [";
+       << ",\"numobjects\":" << numObjs << ",\"layers\": [";
 
   bool first = false;
   for (size_t lid = 0; lid < reqor->getNumLayers(); lid++) {
@@ -1564,6 +1574,18 @@ RequestorConfig Server::getRequestorCfgFromJSON(
                   layer.value()["colorscheme"].get<std::string>();
             if (layer.value().contains("style"))
               curField.style = layer.value()["style"].get<std::string>();
+            if (layer.value().contains("linew"))
+              curField.objectStyle.lineWidth =
+                  layer.value()["linew"].get<double>();
+            if (layer.value().contains("fillopacity"))
+              curField.objectStyle.fillOpacity =
+                  layer.value()["fillopacity"].get<double>();
+            if (layer.value().contains("lineopacity"))
+              curField.objectStyle.lineOpacity =
+                  layer.value()["lineopacity"].get<double>();
+            if (layer.value().contains("pointradius"))
+              curField.objectStyle.pointRadius =
+                  layer.value()["pointradius"].get<double>();
             if (curField.name.size() == 0) curField.name = curField.geomField;
 
             // always assign an ID
@@ -1686,12 +1708,12 @@ RequestorConfig Server::getDefaultRequestorCfg(const std::string& backend,
   autoLayer.style = "auto";
 
   LayerConfig objectLayer;
-  autoLayer.geomField = cols.back();
-  autoLayer.id = "objects";
-  autoLayer.name = "Objects";
-  autoLayer.group = "Objects";
-  autoLayer.color = "3388ff";
-  autoLayer.style = "objects";
+  objectLayer.geomField = cols.back();
+  objectLayer.id = "objects";
+  objectLayer.name = "Objects";
+  objectLayer.group = "Objects";
+  objectLayer.color = "3388ff";
+  objectLayer.style = "objects";
 
   ret.layers.push_back(autoLayer);
   ret.layers.push_back(objectLayer);
@@ -1703,6 +1725,7 @@ RequestorConfig Server::getDefaultRequestorCfg(const std::string& backend,
     heatLayer.id = std::string("heatmap-") + heatmapStyle;
     heatLayer.name = heatmapStyle;
     heatLayer.colorscheme = heatmapStyle;
+    heatLayer.style = "heatmap";
     ret.layers.push_back(heatLayer);
   }
 

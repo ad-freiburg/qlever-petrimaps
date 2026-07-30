@@ -18,6 +18,7 @@
 #include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/Grid.h"
 #include "qlever-petrimaps/Misc.h"
+#include "qlever-petrimaps/server/RenderContext.h"
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
@@ -38,6 +39,7 @@ struct LayerConfig {
   std::string color = "3388ff";
   std::string colorscheme = "spectralexp";
   std::string style = "auto";
+  ObjectStyle objectStyle;
 };
 
 struct RequestorConfig {
@@ -124,9 +126,10 @@ class Requestor {
 
     LOG(util::LogLevel::INFO)
         << "[REQUESTOR] " << _layers.size() << " layers, "
-        << _geomColumns.size() << " geom columns, " << _valueColumns.size()
-        << " value columns, " << _rasterMetaColumns.size()
-        << " raster columns, " << _gridSets.size() << " grid sets";
+        << _geomColumns.size() << " unique geom columns, "
+        << _valueColumns.size() << " unique value columns, "
+        << _rasterMetaColumns.size() << " raster columns, " << _gridSets.size()
+        << " unique grid sets";
   }
 
   void request(const std::string& remoteAddr);

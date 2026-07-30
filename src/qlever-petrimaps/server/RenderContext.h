@@ -18,10 +18,10 @@ namespace petrimaps {
 enum MapStyle { HEATMAP, OBJECTS, RASTER };
 
 struct ObjectStyle {
-  double pointRadius;
-  double lineWidth;
-  double fillOpacity;
-  double lineOpacity;
+  double pointRadius = 3;
+  double lineWidth = 2;
+  double fillOpacity = .5;
+  double lineOpacity = 1;
 };
 
 class RenderContext {

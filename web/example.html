@@ -48,6 +48,15 @@
       border: none;
       background-color: default;
     }
+
+    .tabs button {
+      width: auto;
+    }
+
+    .tabs button.active {
+      background-color: #ccc;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -55,8 +64,14 @@
     <h2>petrimaps integration example</h2>
 
     <form>
-      <label for="config">Requestor config JSON</label>
-      <textarea id="config" name="cfg">
+      <label>Requestor config JSON</label>
+
+      <div class="tabs">
+        <button type="button" class="active" onclick="showTab(0)">Example 1</button>
+        <button type="button" onclick="showTab(1)">Example 2</button>
+      </div>
+
+      <textarea class="config" id="config1" name="cfg">
 {
   "query" : "PREFIX geo: <http://www.opengis.net/ont/geosparql#>\nPREFIX osm: <https://www.openstreetmap.org/>\nPREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nPREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>\nPREFIX osm2rdf: <https://osm2rdf.cs.uni-freiburg.de/rdf#>\nSELECT ?country ?admin_level ?area ?geom WHERE {\n  ?country osmkey:admin_level ?admin_level .\n  ?country rdf:type osm:relation .                                                                                                                                                                                 \n  ?country osmkey:name ?name . \n  ?country osm2rdf:area ?area . \n  ?country geo:hasGeometry/geo:asWKT ?geom . \n  ?country osmkey:start_date ?start_date .                                                              \n  ?country osmkey:end_date ?end_date .   \n  VALUES ?date { \"1900-01-01\"^^xsd:date } \n  FILTER (?date >= xsd:date(?start_date) && ?date <= xsd:date(?end_date))                                                                                                                                          \n}",
   "layers" : [
@@ -104,6 +119,112 @@
 }
 </textarea>
 
+      <textarea class="config" id="config2" name="cfg" hidden disabled>
+{
+  "query" : "PREFIX geo: <http://www.opengis.net/ont/geosparql#>\nPREFIX osm: <https://www.openstreetmap.org/>\nPREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nPREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>\nPREFIX osm2rdf: <https://osm2rdf.cs.uni-freiburg.de/rdf#>\nSELECT ?country ?admin_level ?area ?geom WHERE {\n  ?country osmkey:admin_level ?admin_level .\n  ?country rdf:type osm:relation .                                                                                                                                                                                 \n  ?country osmkey:name ?name . \n  ?country osm2rdf:area ?area . \n  ?country geo:hasGeometry/geo:asWKT ?geom . \n  ?country osmkey:start_date ?start_date .                                                              \n  ?country osmkey:end_date ?end_date .   \n  VALUES ?date { \"1900-01-01\"^^xsd:date } \n  FILTER (?date >= xsd:date(?start_date) && ?date <= xsd:date(?end_date))                                                                                                                                          \n}",
+  "layers" : [
+    {
+        "name" : "?geom linew=0",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 0,
+        "fillopacity" : 0.5
+    },
+    {
+        "name" : "?geom linew=1",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 1,
+        "fillopacity" : 0.5
+    },
+    {
+        "name" : "?geom linew=2",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 2,
+        "fillopacity" : 0.5
+    },
+    {
+        "name" : "?geom linew=3",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 3,
+        "fillopacity" : 0.5
+    },
+    {
+        "name" : "?geom linew=4",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 4,
+        "fillopacity" : 0.5
+    },
+    {
+        "name" : "?geom linew=5",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 5,
+        "fillopacity" : 0.5
+    },
+    {
+        "name" : "?geom linew=6",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 6,
+        "fillopacity" : 0.5
+    },
+    {
+        "name" : "?geom linew=7",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 7,
+        "fillopacity" : 0.5
+    },
+    {
+        "name" : "?geom linew=8",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 8,
+        "fillopacity" : 0.5
+    },
+    {
+        "name" : "?geom linew=9",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 9,
+        "fillopacity" : 0.5
+    },
+    {
+        "name" : "?geom linew=10",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 10,
+        "fillopacity" : 0.5
+    },
+    {
+        "name" : "?geom linew=20",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 20,
+        "fillopacity" : 0.5
+    },
+    {
+        "name" : "?geom linew=50",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 50,
+        "fillopacity" : 0.5
+    },
+    {
+        "name" : "?geom linew=100",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 100,
+        "fillopacity" : 0.5
+    }
+  ]
+}
+</textarea>
+
       <label for="backend">QLever backend</label>
       <input type="text" id="backend" name="backend" value="https://qlever.dev/api/ohm-planet" />
 
@@ -121,6 +242,18 @@
   </div>
 
   <script>
+    // only the config of the active tab is part of the form data
+    function showTab(i) {
+      document.querySelectorAll('.tabs button').forEach((tab, j) => {
+        tab.classList.toggle('active', i === j);
+      });
+
+      document.querySelectorAll('textarea.config').forEach((area, j) => {
+        area.hidden = i !== j;
+        area.disabled = i !== j;
+      });
+    }
+
     function submitForm() {
       const form = document.getElementsByTagName('form')[0];
       const method = document.querySelector('input[name="method"]:checked').value;
