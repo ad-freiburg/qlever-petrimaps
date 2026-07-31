@@ -361,8 +361,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           auto px = RenderContext::mercToPx(cp, orx, ory, mercW, mercH, w, h);
           auto ppx = RenderContext::mercToPx(p, orx, ory, mercW, mercH, w, h);
 
-          rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(lid, oid), 0, 0,
-                             1);
+          rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(lid, oid), 0,
+                             0);
           rcontext.drawLineSegment(px.getX(), px.getY(), ppx.getX(), ppx.getY(),
                                    w, h);
         } else {
@@ -377,10 +377,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
             auto rasterMeta =
                 r->getRasterMetas(lid, oid, {rasterWidth, rasterHeight});
             rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(lid, oid),
-                               rasterMeta.first, rasterMeta.second, 1);
+                               rasterMeta.first, rasterMeta.second);
           } else {
             rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(lid, oid), 0,
-                               0, 1);
+                               0);
           }
         }
       }
@@ -407,7 +407,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
             // TODO: just setting rasterWidth to 1x1 here is not correct
             rcontext.drawPoint(tid, px.getX(), px.getY(), grid.getCellSum(x, y),
-                               1, 1, 0.5);
+                               1, 1);
           } else {
             for (auto oid : *cell) {
               if (r->isCluster(lid, oid)) oid = r->getCluster(lid, oid).first;
@@ -421,10 +421,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                     r->getRasterMetas(lid, oid, {rasterWidth, rasterHeight});
                 rcontext.drawPoint(tid, px.getX(), px.getY(),
                                    r->getVal(lid, oid), rasterMeta.first,
-                                   rasterMeta.second, 0.5);
+                                   rasterMeta.second);
               } else {
                 rcontext.drawPoint(tid, px.getX(), px.getY(),
-                                   r->getVal(lid, oid), 0, 0, 0.5);
+                                   r->getVal(lid, oid), 0, 0);
               }
             }
           }
@@ -552,49 +552,59 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         0,         0,
         0,         0,
         objColorR, objColorG,
-        objColorB, 256 * lcfg.objectStyle.fillOpacity * 0.06,
+        objColorB, 255 * lcfg.objectStyle.fillOpacity * 0.06,
         objColorR, objColorG,
-        objColorB, 256 * lcfg.objectStyle.fillOpacity * 0.12,
+        objColorB, 255 * lcfg.objectStyle.fillOpacity * 0.12,
         objColorR, objColorG,
-        objColorB, 256 * lcfg.objectStyle.fillOpacity * 0.25,
+        objColorB, 255 * lcfg.objectStyle.fillOpacity * 0.25,
         objColorR, objColorG,
-        objColorB, 256 * lcfg.objectStyle.fillOpacity * 0.5,
+        objColorB, 255 * lcfg.objectStyle.fillOpacity * 0.5,
         objColorR, objColorG,
-        objColorB, 256 * lcfg.objectStyle.fillOpacity * 0.65,
+        objColorB, 255 * lcfg.objectStyle.fillOpacity * 0.65,
         objColorR, objColorG,
-        objColorB, 256 * lcfg.objectStyle.fillOpacity * 0.8,
+        objColorB, 255 * lcfg.objectStyle.fillOpacity * 0.8,
         objColorR, objColorG,
-        objColorB, 256 * lcfg.objectStyle.fillOpacity * 0.9,
+        objColorB, 255 * lcfg.objectStyle.fillOpacity * 0.9,
         objColorR, objColorG,
-        objColorB, 256 * lcfg.objectStyle.fillOpacity};
+        objColorB, 255 * lcfg.objectStyle.fillOpacity};
     heatmap_colorscheme_t fillColorScheme = {
         fillColors, sizeof(fillColors) / sizeof(fillColors[0]) / 4};
 
     unsigned char borderColors2[] = {
-        0,         0,         0,         0,
-        0,         0,         0,         0,
-        objColorR, objColorG, objColorB, 0,
-        objColorR, objColorG, objColorB, 0,
-        objColorR, objColorG, objColorB, 0,
-        objColorR, objColorG, objColorB, 0,
-        objColorR, objColorG, objColorB, 0,
-        objColorR, objColorG, objColorB, 0,
-        objColorR, objColorG, objColorB, 0,
-        objColorR, objColorG, objColorB, 255 * lcfg.objectStyle.lineOpacity};
+        0,         0,
+        0,         0,
+        0,         0,
+        0,         0,
+        objColorR, objColorG,
+        objColorB, 0,
+        objColorR, objColorG,
+        objColorB, 0,
+        objColorR, objColorG,
+        objColorB, 0,
+        objColorR, objColorG,
+        objColorB, 0,
+        objColorR, objColorG,
+        objColorB, 0,
+        objColorR, objColorG,
+        objColorB, 0,
+        objColorR, objColorG,
+        objColorB, 0,
+        objColorR, objColorG,
+        objColorB, std::max(1.0, 255 * lcfg.objectStyle.lineOpacity)};
     heatmap_colorscheme_t borderColor2Scheme = {
         borderColors2, sizeof(borderColors2) / sizeof(borderColors2[0]) / 4};
 
     unsigned char borderColors[] = {
         0,         0,         0,         0,
-        objColorR, objColorG, objColorB, 64 * lcfg.objectStyle.lineOpacity,
-        objColorR, objColorG, objColorB, 64 * lcfg.objectStyle.lineOpacity,
-        objColorR, objColorG, objColorB, 64 * lcfg.objectStyle.lineOpacity,
-        objColorR, objColorG, objColorB, 64 * lcfg.objectStyle.lineOpacity,
         objColorR, objColorG, objColorB, 128 * lcfg.objectStyle.lineOpacity,
-        objColorR, objColorG, objColorB, 160 * lcfg.objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 169 * lcfg.objectStyle.lineOpacity,
         objColorR, objColorG, objColorB, 192 * lcfg.objectStyle.lineOpacity,
-        objColorR, objColorG, objColorB, 192 * lcfg.objectStyle.lineOpacity,
-        objColorR, objColorG, objColorB, 192 * lcfg.objectStyle.lineOpacity};
+        objColorR, objColorG, objColorB, 255 * lcfg.objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 255 * lcfg.objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 255 * lcfg.objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 255 * lcfg.objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 255 * lcfg.objectStyle.lineOpacity,
+        objColorR, objColorG, objColorB, 255 * lcfg.objectStyle.lineOpacity};
     heatmap_colorscheme_t borderColorScheme = {
         borderColors, sizeof(borderColors) / sizeof(borderColors[0]) / 4};
 
@@ -1586,6 +1596,8 @@ RequestorConfig Server::getRequestorCfgFromJSON(
             if (layer.value().contains("pointradius"))
               curField.objectStyle.pointRadius =
                   layer.value()["pointradius"].get<double>();
+            if (layer.value().contains("group"))
+              curField.group = layer.value()["group"].get<std::string>();
             if (curField.name.size() == 0) curField.name = curField.geomField;
 
             // always assign an ID

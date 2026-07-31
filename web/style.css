@@ -88,7 +88,8 @@
 }
 
 .leaflet-overlay-pane {
-    z-index: 400
+    z-index: 400;
+    transform: translate3d(-0.5px, -0.5px, 0);
 }
 
 .leaflet-shadow-pane {
