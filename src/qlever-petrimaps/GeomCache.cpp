@@ -85,7 +85,7 @@ void GeomCache::parse(const char *c, size_t size) {
             _qidToIdFSize++;
           } else {
             const char *s = 0;
-            auto crsType = util::geo::getCRSType(_dangling.c_str(), &s)
+            auto crsType = util::geo::getCRSType(_dangling.c_str(), &s);
             auto wktType = util::geo::getWKTType(s, &s);
             size_t i = 0;
 
