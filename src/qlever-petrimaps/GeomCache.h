@@ -221,7 +221,7 @@ class GeomCache {
 
   static std::vector<size_t> getGeomStarts(const std::string& str, size_t a);
 
-  static util::geo::DPoint projD(const util::geo::DPoint& p) {
+  static util::geo::DPoint projD(const util::geo::DPoint& p, const util::geo::CRSType&) {
     return util::geo::latLngToWebMerc<double>(p);
   }
 
