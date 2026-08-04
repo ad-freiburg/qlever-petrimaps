@@ -765,7 +765,9 @@ h1, #msg-heading {
     padding: 5px;
 }
 
-#ex button {
+#ex button,
+#tile-actions button,
+.tile-copy {
     padding: 6px 12px;
     margin-bottom: 0;
     font-size: 15px;
@@ -788,7 +790,9 @@ h1, #msg-heading {
     box-shadow: 4px 4px 9px -6px #000000;
 }
 
-#ex button:hover {
+#ex button:hover,
+#tile-actions button:hover,
+.tile-copy:hover {
     background-color: #f4f4f4;
 }
 
@@ -809,4 +813,80 @@ h1, #msg-heading {
 
 .export-link {
     font-size: 80%;
+}
+
+#tile-modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.55);
+    z-index: 2000;
+}
+
+#tile-card {
+    width: min(760px, 92vw);
+    background: #fff;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
+}
+
+#tile-title {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+#tile-subtitle {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 16px;
+}
+
+#tile-url-list {
+    border-top: 1px solid #ddd;
+    margin-bottom: 18px;
+}
+
+.tile-url-row {
+    display: grid;
+    grid-template-columns: 120px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    border-bottom: 1px solid #ddd;
+    padding: 12px 0;
+}
+
+.tile-url-meta {
+    min-width: 0;
+}
+
+.tile-url-label {
+    font-weight: 700;
+}
+.tile-url-desc {
+    color: #666;
+    font-size: 13px;
+}
+.tile-url-code {
+    background: #f5f5f5;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: monospace;
+    font-size: 13px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+    min-width: 0;
+}
+
+.tile-copy {
+    margin-left: 0;
+}
+#tile-actions {
+    display: flex;
+    gap: 12px;
 }

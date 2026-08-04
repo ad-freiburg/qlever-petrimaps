@@ -641,83 +641,26 @@ const ResObj Requestor::getNearest(size_t fieldId, util::geo::DPoint rp,
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
       for (size_t idx = 0; idx < retL.size(); idx++) {
         const auto& oid = retL[idx];
-        auto lBox =
-            _cache->getLineBBox(_objects[fieldId][oid].first - I_OFFSET);
-        if (!util::geo::intersects(lBox, box)) continue;
+        const size_t geometryId = _objects[fieldId][oid].first - I_OFFSET;
+        const auto lBox = _cache->getLineBBox(geometryId);
 
-        size_t start = _cache->getLine(_objects[fieldId][oid].first - I_OFFSET);
-        size_t end =
-            _cache->getLineEnd(_objects[fieldId][oid].first - I_OFFSET);
-
-        // TODO _____________________ own function
-        double d = std::numeric_limits<double>::infinity();
-
-        util::geo::DPoint curPa, curPb;
-        int s = 0;
-
-        size_t gi = 0;
-
-        double mainX = 0;
-        double mainY = 0;
-
-        bool isArea =
-            Requestor::isArea(_objects[fieldId][oid].first - I_OFFSET);
-
-        util::geo::DLine areaBorder;
-
-        for (size_t i = start; i < end; i++) {
-          // extract real geom
-          const auto& cur = _cache->getLinePoints()[i];
-
-          if (isMCoord(cur.getX())) {
-            mainX = rmCoord(cur.getX());
-            mainY = rmCoord(cur.getY());
-            continue;
-          }
-
-          // skip bounding box at beginning
-          gi++;
-          if (gi < 3) continue;
-
-          // extract real geometry
-          util::geo::DPoint curP(
-              (mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
-              (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
-
-          if (isArea) areaBorder.push_back(curP);
-
-          if (s == 0) {
-            curPa = curP;
-            s++;
-          } else if (s == 1) {
-            curPb = curP;
-            s++;
-          }
-
-          if (s == 2) {
-            s = 1;
-            double dTmp = util::geo::distToSegment(curPa, curPb, rp);
-            if (dTmp < 0.0001) {
-              d = 0;
-              break;
-            }
-            curPa = curPb;
-            if (dTmp < d) d = dTmp;
-          }
-        }
-        // TODO _____________________ own function
-
-        if (isArea) {
-          if (util::geo::contains(rp, util::geo::DPolygon(areaBorder))) {
-            // set it to rad/4 - this allows selecting smaller objects
-            // inside the polgon
-            d = rad / 4;
-          }
+        if (!util::geo::intersects(lBox, box)) {
+          continue;
         }
 
-        if (d < dBestLVec[omp_get_thread_num()]) {
-          nearestLVec[omp_get_thread_num()] = oid;
-          dBestLVec[omp_get_thread_num()] = d;
+        double distance;
+
+        if (isArea(geometryId)) {
+          distance = getPolygonDistance(geometryId, rp, rad);
+        } else {
+          distance = getLineDistance(geometryId, rp);
+        }
+
+        const auto threadId = omp_get_thread_num();
+
+        if (distance < dBestLVec[threadId]) {
+          nearestLVec[threadId] = oid;
+          dBestLVec[threadId] = distance;
         }
       }
     }
@@ -852,6 +795,69 @@ bool Requestor::isInnerArea(size_t lineId) const {
 
   return isMCoord(_cache->getLinePoints()[end - 1].getX()) &&
          rmCoord(_cache->getLinePoints()[end - 1].getX()) == 1;
+}
+
+// _____________________________________________________________________________
+double Requestor::getLineDistance(
+    size_t lineId,
+    const util::geo::DPoint& queryPoint) const {
+  const auto line = extractLineGeom(lineId);
+
+  if (line.size() < 2) {
+    return std::numeric_limits<double>::infinity();
+  }
+
+  double bestDistance =
+      std::numeric_limits<double>::infinity();
+
+  for (size_t i = 1; i < line.size(); ++i) {
+    const double currentDistance = util::geo::distToSegment(
+              line[i - 1],line[i], queryPoint);
+
+    if (currentDistance < bestDistance) {
+      bestDistance = currentDistance;
+    }
+
+    if (bestDistance < 0.0001) {
+      break;
+    }
+  }
+  return bestDistance;
+}
+
+// _____________________________________________________________________________
+double Requestor::getPolygonDistance(
+    size_t polygonId,
+    const util::geo::DPoint& queryPoint,
+    double radius) const {
+  const auto border = extractLineGeom(polygonId);
+
+  if (border.size() < 3) {
+    return std::numeric_limits<double>::infinity();
+  }
+
+  const util::geo::DPolygon polygon(border);
+
+  if (util::geo::contains(queryPoint, polygon)) {
+    return radius / 4;
+  }
+
+  double bestDistance = std::numeric_limits<double>::infinity();
+
+  for (size_t i = 1; i < border.size(); ++i) {
+    const double currentDistance = util::geo::distToSegment(
+      border[i - 1], border[i], queryPoint);
+
+    if (currentDistance < bestDistance) {
+      bestDistance = currentDistance;
+    }
+
+    if (bestDistance < 0.0001) {
+      break;
+    }
+  }
+
+  return bestDistance;
 }
 
 // _____________________________________________________________________________
