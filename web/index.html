@@ -20,9 +20,10 @@
       <main>
          <div id='m'></div>
 		 <div id='ex'>
-		   <button id='ex-csv'>Export as CSV</button>
-		   <button id='ex-tsv'>Export as TSV</button>
-		   <button id='ex-geojson'>Export as GeoJSON</button>
+         <button id='ex-tile'>Export as Tile</button>
+         <button id='ex-csv'>Export as CSV</button>
+         <button id='ex-tsv'>Export as TSV</button>
+         <button id='ex-geojson'>Export as GeoJSON</button>
 		 </div>
 		 <div id='stats'></div>
       </main>
@@ -39,6 +40,45 @@
                <div id="load-bar"></div>
                <div id="load-percent">0.00%</div>
                <div id="load-spinner"></div>
+            </div>
+         </div>
+      </div>
+      <div id="tile-modal">
+         <div id="tile-card">
+            <div id="tile-title">Tile export URLs</div>
+            <div id="tile-subtitle">Choose which export URL to copy.</div>
+            
+            <div id="tile-url-list">
+               <div class="tile-url-row">
+                  <div class="tile-url-meta">
+                     <div class="tile-url-label">TMS</div>
+                     <div class="tile-url-desc">Raster tile template</div>
+                  </div>
+                  <pre id="tms-code" class="tile-url-code"></pre>
+                  <button class="tile-copy" data-copy-target="tms-code">Copy</button>
+               </div>
+
+               <div class="tile-url-row">
+                  <div class="tile-url-meta">
+                     <div class="tile-url-label">WMTS</div>
+                     <div class="tile-url-desc">OGC WMTS GetTile template</div>
+                  </div>
+                  <pre id="wmts-code" class="tile-url-code"></pre>
+                  <button class="tile-copy" data-copy-target="wmts-code">Copy</button>
+               </div>
+
+               <div class="tile-url-row">
+                  <div class="tile-url-meta">
+                     <div class="tile-url-label">WFS</div>
+                     <div class="tile-url-desc">OGC WFS GetFeature URL</div>
+                  </div>
+                  <pre id="wfs-code" class="tile-url-code"></pre>
+                  <button class="tile-copy" data-copy-target="wfs-code">Copy</button>
+               </div>
+            </div>
+
+            <div id="tile-actions">
+               <button id="tile-close">Close</button>
             </div>
          </div>
       </div>

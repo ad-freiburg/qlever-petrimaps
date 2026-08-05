@@ -40,6 +40,10 @@ struct LayerConfig {
   std::string colorscheme = "spectralexp";
   std::string style = "auto";
   ObjectStyle objectStyle;
+
+  const std::string geomFieldRaw() const {
+    return util::split(geomField, ':')[0];
+  }
 };
 
 struct RequestorConfig {
@@ -242,6 +246,15 @@ class Requestor {
   util::geo::DLine extractLineGeom(size_t lineId, double minD = 0) const;
   bool isArea(size_t lineId) const;
   bool isInnerArea(size_t lineId) const;
+
+  double getLineDistance(
+      size_t lineId,
+      const util::geo::DPoint& queryPoint) const;
+
+  double getPolygonDistance(
+      size_t polygonId,
+      const util::geo::DPoint& queryPoint,
+      double radius) const;
 
   // total number of objects over all distinct geometry columns
   size_t getNumObjects() const {
