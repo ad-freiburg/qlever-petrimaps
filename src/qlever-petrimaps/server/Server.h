@@ -77,9 +77,6 @@ class Server : public util::http::Handler {
   util::http::Answer handleClearSessReq(const Params& pars,
                                         const HeaderParams& headerPars,
                                         int sock) const;
-  util::http::Answer handlePosReq(const Params& pars,
-                                  const HeaderParams& headerPars,
-                                  int sock) const;
   util::http::Answer handleLoadReq(const Params& pars, int sock) const;
 
   util::http::Answer handleExportReq(const Params& pars,

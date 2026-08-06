@@ -146,8 +146,7 @@ function getWfsExportUrl(feature) {
         service: "WFS",
         version: "2.0.0",
         request: "GetFeature",
-        typeNames: "session_" + sessionId,
-        geomfield: feature.geomfield,
+        typeNames: sessionId + ":" + feature.geomfield,
         outputFormat: "application/json"
     });
     if (feature.id) params.gid = feature.id;
@@ -209,7 +208,7 @@ function showError(err) {
     clearInterval(loadStatusIntervalId);
 }
 
-function loadLayers(id, layers) {
+function loadLayers(sessionId, layers) {
 
     let groups = new Set();
 
@@ -236,7 +235,7 @@ function loadLayers(id, layers) {
         let theme = themes["default"];
         if (layer["group"]) theme = themes[layer["group"]];
 
-        let prepedLayer = getLayer(id, layer);
+        let prepedLayer = getLayer(sessionId, layer);
         if (prepedLayer) {
             prepedLayer.layer = trackTileStyle(prepedLayer.layer, layer);
             prepedLayer.layer.on('load', _onLayerLoad);
@@ -263,12 +262,12 @@ function trackTileStyle(layer, params) {
     return layer;
 }
 
-function getLayer(id, layer) {
+function getLayer(sessionId, layer) {
     return { name: layer["name"], layer: L.nonTiledLayer.wms('heatmap', {
         minZoom: 0,
         maxZoom: 19,
         opacity: 0.9,
-        layers: id,
+        layers: sessionId + ":" + layer["geomfield"],
         styles: [layer["id"]],
         format: 'image/png'
     })};
@@ -350,21 +349,11 @@ function fetchResults() {
             map.on('click', function(e) {
                 const pos = L.Projection.SphericalMercator.project(e.latlng);
 
-                const w = map.getPixelBounds().max.x - map.getPixelBounds().min.x;
-                const h = map.getPixelBounds().max.y - map.getPixelBounds().min.y;
-
-                const sw = L.Projection.SphericalMercator.project((map.getBounds().getSouthWest()));
-                const ne = L.Projection.SphericalMercator.project((map.getBounds().getNorthEast()));
-
-                const bounds = [sw.x, sw.y, ne.x, ne.y];
+                const bounds = [pos.x, pos.y, pos.x, pos.y];
 
                 fetch('wfs?service=WFS&version=2.0.0&request=GetFeature'
-                    + '&id=' + id
-                    + '&x=' + pos.x
-                    + '&y=' + pos.y
+                    + '&typeNames=' + id + ":" + currentTileConfig.geomField
                     + '&rad=' + (100 * Math.pow(2, 14 - map.getZoom()))
-                    + '&width=' + w
-                    + '&height=' + h
                     + '&bbox=' + bounds.join(',')
                     + '&srsName=EPSG:3857'
                     + '&outputFormat=application/json')

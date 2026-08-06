@@ -121,6 +121,7 @@ class Requestor {
 
       _layers.push_back(layer);
       _layerIdToLid[layer.id] = _layers.size() - 1;
+      _geomFieldToLid[layer.geomField].push_back(_layers.size() - 1);
 
       _lidToObject.push_back(gid);
       _lidToValue.push_back(vid);
@@ -229,10 +230,6 @@ class Requestor {
                           double res, util::geo::FBox box,
                           const std::string& remoteAddr) const;
 
-  const ResObj getNearest(util::geo::DPoint p, double rad, double res,
-                          util::geo::FBox box,
-                          const std::string& remoteAddr) const;
-
   const ResObj getGeom(size_t lid, size_t id, double rad) const;
 
   util::geo::MultiPolygon<double> geomPolyGeoms(size_t lid, size_t oid,
@@ -273,8 +270,7 @@ class Requestor {
                                              std::string query);
 
   double getVal(size_t lid, size_t oid) const;
-  std::pair<double, double> getRasterMetas(size_t lid, size_t oid,
-                                           std::pair<double, double> def) const;
+  std::pair<double, double> getRasterMetas(size_t lid, size_t oid) const;
 
   size_t getNumLayers() const { return _layers.size(); }
   bool lineIntersects(size_t lid, const util::geo::DBox& bbox) const;
@@ -290,6 +286,22 @@ class Requestor {
     }
     return it->second;
   }
+
+  size_t getLidByGeomField(const std::string& field) {
+    auto it = _geomFieldToLid.find(field);
+    if (it == _geomFieldToLid.end()) {
+      std::stringstream ss;
+      ss << "Geom field '" << field << "' not found";
+      throw std::runtime_error(ss.str());
+    }
+    if (it->second.size() == 0) {
+      std::stringstream ss;
+      ss << "Geom field '" << field << "' not found";
+      throw std::runtime_error(ss.str());
+    }
+    return it->second[0];
+  }
+
   std::pair<double, double> getValRange(size_t lid) const;
 
   std::chrono::time_point<std::chrono::system_clock> createdAt() const {
@@ -362,11 +374,14 @@ class Requestor {
   // per (gid, vid)
   std::vector<std::pair<size_t, size_t>> _gridSets;
 
-  // mapping indirection  lid -> gid, vid, rad, grid
+  // mapping in direction  lid -> gid, vid, rad, grid
   std::vector<size_t> _lidToObject;
   std::vector<size_t> _lidToValue;
   std::vector<size_t> _lidToRaster;
   std::vector<size_t> _lidToGrid;
+
+  // mapping geomfield -> lid
+  std::map<std::string, std::vector<size_t>> _geomFieldToLid;
 
   std::vector<petrimaps::Grid<ID_TYPE, float, float>> _pgrid;
   std::vector<petrimaps::Grid<ID_TYPE, float, float>> _lgrid;

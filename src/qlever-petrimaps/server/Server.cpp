@@ -167,9 +167,6 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
       a = handleClearSessReq(params, req.params, con);
     } else if (cmd == "/clearsessions") {
       a = handleClearSessReq(params, req.params, con);
-    } else if (cmd == "/pos") {
-      LOG(INFO) << "Position request from " << remoteAddress(con, req.params);
-      a = handlePosReq(params, req.params, con);
     } else if (cmd == "/loadstatus") {
       a = handleLoadStatusReq(params, req.params, con);
     } else if (cmd == "/build.js") {
@@ -278,20 +275,27 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   if (pars.count("layers") == 0 || pars.find("layers")->second.empty())
     throw std::invalid_argument("No layer specified.");
-  std::string layers = pars.find("layers")->second;
+  std::string layersPar = pars.find("layers")->second;
 
-  std::string id;
+  std::string sessionId;
+  std::string geomField;
 
-  auto parts = util::split(layers, ',');
-  if (parts.size() > 1)
+  auto layers = util::split(layersPar, ',');
+  if (layers.size() > 1)
     throw std::invalid_argument("Multiple layers not supported");
+  if (layers.size() == 0)
+    throw std::invalid_argument("No layer specified");
 
-  if (parts.size()) id = parts[0];
+  if (layers.size()) {
+    auto parts = util::split(layers[0], ':');
+    if (parts.size() != 2)
+      throw std::invalid_argument("Invalid layer '" + layers[0] + "' specified");
+    sessionId = parts[0];
+    geomField = parts[1];
+  }
 
   MapStyle style = HEATMAP;
   auto colorScheme = heatmap_cs_Spectral_mixed_exp;
-  double rasterWidth = 10;
-  double rasterHeight = 10;
 
   int objColorR = 0, objColorG = 0, objColorB = 0;
 
@@ -301,27 +305,27 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   std::shared_ptr<Requestor> r;
   {
     std::lock_guard<std::mutex> guard(_m);
-    bool has = _rs.count(id);
+    bool has = _rs.count(sessionId);
     if (!has) {
-      LOG(ERROR) << "Session " << id << " not found!";
+      LOG(ERROR) << "Session " << sessionId << " not found!";
       throw std::invalid_argument("Session not found");
     }
-    r = _rs[id];
+    r = _rs[sessionId];
   }
 
   if (!r->ready()) {
-    LOG(ERROR) << "Session " << id << " not ready!";
+    LOG(ERROR) << "Session " << sessionId << " not ready!";
     throw std::invalid_argument("Session not ready.");
   }
 
   if (pars.count("styles") != 0 && !pars.find("styles")->second.empty()) {
-    auto layerId = pars.find("styles")->second;
-    lid = r->getLidById(layerId);
+    auto styleId = pars.find("styles")->second;
+    lid = r->getLidById(styleId);
   }
 
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
 
-  LOG(INFO) << "[SERVER] Begin heatmap generation for session " << id;
+  LOG(INFO) << "[SERVER] Begin heatmap generation for session " << sessionId << " on geom field " << geomField;;
 
   double x1 = std::atof(box[0].c_str());
   double y1 = std::atof(box[1].c_str());
@@ -347,20 +351,13 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   lcfg = r->getLayers()[lid];
 
+  if (lcfg.geomField != geomField) throw std::invalid_argument("Style not defined for geom field '" + geomField + "', but for '" + lcfg.geomField + "'");
+
   if (lcfg.style == "objects") style = OBJECTS;
   if (lcfg.style == "raster") style = RASTER;
   if (lcfg.style == "auto" && res < THRESHOLD &&
       r->getNumObjects(lid) > _autoThreshold)
     style = OBJECTS;
-
-  if (style == RASTER && parts.size() > 1) {
-    // in web mercator units (pseudometers)!
-    auto xy = util::split(parts[1], 'x');
-    if (xy.size() > 1) {
-      rasterWidth = ::atof(xy[0].c_str());
-      rasterHeight = ::atof(xy[1].c_str());
-    }
-  }
 
   if (style == OBJECTS) {
     if (lcfg.color.size() == 6) {
@@ -474,7 +471,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
           if (style == RASTER) {
             auto rasterMeta =
-                r->getRasterMetas(lid, oid, {rasterWidth, rasterHeight});
+                r->getRasterMetas(lid, oid);
             rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(lid, oid),
                                rasterMeta.first, rasterMeta.second);
           } else {
@@ -517,7 +514,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
               if (style == RASTER) {
                 auto rasterMeta =
-                    r->getRasterMetas(lid, oid, {rasterWidth, rasterHeight});
+                    r->getRasterMetas(lid, oid);
                 rcontext.drawPoint(tid, px.getX(), px.getY(),
                                    r->getVal(lid, oid), rasterMeta.first,
                                    rasterMeta.second);
@@ -588,8 +585,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
             auto pix = RenderContext::mercToPx(cellBox.getLowerLeft(), orx, ory,
                                                mercW, mercH, w, h);
             rcontext.drawLinePoint(tid, pix.getX(), pix.getY(),
-                                   lpgrid.getCellSum(x, y), rasterWidth,
-                                   rasterHeight);
+                                   lpgrid.getCellSum(x, y), 1,
+                                   1);
           } else {
             for (const auto& p : *cell) {
               int px = ((cellBox.getLowerLeft().getX() + p.getX() * 256 -
@@ -600,7 +597,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                              bbox.getLowerLeft().getY()) /
                             mercH) *
                                h;
-              rcontext.drawLinePoint(tid, px, py, 1, rasterWidth, rasterHeight);
+              rcontext.drawLinePoint(tid, px, py, 1, 1, 1);
             }
           }
         }
@@ -769,10 +766,11 @@ std::string lower(std::string s) {
   return s;
 }
 
+// _____________________________________________________________________________
 const std::string* getParamCaseInsensitive(const Params& pars,
                                            const std::string& key) {
   for (const auto& entry : pars) {
-    if (lower(entry.first) == key) {
+    if (lower(entry.first) == lower(key)) {
       return &entry.second;
     }
   }
@@ -1360,16 +1358,11 @@ util::http::Answer Server::handleWFSGetFeatureReq(
     throw std::invalid_argument("Unsupported WFS version.");
   }
 
-  if (getParamCaseInsensitive(pars, "x") != nullptr &&
-      getParamCaseInsensitive(pars, "y") != nullptr &&
-      getParamCaseInsensitive(pars, "rad") != nullptr) {
-    return handleWFSPickFeatureReq(pars, headerPars, sock);
-  }
-
-  std::string typeName;
+  std::string typeName, sessionId, geomField;
   const std::string* typeNamesParam =
       getParamCaseInsensitive(pars, "typenames");
   const std::string* typeNameParam = getParamCaseInsensitive(pars, "typename");
+
   if (typeNamesParam != nullptr && !typeNamesParam->empty()) {
     typeName = *typeNamesParam;
   } else if (typeNameParam != nullptr && !typeNameParam->empty()) {
@@ -1378,12 +1371,13 @@ util::http::Answer Server::handleWFSGetFeatureReq(
     throw std::invalid_argument("No WFS typename specified.");
   }
 
+  auto parts = util::split(typeName, ':');
+  if (parts.size() != 2)
+    throw std::invalid_argument("Invalid type name '" + typeName + "' specified");
+
+  sessionId = parts[0];
+  geomField = parts[1];
   std::shared_ptr<Requestor> reqor;
-  std::string sessionId = typeName;
-  const std::string prefix = "session_";
-  if (sessionId.rfind(prefix, 0) == 0) {
-    sessionId = sessionId.substr(prefix.size());
-  }
 
   bool found = false;
   {
@@ -1407,14 +1401,7 @@ util::http::Answer Server::handleWFSGetFeatureReq(
     throw std::invalid_argument("No fields found for WFS type name.");
   }
 
-  size_t lid;
-
-  const std::string* geomFieldParam = getParamCaseInsensitive(pars, "layerid");
-  if (geomFieldParam != nullptr && !geomFieldParam->empty()) {
-    lid = reqor->getLidById(*geomFieldParam);
-  } else {
-    lid = reqor->getLidById(fields[0].id);
-  }
+  size_t lid = reqor->getLidByGeomField(geomField);
 
   auto layerCfg = reqor->getLayers()[lid];
 
@@ -1452,8 +1439,8 @@ util::http::Answer Server::handleWFSGetFeatureReq(
 
   bool hasBbox = false;
   bool fullExport = false;
-  FBox fbbox;
   DBox dbbox;
+  FBox fbbox;
 
   const std::string* bboxParam = getParamCaseInsensitive(pars, "bbox");
   const std::string* gidParam = getParamCaseInsensitive(pars, "gid");
@@ -1510,7 +1497,7 @@ util::http::Answer Server::handleWFSGetFeatureReq(
 
   std::vector<size_t> featureIds;
 
-   if (hasBbox) {
+  if (hasBbox) {
     // select by bounding box
     std::unordered_set<ID_TYPE> candidates;
 
@@ -1522,28 +1509,26 @@ util::http::Answer Server::handleWFSGetFeatureReq(
       reqor->getLineGrid(lid).get(fbbox, &candidates);
     }
 
-    std::vector<ID_TYPE> sortedCandidates(candidates.begin(), candidates.end());
-    std::sort(sortedCandidates.begin(), sortedCandidates.end());
+    for (const auto& cand : candidates) {
+      auto oid = reqor->getObjects(lid)[cand].second;
+      auto geomId = reqor->getObjects(lid)[cand].first;
 
-    for (auto candidateOid : sortedCandidates) {
-      size_t oid = candidateOid;
       if (reqor->isCluster(lid, oid)) oid = reqor->getCluster(lid, oid).first;
-      if (oid >= reqor->getNumObjects(lid)) continue;
 
       bool include = false;
 
-      if (oid < reqor->getObjects(lid).size()) {
-        auto geomId = reqor->getObjects(lid)[oid].first;
-
-        if (geomId < I_OFFSET) {
-          auto p = reqor->getPoint(lid, oid);
-          include = contains(p, fbbox);
-        } else {
-          include = reqor->lineIntersects(geomId, dbbox);
-        }
-      } else {
+      if (geomId < I_OFFSET) {
         auto p = reqor->getPoint(lid, oid);
         include = contains(p, fbbox);
+      } else {
+        size_t lineId = geomId - I_OFFSET;
+
+        if (reqor->isArea(lineId)) {
+          const auto& dline = reqor->extractLineGeom(lineId);
+          include = util::geo::intersects(dbbox, util::geo::DPolygon(dline));
+        } else  {
+          include = reqor->lineIntersects(lineId, dbbox);
+        }
       }
 
       if (include) {
@@ -1837,13 +1822,6 @@ util::http::Answer Server::handleTMSReq(const Params& pars, int sock) const {
 }
 
 // _____________________________________________________________________________
-util::http::Answer Server::handlePosReq(const Params& pars,
-                                        const HeaderParams& headers,
-                                        int sock) const {
-  return handleNearestFeatureReq(pars, headers, sock, false);
-}
-
-// _____________________________________________________________________________
 util::http::Answer Server::handleTouchReq(const Params& pars,
                                           const HeaderParams& headerParams,
                                           int sock) const {
@@ -1903,10 +1881,6 @@ util::http::Answer Server::handleNearestFeatureReq(const Params& pars,
     throw std::invalid_argument("No y coord (?y=) specified.");
   float y = std::atof(pars.find("y")->second.c_str());
 
-  if (pars.count("id") == 0 || pars.find("id")->second.empty())
-    throw std::invalid_argument("No session id (?id=) specified.");
-  auto id = pars.find("id")->second;
-
   if (pars.count("rad") == 0 || pars.find("rad")->second.empty())
     throw std::invalid_argument("No rad (?rad=) specified.");
   float rad = std::atof(pars.find("rad")->second.c_str());
@@ -1919,6 +1893,26 @@ util::http::Answer Server::handleNearestFeatureReq(const Params& pars,
   if (pars.count("bbox") == 0 || pars.find("bbox")->second.empty())
     throw std::invalid_argument("No bbox specified.");
   auto box = util::split(pars.find("bbox")->second, ',');
+
+  std::string typeName, sessionId, geomField;
+  const std::string* typeNamesParam =
+      getParamCaseInsensitive(pars, "typenames");
+  const std::string* typeNameParam = getParamCaseInsensitive(pars, "typename");
+
+  if (typeNamesParam != nullptr && !typeNamesParam->empty()) {
+    typeName = *typeNamesParam;
+  } else if (typeNameParam != nullptr && !typeNameParam->empty()) {
+    typeName = *typeNameParam;
+  } else {
+    throw std::invalid_argument("No WFS typename specified.");
+  }
+
+  auto parts = util::split(typeName, ':');
+  if (parts.size() != 2)
+    throw std::invalid_argument("Invalid type name '" + typeName + "' specified");
+
+  sessionId = parts[0];
+  geomField = parts[1];
 
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
   if (isWfsRequest) {
@@ -1956,21 +1950,24 @@ util::http::Answer Server::handleNearestFeatureReq(const Params& pars,
   std::shared_ptr<Requestor> reqor;
   {
     std::lock_guard<std::mutex> guard(_m);
-    bool has = _rs.count(id);
+    bool has = _rs.count(sessionId);
     if (!has) {
-      LOG(ERROR) << "Session " << id << " not found!";
+      LOG(ERROR) << "Session " << sessionId << " not found!";
       throw std::invalid_argument("Session not found");
     }
-    reqor = _rs[id];
+    reqor = _rs[sessionId];
   }
 
   if (!reqor->ready()) {
     throw std::invalid_argument("Session not ready.");
   }
+
+  size_t lid = reqor->getLidByGeomField(geomField);
+
   // as soon as we are ready, the reqor can be read concurrently
 
   LOG(INFO) << "Looking up nearest geometry...";
-  auto res = reqor->getNearest({x, y}, rad, reso, fbbox, remoteAddr);
+  auto res = reqor->getNearest(lid, {x, y}, rad, reso, fbbox, remoteAddr);
   LOG(INFO) << "Got nearest geometry...";
 
   if (isWfsRequest) {

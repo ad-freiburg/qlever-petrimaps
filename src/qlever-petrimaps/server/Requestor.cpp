@@ -583,18 +583,6 @@ std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
 }
 
 // _____________________________________________________________________________
-const ResObj Requestor::getNearest(util::geo::DPoint rp, double rad, double res,
-                                   util::geo::FBox fullbox,
-                                   const std::string& remoteAddr) const {
-  for (size_t lid = 0; lid < getNumLayers(); lid++) {
-    auto r = getNearest(lid, rp, rad, res, fullbox, remoteAddr);
-    if (r.has) return r;
-  }
-
-  return {false, 0, 0, {0, 0}, {}, {}, {}, {}};
-}
-
-// _____________________________________________________________________________
 const ResObj Requestor::getNearest(size_t lid, util::geo::DPoint rp, double rad,
                                    double res, util::geo::FBox fullbox,
                                    const std::string& remoteAddr) const {
@@ -1082,7 +1070,6 @@ util::geo::DPoint Requestor::clusterGeom(size_t lid, size_t oid,
     return util::geo::DPoint{x, y};
   }
 }
-
 // _____________________________________________________________________________
 bool Requestor::lineIntersects(size_t lineId,
                                const util::geo::DBox& bbox) const {
@@ -1145,23 +1132,23 @@ std::pair<double, double> Requestor::getValRange(size_t lid) const {
 
 // _____________________________________________________________________________
 std::pair<double, double> Requestor::getRasterMetas(
-    size_t lid, size_t oid, std::pair<double, double> def) const {
+    size_t lid, size_t oid) const {
   const size_t gid = _lidToObject[lid];
   const size_t rid = _lidToRaster[lid];
 
-  if (rid == NO_COL) return def;
+  if (rid == NO_COL) return {10, 10};
 
   const auto& rasterMetas = _rasterMetas[rid];
 
   if (oid < _objects[gid].size()) {
-    if (_objects[gid][oid].second >= rasterMetas.size()) return def;
+    if (_objects[gid][oid].second >= rasterMetas.size()) return {10, 10};
     return _cache->getRasterMeta(rasterMetas[_objects[gid][oid].second]);
   }
 
   // dynamic points
   const size_t did = oid - _objects[gid].size();
-  if (did >= _dynamicPoints[gid].size()) return def;
-  if (_dynamicPoints[gid][did].second >= rasterMetas.size()) return def;
+  if (did >= _dynamicPoints[gid].size()) return {10, 10};
+  if (_dynamicPoints[gid][did].second >= rasterMetas.size()) return {10, 10};
   return _cache->getRasterMeta(rasterMetas[_dynamicPoints[gid][did].second]);
 }
 
