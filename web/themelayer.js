@@ -16,6 +16,11 @@ L.Control.ThemeLayerSwitcher = L.Control.extend({
   onAdd: function (map) {
     this._map = map;
 
+    // themes without any layer are not shown at all
+    this._themeKeys = Object.keys(this.themes).filter(
+      key => this._nonEmptyGroups(this.themes[key]).length
+    );
+
     const container = this._container = L.DomUtil.create(
       'div',
       'leaflet-control-layers'
@@ -39,17 +44,22 @@ L.Control.ThemeLayerSwitcher = L.Control.extend({
       container
     );
 
-    this._baseList = L.DomUtil.create(
-      'div',
-      'leaflet-control-layers-base',
-      this._form
-    );
+    // with a single theme, there is nothing to choose from
+    if (this._themeKeys.length > 1) {
+      this._baseList = L.DomUtil.create(
+        'div',
+        'leaflet-control-layers-base',
+        this._form
+      );
 
-    L.DomUtil.create(
-      'div',
-      'leaflet-control-layers-separator',
-      this._form
-    );
+      L.DomUtil.create(
+        'div',
+        'leaflet-control-layers-separator',
+        this._form
+      );
+
+      this._createThemeRadios();
+    }
 
     this._overlayList = L.DomUtil.create(
       'div',
@@ -57,11 +67,18 @@ L.Control.ThemeLayerSwitcher = L.Control.extend({
       this._form
     );
 
-    this._createThemeRadios();
-
     const initial =
-      this.options.defaultTheme || Object.keys(this.themes)[0];
-    this.applyTheme(initial);
+      this._themeKeys.indexOf(this.options.defaultTheme) > -1
+        ? this.options.defaultTheme
+        : this._themeKeys[0];
+    if (initial) this.applyTheme(initial);
+
+    // with only a single layer overall, there is nothing to switch at all, the
+    // layer itself was already added to the map by applyTheme
+    if (this._allLayers().size < 2) {
+      container.style.display = 'none';
+      return container;
+    }
 
     if (!this.options.collapsed) {
       this._expand();
@@ -101,8 +118,27 @@ L.Control.ThemeLayerSwitcher = L.Control.extend({
 
   /* ---------------- THEMES ---------------- */
 
-  _createThemeRadios: function () {
+  // the overlay groups of a theme which contain at least one layer
+  _nonEmptyGroups: function (theme) {
+    if (!theme) return [];
+    return (theme.overlays || []).filter(
+      group => group.layers && group.layers.length
+    );
+  },
+
+  // all distinct layers over all themes
+  _allLayers: function () {
+    const layers = new Set();
     Object.keys(this.themes).forEach(key => {
+      this._nonEmptyGroups(this.themes[key]).forEach(group => {
+        group.layers.forEach(entry => layers.add(entry.layer));
+      });
+    });
+    return layers;
+  },
+
+  _createThemeRadios: function () {
+    this._themeKeys.forEach(key => {
       const label = L.DomUtil.create('label', '', this._baseList);
       const input = L.DomUtil.create('input', '', label);
 
@@ -131,8 +167,12 @@ L.Control.ThemeLayerSwitcher = L.Control.extend({
 
 
     this._overlayList.innerHTML = '';
-    (theme.overlays || []).forEach(group => {
-      this._buildOverlayGroup(group, themeKey);
+
+    // empty overlay groups are not shown, and if only a single group is left,
+    // there is no need to name it
+    const groups = this._nonEmptyGroups(theme);
+    groups.forEach(group => {
+      this._buildOverlayGroup(group, themeKey, groups.length > 1);
     });
 
     this._activeTheme = themeKey;
@@ -140,6 +180,7 @@ L.Control.ThemeLayerSwitcher = L.Control.extend({
   },
 
   _syncThemeUI: function () {
+    if (!this._baseList) return;
     const radios = this._baseList.querySelectorAll('input');
     radios.forEach(radio => {
       radio.checked = radio.value === this._activeTheme;
@@ -148,13 +189,15 @@ L.Control.ThemeLayerSwitcher = L.Control.extend({
 
   /* ---------------- OVERLAYS ---------------- */
 
-  _buildOverlayGroup: function (group, themeKey) {
-    const header = L.DomUtil.create(
-      'div',
-      'leaflet-control-layers-group',
-      this._overlayList
-    );
-    header.innerHTML = `<strong>${group.name}</strong>`;
+  _buildOverlayGroup: function (group, themeKey, showHeader) {
+    if (showHeader) {
+      const header = L.DomUtil.create(
+        'div',
+        'leaflet-control-layers-group',
+        this._overlayList
+      );
+      header.innerHTML = `<strong>${group.name}</strong>`;
+    }
 
 	let have = false;
 

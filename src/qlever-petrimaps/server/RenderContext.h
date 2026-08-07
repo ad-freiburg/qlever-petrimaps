@@ -17,12 +17,23 @@ namespace petrimaps {
 
 enum MapStyle { HEATMAP, OBJECTS, RASTER };
 
+struct ObjectStyle {
+  double pointRadius = 3;
+  double lineWidth = 3;
+  double fillOpacity = .5;
+  double lineOpacity = 1;
+};
+
 class RenderContext {
  public:
   RenderContext(int w, int h, double orx, double ory, double mercW,
-                double mercH, MapStyle style, size_t numThreads);
+                double mercH, MapStyle style, ObjectStyle ostyle,
+                size_t numThreads);
 
   const std::vector<uint32_t>& getPoints(size_t i) { return _points[i]; }
+  const std::vector<uint32_t>& getLinePoints(size_t i) {
+    return _linePoints[i];
+  }
   const std::vector<uint32_t>& getAreaFillPoints(size_t i) {
     return _areaFillPoints[i];
   }
@@ -30,8 +41,12 @@ class RenderContext {
     return _rasterDims[i];
   }
   std::vector<unsigned char>& getImage() { return _image; }
+  void drawLinePoint(size_t tid, int px, int py, double weight, double rasterW,
+                     double rasterH, double rad);
+  void drawLinePoint(size_t tid, int px, int py, double weight, double rasterW,
+                     double rasterH);
   void drawPoint(size_t tid, int px, int py, double weight, double rasterW,
-                 double rasterH, int r = 1);
+                 double rasterH);
   void drawFillPoint(size_t tid, int px, int py, double weight, int r = 0);
   void drawLineSegment(int x0, int y0, int x1, int y1, int w, int h);
   void drawLine(size_t tid, const util::geo::DLine& line, double val);
@@ -57,11 +72,14 @@ class RenderContext {
 
   std::vector<std::vector<uint32_t>> _points;
   std::vector<std::vector<uint32_t>> _areaFillPoints;
+  std::vector<std::vector<uint32_t>> _linePoints;
   std::vector<std::vector<double>> _weights;
   std::vector<std::vector<double>> _areaFillWeights;
+  std::vector<std::vector<double>> _lineWeights;
   std::vector<std::vector<std::pair<float, float>>> _rasterDims;
   std::vector<unsigned char> _image;
   MapStyle _style;
+  ObjectStyle _ostyle;
 
   int _w, _h;
   double _orx, _ory, _mercW, _mercH;

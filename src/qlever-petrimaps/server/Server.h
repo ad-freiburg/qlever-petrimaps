@@ -77,9 +77,6 @@ class Server : public util::http::Handler {
   util::http::Answer handleClearSessReq(const Params& pars,
                                         const HeaderParams& headerPars,
                                         int sock) const;
-  util::http::Answer handlePosReq(const Params& pars,
-                                  const HeaderParams& headerPars,
-                                  int sock) const;
   util::http::Answer handleLoadReq(const Params& pars, int sock) const;
 
   util::http::Answer handleExportReq(const Params& pars,
@@ -108,6 +105,7 @@ class Server : public util::http::Handler {
   RequestorConfig getRequestorCfgFromJSON(const std::string& json) const;
   GeomCacheConfig getGeomCacheCfgFromJSON(const std::string& backend,
                                           const std::string& json) const;
+  RequestorConfig getDefaultRequestorCfg(const std::string& backend, const std::string& query) const;
 
   static void pngWriteRowCb(png_structp png_ptr, png_uint_32 row, int pass);
   void writePNG(const unsigned char* data, size_t w, size_t h, int sock) const;

@@ -48,6 +48,15 @@
       border: none;
       background-color: default;
     }
+
+    .tabs button {
+      width: auto;
+    }
+
+    .tabs button.active {
+      background-color: #ccc;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -55,8 +64,14 @@
     <h2>petrimaps integration example</h2>
 
     <form>
-      <label for="config">Requestor config JSON</label>
-      <textarea id="config" name="cfg">
+      <label>Requestor config JSON</label>
+
+      <div class="tabs">
+        <button type="button" class="active" onclick="showTab(0)">Various layers</button>
+        <button type="button" onclick="showTab(1)">Object styles</button>
+      </div>
+
+      <textarea class="config" id="config1" name="cfg">
 {
   "query" : "PREFIX geo: <http://www.opengis.net/ont/geosparql#>\nPREFIX osm: <https://www.openstreetmap.org/>\nPREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nPREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>\nPREFIX osm2rdf: <https://osm2rdf.cs.uni-freiburg.de/rdf#>\nSELECT ?country ?admin_level ?area ?geom WHERE {\n  ?country osmkey:admin_level ?admin_level .\n  ?country rdf:type osm:relation .                                                                                                                                                                                 \n  ?country osmkey:name ?name . \n  ?country osm2rdf:area ?area . \n  ?country geo:hasGeometry/geo:asWKT ?geom . \n  ?country osmkey:start_date ?start_date .                                                              \n  ?country osmkey:end_date ?end_date .   \n  VALUES ?date { \"1900-01-01\"^^xsd:date } \n  FILTER (?date >= xsd:date(?start_date) && ?date <= xsd:date(?end_date))                                                                                                                                          \n}",
   "layers" : [
@@ -104,6 +119,387 @@
 }
 </textarea>
 
+      <textarea class="config" id="config2" name="cfg" hidden disabled>
+{
+  "query" : "PREFIX geo: <http://www.opengis.net/ont/geosparql#>\nPREFIX osm: <https://www.openstreetmap.org/>\nPREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nPREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>\nPREFIX osm2rdf: <https://osm2rdf.cs.uni-freiburg.de/rdf#>\nSELECT * WHERE {\n{\nSELECT ?country ?admin_level ?area ?geom WHERE {\n ?country osmkey:admin_level ?admin_level .\n ?country rdf:type osm:relation .\n ?country osmkey:name ?name .\n ?country osm2rdf:area ?area .\n ?country geo:hasGeometry/geo:asWKT ?geom .\n ?country osmkey:start_date ?start_date .\n ?country osmkey:end_date ?end_date .\n VALUES ?date { \"1900-01-01\"^^xsd:date }\n FILTER (?date >= xsd:date(?start_date) && ?date <= xsd:date(?end_date))\n}\n}\nUNION {\nSELECT ?station ?name ?stationgeom WHERE {\n ?station rdf:type osm:node .\n ?station osmkey:name ?name .\n ?station geo:hasGeometry/geo:asWKT ?stationgeom .\n ?station osmkey:start_date ?start_date .\n ?station osmkey:end_date ?end_date .\n ?station osmkey:train \"yes\" .\n\n VALUES ?date { \"1900-01-01\"^^xsd:date }\n FILTER (?date >= xsd:date(?start_date) && ?date <= xsd:date(?end_date))\n}\n}\n}",
+  "layers" : [
+    {
+        "name" : "linew=-1",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : -1,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "linew=0",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 0,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "linew=1",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 1,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "linew=2",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 2,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "linew=3",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 3,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "linew=4",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 4,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "linew=5",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 5,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "linew=6",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 6,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "linew=7",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 7,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "linew=8",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 8,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "linew=9",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 9,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "linew=10",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 10,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "linew=20",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 20,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "linew=50",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 50,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "linew=100",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "linew" : 100,
+        "fillopacity" : 0.5,
+        "group" : "Line width"
+    },
+    {
+        "name" : "fillopacity=-1",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "fillopacity" : -1,
+        "group" : "Fill opacity"
+    },
+    {
+        "name" : "fillopacity=0",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "fillopacity" : 0,
+        "group" : "Fill opacity"
+    },
+    {
+        "name" : "fillopacity=0.1",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "fillopacity" : 0.1,
+        "group" : "Fill opacity"
+    },
+    {
+        "name" : "fillopacity=0.2",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "fillopacity" : 0.2,
+        "group" : "Fill opacity"
+    },
+    {
+        "name" : "fillopacity=0.3",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "fillopacity" : 0.3,
+        "group" : "Fill opacity"
+    },
+    {
+        "name" : "fillopacity=0.4",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "fillopacity" : 0.4,
+        "group" : "Fill opacity"
+    },
+    {
+        "name" : "fillopacity=0.5",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "fillopacity" : 0.5,
+        "group" : "Fill opacity"
+    },
+    {
+        "name" : "fillopacity=0.6",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "fillopacity" : 0.6,
+        "group" : "Fill opacity"
+    },
+    {
+        "name" : "fillopacity=0.7",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "fillopacity" : 0.7,
+        "group" : "Fill opacity"
+    },
+    {
+        "name" : "fillopacity=0.8",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "fillopacity" : 0.8,
+        "group" : "Fill opacity"
+    },
+    {
+        "name" : "fillopacity=0.9",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "fillopacity" : 0.9,
+        "group" : "Fill opacity"
+    },
+    {
+        "name" : "fillopacity=1.0",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "fillopacity" : 1,
+        "group" : "Fill opacity"
+    },
+    {
+        "name" : "fillopacity=1.1",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "fillopacity" : 1.1,
+        "group" : "Fill opacity"
+    },
+    {
+        "name" : "lineopacity=-1",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "lineopacity" : -1,
+        "group" : "Line opacity"
+    },
+    {
+        "name" : "lineopacity=0",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "lineopacity" : 0,
+        "group" : "Line opacity"
+    },
+    {
+        "name" : "lineopacity=0.1",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "lineopacity" : 0.1,
+        "group" : "Line opacity"
+    },
+    {
+        "name" : "lineopacity=0.2",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "lineopacity" : 0.2,
+        "group" : "Line opacity"
+    },
+    {
+        "name" : "lineopacity=0.3",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "lineopacity" : 0.3,
+        "group" : "Line opacity"
+    },
+    {
+        "name" : "lineopacity=0.4",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "lineopacity" : 0.4,
+        "group" : "Line opacity"
+    },
+    {
+        "name" : "lineopacity=0.5",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "lineopacity" : 0.5,
+        "group" : "Line opacity"
+    },
+    {
+        "name" : "lineopacity=0.6",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "lineopacity" : 0.6,
+        "group" : "Line opacity"
+    },
+    {
+        "name" : "lineopacity=0.7",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "lineopacity" : 0.7,
+        "group" : "Line opacity"
+    },
+    {
+        "name" : "lineopacity=0.8",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "lineopacity" : 0.8,
+        "group" : "Line opacity"
+    },
+    {
+        "name" : "lineopacity=0.9",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "lineopacity" : 0.9,
+        "group" : "Line opacity"
+    },
+    {
+        "name" : "lineopacity=1.0",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "lineopacity" : 1,
+        "group" : "Line opacity"
+    },
+    {
+        "name" : "lineopacity=1.1",
+        "geomfield" : "?geom",
+        "style" : "objects",
+        "lineopacity" : 1.1,
+        "group" : "Line opacity"
+    },
+    {
+        "name" : "pointradius=0",
+        "geomfield" : "?stationgeom",
+        "style" : "objects",
+		"pointradius" : 0,
+        "group" : "Point radius"
+    },
+    {
+        "name" : "pointradius=1",
+        "geomfield" : "?stationgeom",
+        "style" : "objects",
+		"pointradius" : 1,
+        "group" : "Point radius"
+    },
+    {
+        "name" : "pointradius=2",
+        "geomfield" : "?stationgeom",
+        "style" : "objects",
+		"pointradius" : 2,
+        "group" : "Point radius"
+    },
+    {
+        "name" : "pointradius=3",
+        "geomfield" : "?stationgeom",
+        "style" : "objects",
+		"pointradius" : 3,
+        "group" : "Point radius"
+    },
+    {
+        "name" : "pointradius=4",
+        "geomfield" : "?stationgeom",
+        "style" : "objects",
+		"pointradius" : 4,
+        "group" : "Point radius"
+    },
+    {
+        "name" : "pointradius=5",
+        "geomfield" : "?stationgeom",
+        "style" : "objects",
+		"pointradius" : 5,
+        "group" : "Point radius"
+    },
+    {
+        "name" : "pointradius=10",
+        "geomfield" : "?stationgeom",
+        "style" : "objects",
+		"pointradius" : 10,
+        "group" : "Point radius"
+    },
+    {
+        "name" : "pointradius=20",
+        "geomfield" : "?stationgeom",
+        "style" : "objects",
+		"pointradius" : 20,
+        "group" : "Point radius"
+    },
+    {
+        "name" : "pointradius=50",
+        "geomfield" : "?stationgeom",
+        "style" : "objects",
+		"pointradius" : 50,
+        "group" : "Point radius"
+    },
+    {
+        "name" : "pointradius=100",
+        "geomfield" : "?stationgeom",
+        "style" : "objects",
+		"pointradius" : 100,
+        "group" : "Point radius"
+    }
+  ]
+}
+
+</textarea>
+
       <label for="backend">QLever backend</label>
       <input type="text" id="backend" name="backend" value="https://qlever.dev/api/ohm-planet" />
 
@@ -121,6 +517,18 @@
   </div>
 
   <script>
+    // only the config of the active tab is part of the form data
+    function showTab(i) {
+      document.querySelectorAll('.tabs button').forEach((tab, j) => {
+        tab.classList.toggle('active', i === j);
+      });
+
+      document.querySelectorAll('textarea.config').forEach((area, j) => {
+        area.hidden = i !== j;
+        area.disabled = i !== j;
+      });
+    }
+
     function submitForm() {
       const form = document.getElementsByTagName('form')[0];
       const method = document.querySelector('input[name="method"]:checked').value;

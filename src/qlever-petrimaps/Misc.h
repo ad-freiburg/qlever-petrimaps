@@ -220,8 +220,8 @@ struct RequestReader {
 
   ParseState _state = IN_HEADER;
 
-  std::vector<std::vector<std::pair<std::string, std::string>>> rows;
-  std::vector<std::pair<std::string, std::string>> curCols;
+  std::vector<std::vector<std::pair<std::string, std::string>>> _rows;
+  std::vector<std::pair<std::string, std::string>> _curCols;
 
   uint8_t _curByte = 0;
   size_t _curIdCol = 0;
