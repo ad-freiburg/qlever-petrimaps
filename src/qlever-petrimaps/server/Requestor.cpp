@@ -988,17 +988,18 @@ std::vector<std::pair<util::geo::FPoint, ID_TYPE>> Requestor::getDynamicPoints(
 
   size_t count = 0;
 
+  // Points are not in the geometry cache, they are encoded in the ID itself.
+  uint8_t pointDatatype = _cache->getGeoPointDatatype();
+
   for (const auto& p : ids) {
-    uint8_t type = (p.qid & (uint64_t(15) << 60)) >> 60;
-    if (type == 8) count++;  // 8 = Geopoint in Qlever
+    if (idDatatype(p.qid) == pointDatatype) count++;
   }
 
   checkMem(sizeof(std::pair<util::geo::FPoint, ID_TYPE>) * count, _maxMemory);
   ret.reserve(count);
 
   for (const auto& p : ids) {
-    uint8_t type = (p.qid & (uint64_t(15) << 60)) >> 60;
-    if (type != 8) continue;  // 8 = Geopoint in Qlever
+    if (idDatatype(p.qid) != pointDatatype) continue;
 
     uint64_t maskLng = 1073741823;
     uint64_t maskLat = static_cast<uint64_t>(1073741823) << 30;
