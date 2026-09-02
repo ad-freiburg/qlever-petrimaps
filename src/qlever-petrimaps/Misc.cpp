@@ -208,7 +208,7 @@ void RequestReader::parseRasterMeta(const char* c, size_t size) {
     _curIdCol = _curIdCol % 3;
 
     if (_curByte == 0) {
-      uint8_t type = (_curId.val & (uint64_t(15) << 60)) >> 60;
+      uint8_t type = idDatatype(_curId.val);
 
       if (_curIdCol == 0) {
         // raster dataset it
@@ -270,7 +270,7 @@ void RequestReader::parseIds(const char* c, size_t size) {
       } else if (_curIdCol < _valFields + _geomFields) {
         // value
 
-        uint8_t type = (_curId.val & (uint64_t(15) << 60)) >> 60;
+        uint8_t type = idDatatype(_curId.val);
         if (type == 3) {
           // 3 = double in qlever
           uint64_t rawBits = (_curId.val << 4);
@@ -479,4 +479,39 @@ std::string RequestReader::requestIndexHash(const std::string& configHash) {
   }
 
   return INDEX_HASH_PREFIX + "|" + configHash + "|" + response;
+}
+
+// _____________________________________________________________________________
+uint8_t RequestReader::requestGeoPointDatatype() {
+  // The datatype value for a point is not fixed, it changes whenever a
+  // datatype is added to QLever before it. Let the backend return a single
+  // point and read the value from the top four bits of its ID.
+  const static std::string query =
+      "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
+      "SELECT ?point WHERE { BIND(\"POINT(0 0)\"^^geo:wktLiteral AS ?point) }";
+
+  std::string response;
+
+  try {
+    performCurlRequest(
+        _backendUrl, queryFields(query), "application/octet-stream", "",
+        [&response](const char* c, size_t n) { response.append(c, n); },
+        nullptr);
+  } catch (const std::exception& e) {
+    LOG(WARN) << "[GEOMCACHE] Could not obtain the datatype of a point: "
+              << e.what();
+    return DEFAULT_GEOPOINT_DATATYPE;
+  }
+
+  // The answer is a single ID, in the byte order it was written in.
+  if (response.size() != sizeof(ID)) {
+    LOG(WARN) << "[GEOMCACHE] Unexpected answer of size " << response.size()
+              << " when asking for the datatype of a point";
+    return DEFAULT_GEOPOINT_DATATYPE;
+  }
+
+  ID id;
+  memcpy(id.bytes, response.data(), sizeof(id.bytes));
+
+  return idDatatype(id.val);
 }
