@@ -990,7 +990,18 @@ std::vector<std::pair<util::geo::FPoint, ID_TYPE>> Requestor::getDynamicPoints(
 
   for (const auto& p : ids) {
     uint8_t type = (p.qid & (uint64_t(15) << 60)) >> 60;
-    if (type == 8) count++;  // 8 = Geopoint in Qlever
+    // A geo point in QLever used to have datatype bits `1000` before
+    // https://github.com/ad-freiburg/qlever/pull/3159 (merged on 2026-09-01),
+    // and has datatype bits `1001` since then.
+    //
+    // NOTE: Allowing both also treats a `WordVocabIndex` as a geo point for
+    // QLever indexes built before that change (where `1001` are the datatype
+    // bits of a `WordVocabIndex`), and a `Date` as a geo point for QLever
+    // indexes built since that change (where `1000` are the datatype bits of a
+    // `Date`). But a petrimaps request that asks to draw `Id`s of those types
+    // on a map should not happen in the first place, so this is not a problem
+    // in practice.
+    if (type == 8 || type == 9) count++;
   }
 
   checkMem(sizeof(std::pair<util::geo::FPoint, ID_TYPE>) * count, _maxMemory);
@@ -998,7 +1009,8 @@ std::vector<std::pair<util::geo::FPoint, ID_TYPE>> Requestor::getDynamicPoints(
 
   for (const auto& p : ids) {
     uint8_t type = (p.qid & (uint64_t(15) << 60)) >> 60;
-    if (type != 8) continue;  // 8 = Geopoint in Qlever
+    // A geo point in QLever; see the comment above for a detailed explanation.
+    if (type != 8 && type != 9) continue;
 
     uint64_t maskLng = 1073741823;
     uint64_t maskLat = static_cast<uint64_t>(1073741823) << 30;
