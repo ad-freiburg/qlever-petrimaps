@@ -60,6 +60,7 @@ const static std::string FILL_QUERY_WDTP625_SERVICE =
 inline std::string getFillQuery(const std::string& backend) {
   auto backendName = util::split(backend, '/').back();
   if (backendName.rfind("wikidata", 0) == 0) return FILL_QUERY_WDTP625;
+  if (backendName.rfind("gbif", 0) == 0) return FILL_QUERY_WDTP625;
   if (backendName.rfind("dblp-plus", 0) == 0) return FILL_QUERY_WDTP625;
   if (backendName.rfind("dblp", 0) == 0) return FILL_QUERY_WDTP625_SERVICE;
   return FILL_QUERY_DEFAULT;
