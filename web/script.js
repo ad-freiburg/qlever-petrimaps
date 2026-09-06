@@ -216,7 +216,10 @@ function loadLayers(id, numObjects, autoThreshold, layers) {
     for (layer of layers) {
         let prepedLayer = getLayer(id, layer, autoThreshold);
         if (prepedLayer) {
-            prepedLayer.layer.on('load', _onLayerLoad);
+            // NOTE: an "auto" layer is a LayerGroup, which never fires 'load'
+            // itself; listen on the tile layers inside it instead.
+            const onLoad = (l) => l.eachLayer ? l.eachLayer(onLoad) : l.on('load', _onLayerLoad);
+            onLoad(prepedLayer.layer);
             if (layer["toggle"] == "checkbox") {
                 themes["custom"].overlays[1].layers.push(prepedLayer);
             } else {

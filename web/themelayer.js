@@ -168,7 +168,8 @@ L.Control.ThemeLayerSwitcher = L.Control.extend({
           ? `overlay-${themeKey}-${group.name}`
           : null;
 
-	  if (!have) {
+	  // radio groups start with their first entry, checkbox groups with all
+	  if (group.type !== 'radio' || !have) {
 		input.checked = true;
         group.type === 'radio'
           ? this._handleRadioGroup(group, entry.layer)

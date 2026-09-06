@@ -348,6 +348,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   double res = mercH / h;
   size_t fid = r->getFieldId(field);
+  const int pointR = r->getFields()[fid].pointSize;
 
   checkMem(sizeof(float) * w * h, _maxMemory);
   double realCellSize = r->getPointGrid(fid).getCellWidth();
@@ -390,7 +391,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           auto ppx = RenderContext::mercToPx(p, orx, ory, mercW, mercH, w, h);
 
           rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid), 0, 0,
-                             1);
+                             pointR);
           rcontext.drawLineSegment(px.getX(), px.getY(), ppx.getX(), ppx.getY(),
                                    w, h);
         } else {
@@ -408,7 +409,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                                rasterMeta.first, rasterMeta.second, 1);
           } else {
             rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(fid, oid), 0,
-                               0, 1);
+                                0, pointR);
           }
         }
       }
@@ -435,7 +436,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
             // TODO: just setting rasterWidth to 1x1 here is not correct
             rcontext.drawPoint(tid, px.getX(), px.getY(), grid.getCellSum(x, y),
-                               1, 1, 1);
+                               1, 1, pointR);
           } else {
             for (auto oid : *cell) {
               if (r->isCluster(fid, oid)) oid = r->getCluster(fid, oid).first;
@@ -452,7 +453,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                                    rasterMeta.second, 1);
               } else {
                 rcontext.drawPoint(tid, px.getX(), px.getY(),
-                                   r->getVal(fid, oid), 0, 0, 1);
+                                   r->getVal(fid, oid), 0, 0, pointR);
               }
             }
           }
@@ -2230,6 +2231,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars,
     json << "\"numobjects\":\""
          << reqor->getNumObjects(reqor->getFieldId(fld.geomField)) << "\",";
     json << "\"style\":\"" << fld.style << "\",";
+    json << "\"pointsize\":" << fld.pointSize << ",";
     json << "\"toggle\":\"" << fld.toggle << "\"";
     if (fld.rasterW != 0 && fld.rasterH != 0)
       json << ",\"rasterw\":" << fld.rasterW << ", \"rasterh\":" << fld.rasterH;
@@ -2713,6 +2715,9 @@ RequestorConfig Server::getRequestorCfgFromJSON(
                   layer.value()["colorscheme"].get<std::string>();
             if (layer.value().contains("style"))
               curField.style = layer.value()["style"].get<std::string>();
+            if (layer.value().contains("pointsize"))
+              curField.pointSize = std::max(
+                  0, std::min(50, layer.value()["pointsize"].get<int>()));
             if (curField.name.size() == 0) curField.name = curField.geomField;
             if (curField.id.size() == 0) curField.id = getFreeLayerId();
             ret.fields.push_back(curField);

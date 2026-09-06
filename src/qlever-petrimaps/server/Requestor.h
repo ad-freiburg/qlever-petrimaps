@@ -33,6 +33,8 @@ struct FieldConfig {
   std::string color = "3388ff";
   std::string colorscheme = "spectralexp";
   std::string style = "auto";
+  // radius in pixels of a point in the objects style; 1 draws a 3x3 square
+  int pointSize = 1;
 
   const std::string geomFieldRaw() const {
     return util::split(geomField, ':')[0];
