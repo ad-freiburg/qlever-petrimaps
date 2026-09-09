@@ -344,6 +344,107 @@ void RequestReader::parse(const char* c, size_t size) {
   }
 }
 
+namespace petrimaps {
+namespace {
+
+std::string getRequiredCell(
+    const std::vector<std::pair<std::string, std::string>>& row,
+    const std::string& wantedColumn) {
+  for (const auto& cell : row) {
+    if (normalizeSparqlResultColumn(cell.first) == wantedColumn) {
+      return cell.second;
+    }
+  }
+
+  throw std::runtime_error("Missing required column: " + wantedColumn);
+}
+}
+// _____________________________________________________________________________
+std::string normalizeSparqlResultColumn(std::string column) {
+  if (!column.empty() && (column[0] == '?' || column[0] == '$')) {
+    column.erase(0, 1);
+  }
+
+  return column;
+}
+// _____________________________________________________________________________
+std::string normalizeOsmTagKey(std::string key) {
+  if (key.size() >= 2 && key.front() == '<' && key.back() == '>') {
+    key = key.substr(1, key.size() - 2);
+  }
+
+  const std::string osmKeyPrefix = "osmkey:";
+  if (key.rfind(osmKeyPrefix, 0) == 0) {
+    return key.substr(osmKeyPrefix.size());
+  }
+
+  const std::string osmKeyUri = "http://www.openstreetmap.org/wiki/Key:";
+  if (key.rfind(osmKeyUri, 0) == 0) {
+    return key.substr(osmKeyUri.size());
+  }
+
+  return key;
+}
+// _____________________________________________________________________________
+std::string inferOsmObjectType(const std::string& id) {
+  if (id.rfind("osmnode:", 0) == 0 ||
+      id.find("/node/") != std::string::npos) {
+    return "node";
+  }
+  if (id.rfind("osmway:", 0) == 0 ||
+      id.find("/way/") != std::string::npos) {
+    return "way";
+  }
+
+  if (id.rfind("osmrel:", 0) == 0 ||
+      id.rfind("osmrelation:", 0) == 0 ||
+      id.find("/relation/") != std::string::npos) {
+    return "relation";
+  }
+  return "unknown";
+}
+// _____________________________________________________________________________
+std::vector<OsmObject> osmObjectsFromTsvRows(
+    const std::vector<std::vector<std::pair<std::string, std::string>>>& rows) {
+  std::vector<OsmObject> objects;
+  OsmObject current;
+  bool hasCurrent = false;
+
+  for (const auto& row : rows) {
+    const auto osmId = getRequiredCell(row, "osm_id");
+    const auto tagKey = normalizeOsmTagKey(getRequiredCell(row, "a"));
+    const auto tagValue = getRequiredCell(row, "b");
+    const auto wkt = getRequiredCell(row, "hasgeometry");
+
+    if (!hasCurrent || current.id != osmId) {
+      if (hasCurrent) {
+        objects.push_back(current);
+      }
+
+      current = {};
+      current.id = osmId;
+      current.type = inferOsmObjectType(osmId);
+      current.wkt = wkt;
+      hasCurrent = true;
+    } else if (current.wkt != wkt) {
+      throw std::runtime_error("Conflicting WKT for osm_id: " + osmId);
+    }
+
+    auto it = current.tags.find(tagKey);
+    if (it != current.tags.end() && it->second != tagValue) {
+      throw std::runtime_error("Conflicting tag value for osm_id: " + osmId +
+                               ", key: " + tagKey);
+    }
+
+    current.tags[tagKey] = tagValue;
+  }
+
+  if (hasCurrent) {
+    objects.push_back(current);
+  }
+  return objects;
+}
+}
 // _____________________________________________________________________________
 std::string petrimaps::normalizeURL(const std::string& inURL) {
   CURLU* url = curl_url();

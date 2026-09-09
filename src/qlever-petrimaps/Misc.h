@@ -39,6 +39,20 @@ namespace petrimaps {
 
 enum ParseState { IN_HEADER, IN_ROW };
 
+struct OsmObject {
+  std::string id;
+  std::string type;
+  std::unordered_map<std::string, std::string> tags;
+  std::string wkt;
+};
+
+std::string normalizeSparqlResultColumn(std::string column);
+std::string normalizeOsmTagKey(std::string key);
+std::string inferOsmObjectType(const std::string& id);
+
+std::vector<OsmObject> osmObjectsFromTsvRows(
+  const std::vector<std::vector<std::pair<std::string, std::string>>>& rows);
+
 struct IdMapping {
   QLEVER_ID_TYPE qid;
   ID_TYPE id;
