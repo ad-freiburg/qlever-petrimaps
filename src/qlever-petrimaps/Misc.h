@@ -39,6 +39,67 @@ namespace petrimaps {
 
 enum ParseState { IN_HEADER, IN_ROW };
 
+struct OsmObject {
+  std::string id;
+  std::string type;
+  std::unordered_map<std::string, std::string> tags;
+  std::string wkt;
+};
+
+struct OsmNode {
+  int64_t id;
+  double lon;
+  double lat;
+  std::unordered_map<std::string, std::string> tags;
+};
+
+struct OsmWay {
+  int64_t id;
+  std::vector<int64_t> nodeRefs;
+  std::unordered_map<std::string, std::string> tags;
+};
+
+struct OsmPrimitiveStore {
+  std::vector<OsmNode> nodes;
+  std::vector<OsmWay> ways;
+};
+
+std::string normalizeSparqlResultColumn(std::string column);
+std::string normalizeOsmTagKey(std::string key);
+std::string inferOsmObjectType(const std::string& id);
+
+std::vector<OsmObject> osmObjectsFromTsvRows(
+  const std::vector<std::vector<std::pair<std::string, std::string>>>& rows);
+
+OsmPrimitiveStore osmPrimitivesFromOsmObjects(
+  const std::vector<OsmObject>& objects);
+
+class OsmResultReader {
+  public:
+    using ObjectCallback = std::function<void(const OsmObject&)>;
+
+    explicit OsmResultReader(ObjectCallback cb);
+
+    void parse(const char* data, size_t size);
+    void finish();
+
+  private:
+    void finishCell();
+    void finishRow();
+    void startObject(const std::string& osmId, const std::string& wkt);
+    void mergeRowIntoCurrentObject();
+
+    ObjectCallback _cb;
+    ParseState _state = IN_HEADER;
+    std::vector<std::string> _colNames;
+    std::vector<std::string> _curRow;
+    std::string _dangling;
+    size_t _curCol = 0;
+
+    OsmObject _current;
+    bool _hasCurrent = false;
+};
+
 struct IdMapping {
   QLEVER_ID_TYPE qid;
   ID_TYPE id;

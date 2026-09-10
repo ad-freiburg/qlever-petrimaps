@@ -13,6 +13,7 @@
 
 #include "qlever-petrimaps/Misc.h"
 #include "util/String.h"
+#include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
 using petrimaps::RequestReader;
@@ -344,6 +345,292 @@ void RequestReader::parse(const char* c, size_t size) {
   }
 }
 
+namespace petrimaps {
+namespace {
+
+std::string getRequiredCell(
+    const std::vector<std::pair<std::string, std::string>>& row,
+    const std::string& wantedColumn) {
+  for (const auto& cell : row) {
+    if (normalizeSparqlResultColumn(cell.first) == wantedColumn) {
+      return cell.second;
+    }
+  }
+
+  throw std::runtime_error("Missing required column: " + wantedColumn);
+}
+
+std::string getRequiredCell(const std::vector<std::string>& columns,
+                            const std::vector<std::string>& row,
+                            const std::string& wantedColumn) {
+  for (size_t i = 0; i < columns.size() && i < row.size(); i++) {
+    if (normalizeSparqlResultColumn(columns[i]) == wantedColumn) {
+      return row[i];
+    }
+  }
+
+  throw std::runtime_error("Missing required column: " + wantedColumn);
+}
+
+struct OsmIdGenerator {
+  int64_t nextNodeId = -1;
+  int64_t nextWayId = -1000000001;
+
+  int64_t nodeId() { return nextNodeId--; }
+  int64_t wayId() { return nextWayId--; }
+};
+
+int64_t addGeneratedNode(OsmPrimitiveStore* store, OsmIdGenerator* ids,
+                         const util::geo::DPoint& point) {
+  const int64_t id = ids->nodeId();
+  store->nodes.push_back({id, point.getX(), point.getY(), {}});
+  return id;
+}
+
+void addWayFromLine(OsmPrimitiveStore* store, OsmIdGenerator* ids,
+                    const util::geo::DLine& line,
+                    const std::unordered_map<std::string, std::string>& tags) {
+  OsmWay way;
+  way.id = ids->wayId();
+  way.tags = tags;
+
+  for (const auto& point : line) {
+    way.nodeRefs.push_back(addGeneratedNode(store, ids, point));
+  }
+
+  store->ways.push_back(way);
+}
+
+}  // namespace
+// _____________________________________________________________________________
+std::string normalizeSparqlResultColumn(std::string column) {
+  if (!column.empty() && (column[0] == '?' || column[0] == '$')) {
+    column.erase(0, 1);
+  }
+
+  return column;
+}
+// _____________________________________________________________________________
+std::string normalizeOsmTagKey(std::string key) {
+  if (key.size() >= 2 && key.front() == '<' && key.back() == '>') {
+    key = key.substr(1, key.size() - 2);
+  }
+
+  const std::string osmKeyPrefix = "osmkey:";
+  if (key.rfind(osmKeyPrefix, 0) == 0) {
+    return key.substr(osmKeyPrefix.size());
+  }
+
+  const std::string osmKeyHttpUri = "http://www.openstreetmap.org/wiki/Key:";
+  if (key.rfind(osmKeyHttpUri, 0) == 0) {
+    return key.substr(osmKeyHttpUri.size());
+  }
+
+  const std::string osmKeyHttpsUri = "https://www.openstreetmap.org/wiki/Key:";
+  if (key.rfind(osmKeyHttpsUri, 0) == 0) {
+    return key.substr(osmKeyHttpsUri.size());
+  }
+
+  return key;
+}
+// _____________________________________________________________________________
+std::string inferOsmObjectType(const std::string& id) {
+  if (id.rfind("osmnode:", 0) == 0 ||
+      id.find("/node/") != std::string::npos) {
+    return "node";
+  }
+  if (id.rfind("osmway:", 0) == 0 ||
+      id.find("/way/") != std::string::npos) {
+    return "way";
+  }
+
+  if (id.rfind("osmrel:", 0) == 0 ||
+      id.rfind("osmrelation:", 0) == 0 ||
+      id.find("/relation/") != std::string::npos) {
+    return "relation";
+  }
+  return "unknown";
+}
+// _____________________________________________________________________________
+std::vector<OsmObject> osmObjectsFromTsvRows(
+    const std::vector<std::vector<std::pair<std::string, std::string>>>& rows) {
+  std::vector<OsmObject> objects;
+  OsmObject current;
+  bool hasCurrent = false;
+
+  for (const auto& row : rows) {
+    const auto osmId = getRequiredCell(row, "osm_id");
+    const auto tagKey = normalizeOsmTagKey(getRequiredCell(row, "a"));
+    const auto tagValue = getRequiredCell(row, "b");
+    const auto wkt = getRequiredCell(row, "hasgeometry");
+
+    if (!hasCurrent || current.id != osmId) {
+      if (hasCurrent) {
+        objects.push_back(current);
+      }
+
+      current = {};
+      current.id = osmId;
+      current.type = inferOsmObjectType(osmId);
+      current.wkt = wkt;
+      hasCurrent = true;
+    } else if (current.wkt != wkt) {
+      throw std::runtime_error("Conflicting WKT for osm_id: " + osmId);
+    }
+
+    auto it = current.tags.find(tagKey);
+    if (it != current.tags.end() && it->second != tagValue) {
+      throw std::runtime_error("Conflicting tag value for osm_id: " + osmId +
+                               ", key: " + tagKey);
+    }
+
+    current.tags[tagKey] = tagValue;
+  }
+
+  if (hasCurrent) {
+    objects.push_back(current);
+  }
+  return objects;
+}
+
+OsmResultReader::OsmResultReader(ObjectCallback cb) : _cb(cb) {}
+
+void OsmResultReader::parse(const char* data, size_t size) {
+  const char* start = data;
+  while (data < start + size) {
+    switch (_state) {
+      case IN_HEADER:
+        if (*data == '\t' || *data == '\n') {
+          finishCell();
+        }
+
+        if (*data == '\n') {
+          _state = IN_ROW;
+          data++;
+          continue;
+        }
+
+        if (*data != '\t') _dangling += *data;
+        data++;
+        continue;
+
+      case IN_ROW:
+        if (*data == '\t' || *data == '\n') {
+          finishCell();
+
+          if (*data == '\n') {
+            finishRow();
+          }
+
+          data++;
+          continue;
+        }
+
+        _dangling += *data;
+        data++;
+        break;
+    }
+  }
+}
+
+void OsmResultReader::finish() {
+  if (!_dangling.empty()) {
+    finishCell();
+  }
+
+  if (!_curRow.empty()) {
+    finishRow();
+  }
+
+  if (_hasCurrent) {
+    _cb(_current);
+    _hasCurrent = false;
+  }
+}
+
+void OsmResultReader::finishCell() {
+  if (_state == IN_HEADER) {
+    _colNames.push_back(_dangling);
+  } else {
+    _curRow.push_back(_dangling);
+  }
+
+  _dangling.clear();
+}
+
+void OsmResultReader::finishRow() {
+  if (_curRow.empty()) return;
+
+  mergeRowIntoCurrentObject();
+  _curRow.clear();
+  _curCol = 0;
+}
+
+void OsmResultReader::startObject(const std::string& osmId,
+                                  const std::string& wkt) {
+  if (_hasCurrent) {
+    _cb(_current);
+  }
+
+  _current = {};
+  _current.id = osmId;
+  _current.type = inferOsmObjectType(osmId);
+  _current.wkt = wkt;
+  _hasCurrent = true;
+}
+
+void OsmResultReader::mergeRowIntoCurrentObject() {
+  const auto osmId = getRequiredCell(_colNames, _curRow, "osm_id");
+  const auto tagKey = 
+      normalizeOsmTagKey(getRequiredCell(_colNames, _curRow, "a"));
+  const auto tagValue = getRequiredCell(_colNames, _curRow, "b");
+  const auto wkt = getRequiredCell(_colNames, _curRow, "hasgeometry");
+
+  if (!_hasCurrent || _current.id != osmId) {
+    startObject(osmId, wkt);
+  } else if (_current.wkt != wkt) {
+    throw std::runtime_error("Conflicting WKT for osm_id: " + osmId);
+  }
+
+  auto it = _current.tags.find(tagKey);
+  if (it != _current.tags.end() && it->second != tagValue) {
+    throw std::runtime_error("Conflicting tag value for osm_id: " + osmId +
+                             ", key: " + tagKey);
+  }
+
+  _current.tags[tagKey] = tagValue;
+}
+
+// _____________________________________________________________________________
+OsmPrimitiveStore osmPrimitivesFromOsmObjects(
+    const std::vector<OsmObject>& objects) {
+      OsmPrimitiveStore store;
+      OsmIdGenerator ids;
+
+      for (const auto& object : objects) {
+        const char* wktStart = nullptr;
+        const auto crsType = util::geo::getCRSType(object.wkt.c_str(), &wktStart);
+        const auto wktType = util::geo::getWKTType(wktStart, &wktStart);
+
+        if (crsType == util::geo::CRSType::UNSUPPORTED) {
+          throw std::runtime_error("Unsupported CRS for osm_id: " + object.id);
+        }
+
+        if (wktType == util::geo::WKTType::POINT) {
+          const auto point = util::geo::pointFromWKT<double>(wktStart, nullptr);
+          store.nodes.push_back(
+              {ids.nodeId(), point.getX(), point.getY(), object.tags});
+        } else if (wktType == util::geo::WKTType::LINESTRING) {
+          const auto line = util::geo::lineFromWKT<double>(wktStart, nullptr);
+          addWayFromLine(&store, &ids, line, object.tags);
+        } else {
+          throw std::runtime_error("Unsupported WKT type for osm_id: " + object.id);
+        }
+      }
+
+      return store;
+    }
+}  // namespace petrimaps
 // _____________________________________________________________________________
 std::string petrimaps::normalizeURL(const std::string& inURL) {
   CURLU* url = curl_url();
