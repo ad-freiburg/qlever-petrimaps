@@ -511,7 +511,7 @@ uint8_t RequestReader::requestGeoPointDatatype() {
   }
 
   ID id;
-  memcpy(id.bytes, response.data(), sizeof(id.bytes));
+  std::memcpy(id.bytes, response.data(), sizeof(id.bytes));
 
   return idDatatype(id.val);
 }
