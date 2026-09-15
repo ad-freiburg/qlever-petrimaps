@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <chrono>
 #include <codecvt>
+#include <cerrno>
+#include <ostream>
+#include <streambuf>
 #include <cctype>
 #include <csignal>
 #include <locale>
@@ -38,6 +41,7 @@
 #include "qlever-petrimaps/build.h"
 #include "qlever-petrimaps/example.h"
 #include "qlever-petrimaps/index.h"
+#include "qlever-petrimaps/Misc.h"
 #include "qlever-petrimaps/server/RenderContext.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "qlever-petrimaps/server/Server.h"
@@ -72,6 +76,47 @@ using util::geo::webMercToLatLng;
 
 const static double THRESHOLD = 200;
 static std::atomic<size_t> _curRow;
+namespace {
+class SocketStreamBuf : public std::streambuf {
+  public:
+    explicit SocketStreamBuf(int socket) : _socket(socket) {}
+
+  protected:
+    std::streamsize xsputn(const char* data, std::streamsize size) override {
+      size_t written = 0;
+      const size_t wanted = static_cast<size_t>(size);
+
+      while (written < wanted) {
+        const int64_t result =
+            send(_socket, data + written, wanted - written, MSG_NOSIGNAL);
+
+        if (result < 0) {
+          if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) {
+            continue;
+          }
+
+          return static_cast<std::streamsize>(written);
+        }
+
+        written += static_cast<size_t>(result);
+      }
+
+      return size;
+    }
+
+    int_type overflow(int_type character) override {
+      if (character == traits_type::eof()) {
+        return traits_type::not_eof(character);
+      }
+
+      const char value = traits_type::to_char_type(character);
+      return xsputn(&value, 1) == 1 ? character : traits_type::eof();
+    }
+
+    private:
+      int _socket;
+};
+}
 
 // _____________________________________________________________________________
 Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime,
@@ -120,6 +165,14 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
     } else if (cmd == "/export") {
       LOG(INFO) << "Export request from " << remoteAddress(con, req.params);
       a = handleExportReq(params, req.params, con);
+    } else if (cmd == "/osm-export") {
+      if (req.cmd != "POST") {
+        throw std::invalid_argument("OSM export requires POST.");
+      }
+
+      LOG(INFO) << "OSM export request from "
+                << remoteAddress(con, req.params);
+      a = handleOsmExportReq(params, req.params, con);
     } else if (cmd == "/loadstatus") {
       a = handleLoadStatusReq(params, req.params, con);
     } else if (cmd == "/build.js") {
@@ -2547,6 +2600,68 @@ util::http::Answer Server::handleExportReq(const Params& pars,
 
   aw.raw = true;
   return aw;
+}
+
+// _____________________________________________________________________________
+util::http::Answer Server::handleOsmExportReq(
+    const Params& pars, const HeaderParams& headerParams, int sock) const {
+  if (pars.count("backend") == 0 || pars.find("backend")->second.empty()) {
+    throw std::invalid_argument("No backend specified for OSM export.");
+  }
+
+  if (pars.count("cfg") == 0 || pars.find("cfg")->second.empty()) {
+    throw std::invalid_argument("No request config specified for OSM export.");
+  }
+
+  std::string accessToken;
+  if (headerParams.count("Authorization") != 0) {
+    accessToken = headerParams.find("Authorization")->second;
+  }
+
+  if (accessToken != _accessToken) {
+    throw std::invalid_argument("Invalid access token");
+  }
+
+  const auto config = nlohmann::json::parse(pars.find("cfg")->second);
+
+  if (!config.is_object() || !config.contains("query") ||
+      !config["query"].is_string()) {
+    throw std::invalid_argument(
+        "OSM export config must contain a string query field.");
+  }
+
+  const std::string& backend = pars.find("backend")->second;
+  const std::string query = config["query"].get<std::string>();
+  const std::string remoteAddr = remoteAddress(sock, headerParams);
+  
+  util::http::Answer answer("200 OK", "");
+  answer.params["Content-Encoding"] = "identity";
+  answer.params["Content-Type"] =
+      "application/vnd.openstreetmap.data+xml; charset=utf-8";
+  answer.params["Content-Disposition"] =
+      "attachment; filename=\"export.osm\"";
+  answer.params["Server"] = "qlever-petrimaps";
+
+  SocketStreamBuf socketBuffer(sock);
+  std::ostream output(&socketBuffer);
+
+  output << "HTTP/1.1 " << answer.status << "\r\n";
+  for (const auto& header : answer.params) {
+    output << header.first << ": " << header.second << "\r\n";
+  }
+  output << "\r\n";
+
+  if (!output) {
+    throw std::runtime_error("Failed to write OSM export response header.");
+  }
+    try {
+    exportQleverTsvToOsmXml(backend, query, output, remoteAddr);
+  } catch (const std::exception& e) {
+    LOG(ERROR) << "OSM export failed after response started: " << e.what();
+  }
+
+  answer.raw = true;
+  return answer;
 }
 
 // _____________________________________________________________________________
