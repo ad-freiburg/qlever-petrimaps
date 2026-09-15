@@ -1,12 +1,15 @@
 // Copyright 2022, University of Freiburg,
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
+//          Bohyun Kim <bk233@email.uni-freiburg.de>
 
 #include <curl/curl.h>
 #include <stdint.h>
 
 #include <exception>
 #include <functional>
+#include <memory>
+#include <ostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -35,9 +38,119 @@ const static std::string CURL_USER_AGENT = "petrimaps";
 
 typedef std::unordered_map<std::string, std::string> HeaderParams;
 
+namespace util {
+namespace xml {
+class XmlWriter;
+}
+}
 namespace petrimaps {
 
 enum ParseState { IN_HEADER, IN_ROW };
+
+struct OsmObject {
+  std::string id;
+  std::string type;
+  std::unordered_map<std::string, std::string> tags;
+  std::string wkt;
+};
+
+struct OsmNode {
+  int64_t id;
+  double lon;
+  double lat;
+  std::unordered_map<std::string, std::string> tags;
+};
+
+struct OsmWay {
+  int64_t id;
+  std::vector<int64_t> nodeRefs;
+  std::unordered_map<std::string, std::string> tags;
+};
+
+struct OsmPrimitiveStore {
+  std::vector<OsmNode> nodes;
+  std::vector<OsmWay> ways;
+};
+
+class OsmPrimitiveBuilder {
+  public:
+    void append(const OsmObject& object, OsmPrimitiveStore* store);
+
+  private:
+    int64_t _nextNodeId = -1;
+    int64_t _nextWayId = -1000000001;
+};
+
+class OsmXmlStreamWriter {
+  public:
+    explicit OsmXmlStreamWriter(std::ostream& out);
+    ~OsmXmlStreamWriter();
+
+    void write(const OsmPrimitiveStore& store);
+    void finish();
+
+  private:
+    void writeNode(const OsmNode& node);
+    void writeWay(const OsmWay& way);
+
+    std::ostream& _out;
+    std::unique_ptr<util::xml::XmlWriter> _xml;
+    bool _finished = false;
+};
+
+std::string normalizeSparqlResultColumn(std::string column);
+std::string normalizeOsmTagKey(std::string key);
+std::string inferOsmObjectType(const std::string& id);
+
+std::vector<OsmObject> osmObjectsFromTsvRows(
+  const std::vector<std::vector<std::pair<std::string, std::string>>>& rows);
+
+OsmPrimitiveStore osmPrimitivesFromOsmObjects(
+  const std::vector<OsmObject>& objects);
+
+void writeOsmXml(const OsmPrimitiveStore& store, std::ostream& out);
+
+void writeOsmXmlFile(const OsmPrimitiveStore& store,
+                     const std::string& fileName);
+class OsmResultReader {
+  public:
+    using ObjectCallback = std::function<void(const OsmObject&)>;
+
+    explicit OsmResultReader(ObjectCallback cb);
+
+    void parse(const char* data, size_t size);
+    void finish();
+
+  private:
+    void finishCell();
+    void finishRow();
+    void startObject(const std::string& osmId, const std::string& wkt);
+    void mergeRowIntoCurrentObject();
+
+    ObjectCallback _cb;
+    ParseState _state = IN_HEADER;
+    std::vector<std::string> _colNames;
+    std::vector<std::string> _curRow;
+    std::string _dangling;
+    size_t _curCol = 0;
+
+    OsmObject _current;
+    bool _hasCurrent = false;
+};
+
+class OsmTsvToXmlExporter {
+  public:
+    explicit OsmTsvToXmlExporter(std::ostream& out);
+
+    void parse(const char* data, size_t size);
+    void finish();
+
+  private:
+    OsmPrimitiveBuilder _primitiveBuilder;
+    OsmXmlStreamWriter _xmlWriter;
+    OsmResultReader _reader;
+    bool _finished = false;
+};
 
 struct IdMapping {
   QLEVER_ID_TYPE qid;
@@ -112,6 +225,7 @@ inline void petrimapsCurlSetup(CURL* curl) {
   curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, false);
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, 0);
   curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+  curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
 }
 
 size_t writeStringCb(void* contents, size_t size, size_t nmemb, void* userp);
@@ -236,6 +350,16 @@ struct RequestReader {
   size_t _valFields;
   size_t _rasterMetaFields;
 };
+
+void exportQleverTsvToOsmXml(const std::string& backendUrl,
+                             const std::string& query,
+                             std::ostream& out,
+                             const std::string& remoteAddr = "");
+
+void exportQleverTsvToOsmXmlFile(const std::string& backendUrl,
+                                 const std::string& query,
+                                 const std::string& fileName,
+                                 const std::string& remoteAddr = "");
 
 }  // namespace petrimaps
 
