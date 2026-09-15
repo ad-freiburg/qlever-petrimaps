@@ -85,46 +85,49 @@ void GeomCache::parse(const char *c, size_t size) {
             _qidToIdFSize++;
           } else {
             const char *s = 0;
-            auto wktType = util::geo::getWKTType(_dangling.c_str(), &s);
+            auto crsType = util::geo::getCRSType(_dangling.c_str(), &s);
+            auto wktType = util::geo::getWKTType(s, &s);
             size_t i = 0;
 
-            if (wktType == util::geo::WKTType::COLLECTION) {
-              _curUniqueGeom++;
-              const auto &coll =
-                  util::geo::collectionFromWKTProj<double>(s, 0, &projD);
+            if (crsType != util::geo::CRSType::UNSUPPORTED) {
+              if (wktType == util::geo::WKTType::COLLECTION) {
+                _curUniqueGeom++;
+                const auto &coll =
+                    util::geo::collectionFromWKTProj<double>(s, 0, &projD, crsType);
 
-              for (const auto &g : coll) {
-                if (g.getType() == 0) addMultiPoint({g.getPoint()}, &i);
-                if (g.getType() == 1) addLineString(g.getLine(), &i);
-                if (g.getType() == 2) addPolygon(g.getPolygon(), &i);
-                if (g.getType() == 3) addMultiLineString(g.getMultiLine(), &i);
-                if (g.getType() == 4) addMultiPolygon(g.getMultiPolygon(), &i);
-                if (g.getType() == 6) addMultiPoint(g.getMultiPoint(), &i);
+                for (const auto &g : coll) {
+                  if (g.getType() == 0) addMultiPoint({g.getPoint()}, &i);
+                  if (g.getType() == 1) addLineString(g.getLine(), &i);
+                  if (g.getType() == 2) addPolygon(g.getPolygon(), &i);
+                  if (g.getType() == 3) addMultiLineString(g.getMultiLine(), &i);
+                  if (g.getType() == 4) addMultiPolygon(g.getMultiPolygon(), &i);
+                  if (g.getType() == 6) addMultiPoint(g.getMultiPoint(), &i);
+                }
+              } else if (wktType == util::geo::WKTType::MULTIPOINT) {
+                _curUniqueGeom++;
+                const auto &mp = multiPointFromWKTProj<double>(s, 0, &projD, crsType);
+                addMultiPoint(mp, &i);
+              } else if (wktType == util::geo::WKTType::POINT) {
+                _curUniqueGeom++;
+                const auto &mp = multiPointFromWKTProj<double>(s, 0, &projD, crsType);
+                addMultiPoint(mp, &i);
+              } else if (wktType == util::geo::WKTType::MULTILINESTRING) {
+                _curUniqueGeom++;
+                const auto &ml = multiLineFromWKTProj<double>(s, 0, &projD, crsType);
+                addMultiLineString(ml, &i);
+              } else if (wktType == util::geo::WKTType::LINESTRING) {
+                _curUniqueGeom++;
+                const auto &l = lineFromWKTProj<double>(s, 0, &projD, crsType);
+                addLineString(l, &i);
+              } else if (wktType == util::geo::WKTType::MULTIPOLYGON) {
+                _curUniqueGeom++;
+                const auto &mp = multiPolygonFromWKTProj<double>(s, 0, &projD, crsType);
+                addMultiPolygon(mp, &i);
+              } else if (wktType == util::geo::WKTType::POLYGON) {
+                _curUniqueGeom++;
+                const auto &poly = polygonFromWKTProj<double>(s, 0, &projD, crsType);
+                addPolygon(poly, &i);
               }
-            } else if (wktType == util::geo::WKTType::MULTIPOINT) {
-              _curUniqueGeom++;
-              const auto &mp = multiPointFromWKTProj<double>(s, 0, &projD);
-              addMultiPoint(mp, &i);
-            } else if (wktType == util::geo::WKTType::POINT) {
-              _curUniqueGeom++;
-              const auto &mp = multiPointFromWKTProj<double>(s, 0, &projD);
-              addMultiPoint(mp, &i);
-            } else if (wktType == util::geo::WKTType::MULTILINESTRING) {
-              _curUniqueGeom++;
-              const auto &ml = multiLineFromWKTProj<double>(s, 0, &projD);
-              addMultiLineString(ml, &i);
-            } else if (wktType == util::geo::WKTType::LINESTRING) {
-              _curUniqueGeom++;
-              const auto &l = lineFromWKTProj<double>(s, 0, &projD);
-              addLineString(l, &i);
-            } else if (wktType == util::geo::WKTType::MULTIPOLYGON) {
-              _curUniqueGeom++;
-              const auto &mp = multiPolygonFromWKTProj<double>(s, 0, &projD);
-              addMultiPolygon(mp, &i);
-            } else if (wktType == util::geo::WKTType::POLYGON) {
-              _curUniqueGeom++;
-              const auto &poly = polygonFromWKTProj<double>(s, 0, &projD);
-              addPolygon(poly, &i);
             }
 
             // dummy element to keep sync

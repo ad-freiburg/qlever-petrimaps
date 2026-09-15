@@ -1847,7 +1847,7 @@ util::http::Answer Server::handleTouchReq(const Params& pars,
       getGeomCacheConfig(backend, accessToken, configJson, remoteAddr);
 
   createCache(backendCfg);
-  std::shared_ptr<GeomCache> cache = _caches[backend];
+  std::shared_ptr<GeomCache> cache = _caches[backendCfg.backend];
 
   std::stringstream ss;
   ss << "{\"config\":";
