@@ -69,6 +69,7 @@
       <div class="tabs">
         <button type="button" class="active" onclick="showTab(0)">Various layers</button>
         <button type="button" onclick="showTab(1)">Object styles</button>
+        <button type="button" onclick="showTab(2)">Checkboxes</button>
       </div>
 
       <textarea class="config" id="config1" name="cfg">
@@ -429,75 +430,131 @@
         "name" : "pointsize=0",
         "geomfield" : "?stationgeom",
         "style" : "objects",
-		"pointsize" : 0,
+        "pointsize" : 0,
         "group" : "Point radius"
     },
     {
         "name" : "pointsize=1",
         "geomfield" : "?stationgeom",
         "style" : "objects",
-		"pointsize" : 1,
+        "pointsize" : 1,
         "group" : "Point radius"
     },
     {
         "name" : "pointsize=2",
         "geomfield" : "?stationgeom",
         "style" : "objects",
-		"pointsize" : 2,
+        "pointsize" : 2,
         "group" : "Point radius"
     },
     {
         "name" : "pointsize=3",
         "geomfield" : "?stationgeom",
         "style" : "objects",
-		"pointsize" : 3,
+        "pointsize" : 3,
         "group" : "Point radius"
     },
     {
         "name" : "pointsize=4",
         "geomfield" : "?stationgeom",
         "style" : "objects",
-		"pointsize" : 4,
+        "pointsize" : 4,
         "group" : "Point radius"
     },
     {
         "name" : "pointsize=5",
         "geomfield" : "?stationgeom",
         "style" : "objects",
-		"pointsize" : 5,
+        "pointsize" : 5,
         "group" : "Point radius"
     },
     {
         "name" : "pointsize=10",
         "geomfield" : "?stationgeom",
         "style" : "objects",
-		"pointsize" : 10,
+        "pointsize" : 10,
         "group" : "Point radius"
     },
     {
         "name" : "pointsize=20",
         "geomfield" : "?stationgeom",
         "style" : "objects",
-		"pointsize" : 20,
+        "pointsize" : 20,
         "group" : "Point radius"
     },
     {
         "name" : "pointsize=50",
         "geomfield" : "?stationgeom",
         "style" : "objects",
-		"pointsize" : 50,
+        "pointsize" : 50,
         "group" : "Point radius"
     },
     {
         "name" : "pointsize=100",
         "geomfield" : "?stationgeom",
         "style" : "objects",
-		"pointsize" : 100,
+        "pointsize" : 100,
         "group" : "Point radius"
     }
   ]
 }
 
+</textarea>
+      <textarea class="config" id="config3" name="cfg" hidden disabled>
+{
+  "query" : "PREFIX geo: <http://www.opengis.net/ont/geosparql#>\nPREFIX osm: <https://www.openstreetmap.org/>\nPREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nPREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>\nPREFIX osm2rdf: <https://osm2rdf.cs.uni-freiburg.de/rdf#>\nSELECT ?country ?admin_level ?area ?geom WHERE {\n  ?country osmkey:admin_level ?admin_level .\n  ?country rdf:type osm:relation .                                                                                                                                                                                 \n  ?country osmkey:name ?name . \n  ?country osm2rdf:area ?area . \n  ?country geo:hasGeometry/geo:asWKT ?geom . \n  ?country osmkey:start_date ?start_date .                                                              \n  ?country osmkey:end_date ?end_date .   \n  VALUES ?date { \"1900-01-01\"^^xsd:date } \n FILTER(REGEX(STR(?start_date), \"^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$\"))\n FILTER(REGEX(STR(?end_date), \"^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$\"))\n FILTER (?date >= xsd:date(?start_date) && ?date <= xsd:date(?end_date))                                                                                                                                          \n}",
+  "layers" : [
+    {
+        "id" : "1",
+        "name" : "?geom in rot",
+        "geomfield" : "?geom",
+        "color" : "FF0000",
+        "style" : "objects",
+        "enabled": false,
+        "toggle" : "checkbox"
+    },
+    {
+        "name" : "?geom in grün",
+        "geomfield" : "?geom",
+        "color" : "00FF00",
+        "style" : "objects",
+        "toggle" : "checkbox"
+    },
+    {
+        "name" : "?geom in blau",
+        "geomfield" : "?geom",
+        "color" : "0000FF",
+        "style" : "objects",
+        "toggle" : "checkbox",
+        "enabled": false
+    },
+    {
+        "name" : "?geom als heatmap (area, spectral)",
+        "geomfield" : "?geom",
+        "weightfield" : "?area",
+        "colorscheme" : "spectral",
+        "style" : "heatmap",
+        "toggle" : "checkbox"
+    },
+    {
+        "name" : "?geom als heatmap (area, spectralexp)",
+        "geomfield" : "?geom",
+        "weightfield" : "?area",
+        "colorscheme" : "spectralexp",
+        "style" : "heatmap",
+        "toggle" : "checkbox",
+        "enabled": false
+    },
+    {
+        "name" : "?geom als heatmap (admin_level)",
+        "geomfield" : "?geom",
+        "weightfield" : "?admin_level",
+        "colorscheme" : "YlOrRdexp",
+        "style" : "heatmap",
+        "toggle" : "checkbox"
+    }
+  ]
+}
 </textarea>
 
       <label for="backend">QLever backend</label>

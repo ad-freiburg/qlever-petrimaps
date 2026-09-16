@@ -231,6 +231,8 @@ function loadLayers(sessionId, layers) {
         overlays: [{name:"", type:"radio", layers: []}, {name:"", type:"checkbox", layers: []}]
     };
 
+    let haveLoading = false;
+
     for (layer of layers) {
         let theme = themes["default"];
         if (layer["group"]) theme = themes[layer["group"]];
@@ -238,14 +240,20 @@ function loadLayers(sessionId, layers) {
         let prepedLayer = getLayer(sessionId, layer);
         if (prepedLayer) {
             prepedLayer.layer = trackTileStyle(prepedLayer.layer, layer);
-            prepedLayer.layer.on('load', _onLayerLoad);
+            prepedLayer.layer.on('load', clearLoading);
+            prepedLayer.layer.on('remove', clearLoading);
             if (layer["toggle"] == "checkbox") {
+                prepedLayer.checked = layer["enabled"];
+                if (prepedLayer.checked) haveLoading = true;
                 theme.overlays[1].layers.push(prepedLayer);
             } else {
                 theme.overlays[0].layers.push(prepedLayer);
+                haveLoading = true;
             }
         }
     }
+
+    if (!haveLoading) clearLoading();
 
     const themeControl = new L.Control.ThemeLayerSwitcher(themes, {
         position: 'topleft',
@@ -410,7 +418,7 @@ document.getElementById("msg").classList.add("show");
 fetchResults();
 fetchLoadStatusInterval(333);
 
-function _onLayerLoad(e) {
+function clearLoading(e) {
     clearInterval(loadStatusIntervalId);
     document.getElementById("msg").classList.remove("show");
 }

@@ -211,11 +211,14 @@ L.Control.ThemeLayerSwitcher = L.Control.extend({
           ? `overlay-${themeKey}-${group.name}`
           : null;
 
+      if (input.type === 'checkbox') {
+        if (entry.checked) input.checked = true;
+        this._handleCheckbox(entry.layer, input.checked);
+      }
+
 	  if (!have) {
-		input.checked = true;
-        group.type === 'radio'
-          ? this._handleRadioGroup(group, entry.layer)
-          : this._handleCheckbox(entry.layer, true);
+        if (group.type === 'radio')
+          this._handleRadioGroup(group, entry.layer);
         have = true;
       }
 

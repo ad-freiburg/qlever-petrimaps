@@ -34,6 +34,7 @@ struct LayerConfig {
   std::string valueField = "";
   std::string rasterMetaField = "";
   std::string toggle = "";
+  bool enabled = true;
   double rasterW = 10;
   double rasterH = 10;
   std::string color = "3388ff";

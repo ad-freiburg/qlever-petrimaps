@@ -2251,7 +2251,8 @@ util::http::Answer Server::handleQueryReq(const Params& pars,
     json << "\"colorscheme\":\"" << layer.colorscheme << "\",";
     json << "\"numobjects\":\"" << reqor->getNumObjects(lid) << "\",";
     json << "\"style\":\"" << layer.style << "\",";
-    json << "\"toggle\":\"" << layer.toggle << "\"";
+    json << "\"toggle\":\"" << layer.toggle << "\",";
+    json << "\"enabled\":" << (layer.enabled ? "true" : "false");
     if (layer.rasterW != 0 && layer.rasterH != 0)
       json << ",\"rasterw\":" << layer.rasterW
            << ", \"rasterh\":" << layer.rasterH;
@@ -2561,6 +2562,8 @@ RequestorConfig Server::getRequestorCfgFromJSON(
               curField.rasterMetaField = layer.value()["rasterfield"];
             if (layer.value().contains("toggle"))
               curField.toggle = layer.value()["toggle"];
+            if (layer.value().contains("enabled"))
+              curField.enabled = layer.value()["enabled"].get<bool>();;
             if (layer.value().contains("rasterw"))
               curField.rasterW = layer.value()["rasterw"].get<double>();
             if (layer.value().contains("rasterh"))
