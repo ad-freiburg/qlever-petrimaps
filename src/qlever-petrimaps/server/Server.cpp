@@ -2587,10 +2587,6 @@ RequestorConfig Server::getRequestorCfgFromJSON(
             if (layer.value().contains("pointradius"))
               curField.objectStyle.pointRadius =
                   layer.value()["pointradius"].get<double>();
-            // pointsize as an alias for pointradius
-            if (layer.value().contains("pointsize"))
-              curField.objectStyle.pointRadius =
-                  layer.value()["pointsize"].get<double>();
             if (layer.value().contains("group"))
               curField.group = layer.value()["group"].get<std::string>();
             if (curField.name.size() == 0) curField.name = curField.geomField;
