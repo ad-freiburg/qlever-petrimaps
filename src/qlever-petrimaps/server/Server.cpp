@@ -283,13 +283,13 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   auto layers = util::split(layersPar, ',');
   if (layers.size() > 1)
     throw std::invalid_argument("Multiple layers not supported");
-  if (layers.size() == 0)
-    throw std::invalid_argument("No layer specified");
+  if (layers.size() == 0) throw std::invalid_argument("No layer specified");
 
   if (layers.size()) {
     auto parts = util::split(layers[0], ':');
     if (parts.size() != 2)
-      throw std::invalid_argument("Invalid layer '" + layers[0] + "' specified");
+      throw std::invalid_argument("Invalid layer '" + layers[0] +
+                                  "' specified");
     sessionId = parts[0];
     geomField = parts[1];
   }
@@ -325,7 +325,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   if (box.size() != 4) throw std::invalid_argument("Invalid request.");
 
-  LOG(INFO) << "[SERVER] Begin heatmap generation for session " << sessionId << " on geom field " << geomField;;
+  LOG(INFO) << "[SERVER] Begin heatmap generation for session " << sessionId
+            << " on geom field " << geomField;
+  ;
 
   double x1 = std::atof(box[0].c_str());
   double y1 = std::atof(box[1].c_str());
@@ -351,7 +353,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   lcfg = r->getLayers()[lid];
 
-  if (lcfg.geomField != geomField) throw std::invalid_argument("Style not defined for geom field '" + geomField + "', but for '" + lcfg.geomField + "'");
+  if (lcfg.geomField != geomField)
+    throw std::invalid_argument("Style not defined for geom field '" +
+                                geomField + "', but for '" + lcfg.geomField +
+                                "'");
 
   if (lcfg.style == "objects") style = OBJECTS;
   if (lcfg.style == "raster") style = RASTER;
@@ -470,8 +475,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
           auto px = RenderContext::mercToPx(p, orx, ory, mercW, mercH, w, h);
 
           if (style == RASTER) {
-            auto rasterMeta =
-                r->getRasterMetas(lid, oid);
+            auto rasterMeta = r->getRasterMetas(lid, oid);
             rcontext.drawPoint(0, px.getX(), px.getY(), r->getVal(lid, oid),
                                rasterMeta.first, rasterMeta.second);
           } else {
@@ -513,8 +517,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
                   RenderContext::mercToPx(p, orx, ory, mercW, mercH, w, h);
 
               if (style == RASTER) {
-                auto rasterMeta =
-                    r->getRasterMetas(lid, oid);
+                auto rasterMeta = r->getRasterMetas(lid, oid);
                 rcontext.drawPoint(tid, px.getX(), px.getY(),
                                    r->getVal(lid, oid), rasterMeta.first,
                                    rasterMeta.second);
@@ -585,8 +588,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
             auto pix = RenderContext::mercToPx(cellBox.getLowerLeft(), orx, ory,
                                                mercW, mercH, w, h);
             rcontext.drawLinePoint(tid, pix.getX(), pix.getY(),
-                                   lpgrid.getCellSum(x, y), 1,
-                                   1);
+                                   lpgrid.getCellSum(x, y), 1, 1);
           } else {
             for (const auto& p : *cell) {
               int px = ((cellBox.getLowerLeft().getX() + p.getX() * 256 -
@@ -1358,7 +1360,43 @@ util::http::Answer Server::handleWFSGetFeatureReq(
     throw std::invalid_argument("Unsupported WFS version.");
   }
 
-  std::string typeName, sessionId, geomField;
+  auto parseIntParam = [](const std::string& value, const std::string& name) {
+    if (value.empty()) {
+      throw std::invalid_argument("Invalid WFS " + name + " specified.");
+    }
+
+    size_t pos = 0;
+    try {
+      size_t parsed = std::stoull(value, &pos);
+
+      if (pos != value.size()) {
+        throw std::invalid_argument("Invalid WFS " + name + " specified.");
+      }
+
+      return parsed;
+    } catch (...) {
+      throw std::invalid_argument("Invalid WFS " + name + " specified.");
+    }
+  };
+
+  size_t maxFeatures = std::numeric_limits<size_t>::max();
+  const std::string* maxFeaturesParam =
+      getParamCaseInsensitive(pars, "maxfeatures");
+  if (maxFeaturesParam != nullptr && !maxFeaturesParam->empty()) {
+    maxFeatures = parseIntParam(*maxFeaturesParam, "maxFeatures");
+  }
+
+  const std::string* resourceIdParam =
+      getParamCaseInsensitive(pars, "resourceid");
+
+  double simplify = 0;
+  const std::string* simplifyParam = getParamCaseInsensitive(pars, "simplify");
+  if (simplifyParam != nullptr && !simplifyParam->empty()) {
+    simplify = std::atof(simplifyParam->c_str());
+  }
+
+  std::string typeName, sessionId, geomField, sessionIdFromResourceId,
+      geomFieldFromResourceId;
   const std::string* typeNamesParam =
       getParamCaseInsensitive(pars, "typenames");
   const std::string* typeNameParam = getParamCaseInsensitive(pars, "typename");
@@ -1367,16 +1405,31 @@ util::http::Answer Server::handleWFSGetFeatureReq(
     typeName = *typeNamesParam;
   } else if (typeNameParam != nullptr && !typeNameParam->empty()) {
     typeName = *typeNameParam;
-  } else {
-    throw std::invalid_argument("No WFS typename specified.");
   }
 
-  auto parts = util::split(typeName, ':');
-  if (parts.size() != 2)
-    throw std::invalid_argument("Invalid type name '" + typeName + "' specified");
+  if (typeName.size()) {
+    auto parts = util::split(typeName, ':');
+    if (parts.size() != 2)
+      throw std::invalid_argument("Invalid type name '" + typeName +
+                                  "' specified");
 
-  sessionId = parts[0];
-  geomField = parts[1];
+    sessionId = parts[0];
+    geomField = parts[1];
+  }
+
+  if (resourceIdParam != nullptr && !resourceIdParam->empty()) {
+    auto parts = util::split(*resourceIdParam, ':');
+
+    if (parts.size() == 3) {
+      sessionIdFromResourceId = parts[0];
+      geomFieldFromResourceId = parts[1];
+    }
+  }
+
+  // could happen for requests without typename given
+  if (sessionId.empty()) sessionId = sessionIdFromResourceId;
+  if (geomField.empty()) geomField = geomFieldFromResourceId;
+
   std::shared_ptr<Requestor> reqor;
 
   bool found = false;
@@ -1405,25 +1458,6 @@ util::http::Answer Server::handleWFSGetFeatureReq(
 
   auto layerCfg = reqor->getLayers()[lid];
 
-  auto parseIntParam = [](const std::string& value, const std::string& name) {
-    if (value.empty()) {
-      throw std::invalid_argument("Invalid WFS " + name + " specified.");
-    }
-
-    size_t pos = 0;
-    try {
-      size_t parsed = std::stoull(value, &pos);
-
-      if (pos != value.size()) {
-        throw std::invalid_argument("Invalid WFS " + name + " specified.");
-      }
-
-      return parsed;
-    } catch (...) {
-      throw std::invalid_argument("Invalid WFS " + name + " specified.");
-    }
-  };
-
   size_t total = reqor->getNumObjects(lid);
   size_t startIndex = 0;
 
@@ -1443,8 +1477,6 @@ util::http::Answer Server::handleWFSGetFeatureReq(
   FBox fbbox;
 
   const std::string* bboxParam = getParamCaseInsensitive(pars, "bbox");
-  const std::string* gidParam = getParamCaseInsensitive(pars, "gid");
-  const std::string* countParam = getParamCaseInsensitive(pars, "count");
 
   if (bboxParam != nullptr && !bboxParam->empty()) {
     auto bboxParts = util::split(*bboxParam, ',');
@@ -1498,6 +1530,10 @@ util::http::Answer Server::handleWFSGetFeatureReq(
   std::vector<size_t> featureIds;
 
   if (hasBbox) {
+    if (maxFeatures > 1) {
+      throw std::invalid_argument(
+          "maxFeatures for bounding box based GetFeatures must be <= 1");
+    }
     // select by bounding box
     std::unordered_set<ID_TYPE> candidates;
 
@@ -1509,41 +1545,38 @@ util::http::Answer Server::handleWFSGetFeatureReq(
       reqor->getLineGrid(lid).get(fbbox, &candidates);
     }
 
-    for (const auto& cand : candidates) {
-      auto oid = reqor->getObjects(lid)[cand].second;
-      auto geomId = reqor->getObjects(lid)[cand].first;
-
+    for (auto oid : candidates) {
       if (reqor->isCluster(lid, oid)) oid = reqor->getCluster(lid, oid).first;
 
-      bool include = false;
-
-      if (geomId < I_OFFSET) {
+      if (reqor->isPoint(lid, oid)) {
         auto p = reqor->getPoint(lid, oid);
-        include = contains(p, fbbox);
+        if (util::geo::contains(p, fbbox)) featureIds.push_back(oid);
       } else {
+        auto geomId = reqor->getObjects(lid)[oid].first;
         size_t lineId = geomId - I_OFFSET;
 
         if (reqor->isArea(lineId)) {
           const auto& dline = reqor->extractLineGeom(lineId);
-          include = util::geo::intersects(dbbox, util::geo::DPolygon(dline));
-        } else  {
-          include = reqor->lineIntersects(lineId, dbbox);
+          if (util::geo::intersects(dbbox, util::geo::DPolygon(dline)))
+            featureIds.push_back(oid);
+        } else {
+          if (reqor->lineIntersects(lineId, dbbox)) featureIds.push_back(oid);
         }
       }
 
-      if (include) {
-        featureIds.push_back(oid);
+      if (featureIds.size() >= maxFeatures) break;
+    }
+  } else if (resourceIdParam != nullptr && !resourceIdParam->empty()) {
+    auto parts = util::split(*resourceIdParam, ':');
+
+    if (parts.size() == 3 && sessionId == parts[0]) {
+      size_t featureLid = reqor->getLidByGeomField(parts[1]);
+      size_t oid = atoi(parts[2].c_str());
+
+      if (maxFeatures > 0 && featureLid == lid && reqor->isValidOId(lid, oid)) {
+        featureIds = {oid};
       }
     }
-  } else if (gidParam != nullptr && !gidParam->empty()) {
-    // select by ID
-    const size_t gid = parseIntParam(*gidParam, "gid");
-    const size_t selectableTotal =
-        reqor->getObjects(lid).size() + reqor->getDynamicPoints(lid).size();
-    if (gid >= selectableTotal) {
-      throw std::invalid_argument("Invalid WFS gid specified.");
-    }
-    featureIds = {gid};
   } else {
     fullExport = true;
   }
@@ -1551,11 +1584,8 @@ util::http::Answer Server::handleWFSGetFeatureReq(
   size_t featureStart = std::min(startIndex, featureIds.size());
   size_t featureEnd = featureIds.size();
 
-  if (countParam != nullptr && !countParam->empty()) {
-    size_t count = parseIntParam(*countParam, "count");
-    if (count < featureIds.size() - featureStart) {
-      featureEnd = featureStart + count;
-    }
+  if (maxFeatures < featureIds.size() - featureStart) {
+    featureEnd = featureStart + maxFeatures;
   }
 
   auto answ = util::http::Answer("200 OK", "");
@@ -1583,6 +1613,8 @@ util::http::Answer Server::handleWFSGetFeatureReq(
   bool first = false;
 
   if (fullExport) {
+    // TODO: pass through maxFeatures here to the LIMIT clause of the SPARQL
+    //       query
     size_t oid = 0;
     reqor->requestRows(
         [sock, &first, &oid, &sessionId, &layerCfg](
@@ -1607,10 +1639,11 @@ util::http::Answer Server::handleWFSGetFeatureReq(
               dict.dict[row[i].first] = row[i].second;
             }
 
-            dict.dict["gid"] = oid;
-            dict.dict["featureID"] = sessionId + "::" + std::to_string(oid);
+            dict.dict["featureID"] = sessionId + ":" + layerCfg.geomField +
+                                     ":" + std::to_string(oid);
 
             if (row[geomField].second.size()) {
+              // TODO: use simplify here
               first = printWKTFeature(json, row[geomField].second, dict, first);
               json << "\n";
             }
@@ -1624,10 +1657,10 @@ util::http::Answer Server::handleWFSGetFeatureReq(
   } else {
     for (size_t idx = featureStart; idx < featureEnd; idx++) {
       size_t oid = featureIds[idx];
-      std::string featureId = sessionId + "::" + std::to_string(oid);
+      std::string featureId =
+          sessionId + ":" + layerCfg.geomField + ":" + std::to_string(oid);
 
       util::json::Val dict;
-      dict.dict["gid"] = oid;
       dict.dict["featureID"] = featureId;
 
       size_t row = reqor->getRow(lid, oid);
@@ -1646,6 +1679,11 @@ util::http::Answer Server::handleWFSGetFeatureReq(
 
       if (first) json << ",";
       first = true;
+
+      if (simplify > 0) {
+        res.poly = util::geo::simplify(res.poly, simplify);
+        res.line = util::geo::simplify(res.line, simplify);
+      }
 
       if ((res.poly.size() != 0) + (res.point.size() != 0) +
               (res.line.size() != 0) >
@@ -1856,225 +1894,6 @@ util::http::Answer Server::handleTouchReq(const Params& pars,
   ss << "}";
 
   auto answ = util::http::Answer("200 OK", ss.str());
-  answ.params["Content-Type"] = "application/json; charset=utf-8";
-
-  return answ;
-}
-// _____________________________________________________________________________
-util::http::Answer Server::handleWFSPickFeatureReq(const Params& pars,
-                                                   const HeaderParams& headers,
-                                                   int sock) const {
-  return handleNearestFeatureReq(pars, headers, sock, true);
-}
-// _____________________________________________________________________________
-util::http::Answer Server::handleNearestFeatureReq(const Params& pars,
-                                                   const HeaderParams& headers,
-                                                   int sock,
-                                                   bool isWfsRequest) const {
-  auto remoteAddr = remoteAddress(sock, headers);
-
-  if (pars.count("x") == 0 || pars.find("x")->second.empty())
-    throw std::invalid_argument("No x coord (?x=) specified.");
-  float x = std::atof(pars.find("x")->second.c_str());
-
-  if (pars.count("y") == 0 || pars.find("y")->second.empty())
-    throw std::invalid_argument("No y coord (?y=) specified.");
-  float y = std::atof(pars.find("y")->second.c_str());
-
-  if (pars.count("rad") == 0 || pars.find("rad")->second.empty())
-    throw std::invalid_argument("No rad (?rad=) specified.");
-  float rad = std::atof(pars.find("rad")->second.c_str());
-
-  if (pars.count("width") == 0 || pars.find("width")->second.empty())
-    throw std::invalid_argument("No width (?width=) specified.");
-  if (pars.count("height") == 0 || pars.find("height")->second.empty())
-    throw std::invalid_argument("No height (?height=) specified.");
-
-  if (pars.count("bbox") == 0 || pars.find("bbox")->second.empty())
-    throw std::invalid_argument("No bbox specified.");
-  auto box = util::split(pars.find("bbox")->second, ',');
-
-  std::string typeName, sessionId, geomField;
-  const std::string* typeNamesParam =
-      getParamCaseInsensitive(pars, "typenames");
-  const std::string* typeNameParam = getParamCaseInsensitive(pars, "typename");
-
-  if (typeNamesParam != nullptr && !typeNamesParam->empty()) {
-    typeName = *typeNamesParam;
-  } else if (typeNameParam != nullptr && !typeNameParam->empty()) {
-    typeName = *typeNameParam;
-  } else {
-    throw std::invalid_argument("No WFS typename specified.");
-  }
-
-  auto parts = util::split(typeName, ':');
-  if (parts.size() != 2)
-    throw std::invalid_argument("Invalid type name '" + typeName + "' specified");
-
-  sessionId = parts[0];
-  geomField = parts[1];
-
-  if (box.size() != 4) throw std::invalid_argument("Invalid request.");
-  if (isWfsRequest) {
-    const std::string* srsParam = getParamCaseInsensitive(pars, "srsName");
-    if (srsParam == nullptr) {
-      srsParam = getParamCaseInsensitive(pars, "crs");
-    }
-
-    std::string srsName = srsParam != nullptr ? lower(*srsParam) : "epsg:3857";
-
-    if (srsName != "epsg:3857" && srsName != "urn:ogc:def:crs:epsg::3857") {
-      throw std::invalid_argument("WFS pick requires EPSG:3857 coordinates.");
-    }
-  }
-
-  double x1 = std::atof(box[0].c_str());
-  double y1 = std::atof(box[1].c_str());
-  double x2 = std::atof(box[2].c_str());
-  double y2 = std::atof(box[3].c_str());
-  double mercH = fabs(y2 - y1);
-
-  auto fbbox = FBox({x1, y1}, {x2, y2});
-
-  int h = atoi(pars.find("height")->second.c_str());
-
-  if (h <= 0 || h > 3000) throw std::invalid_argument("Invalid request");
-
-  double reso = mercH / h;
-
-  // res of -1 means dont render clusters
-  if (reso >= THRESHOLD) reso = -1;
-
-  LOG(DEBUG) << "[SERVER] WFS pick at " << x << ", " << y;
-
-  std::shared_ptr<Requestor> reqor;
-  {
-    std::lock_guard<std::mutex> guard(_m);
-    bool has = _rs.count(sessionId);
-    if (!has) {
-      LOG(ERROR) << "Session " << sessionId << " not found!";
-      throw std::invalid_argument("Session not found");
-    }
-    reqor = _rs[sessionId];
-  }
-
-  if (!reqor->ready()) {
-    throw std::invalid_argument("Session not ready.");
-  }
-
-  size_t lid = reqor->getLidByGeomField(geomField);
-
-  // as soon as we are ready, the reqor can be read concurrently
-
-  LOG(INFO) << "Looking up nearest geometry...";
-  auto res = reqor->getNearest(lid, {x, y}, rad, reso, fbbox, remoteAddr);
-  LOG(INFO) << "Got nearest geometry...";
-
-  if (isWfsRequest) {
-    std::stringstream json;
-    json << "{\"type\":\"FeatureCollection\",\"features\":[";
-
-    if (res.has) {
-      util::json::Val dict;
-
-      dict.dict["id"] = std::to_string(res.id);
-      dict.dict["geomfield"] = reqor->getLayers()[res.fieldId].geomField;
-
-      auto ll = webMercToLatLng<float>(res.pos.getX(), res.pos.getY());
-      dict.dict["popup_lat"] = std::to_string(ll.getY());
-      dict.dict["popup_lng"] = std::to_string(ll.getX());
-
-      for (const auto& kv : res.cols) {
-        dict.dict[kv.first] = kv.second;
-      }
-
-      if ((res.poly.size() != 0) + (res.point.size() != 0) +
-              (res.line.size() != 0) >
-          1) {
-        util::geo::Collection<double> col;
-        col.push_back(res.poly);
-        col.push_back(res.line);
-        col.push_back(res.point);
-
-        GeoJsonOutput out(json, true);
-        out.printLatLng(col, dict);
-      } else if (res.poly.size()) {
-        GeoJsonOutput out(json, true);
-        out.printLatLng(res.poly, dict);
-      } else if (res.line.size()) {
-        GeoJsonOutput out(json, true);
-        out.printLatLng(res.line, dict);
-      } else {
-        GeoJsonOutput out(json, true);
-        out.printLatLng(res.point, dict);
-      }
-    }
-    json << "]}";
-
-    auto answ = util::http::Answer("200 OK", json.str());
-    answ.params["Content-Type"] = "application/json; charset=utf-8";
-    return answ;
-  }
-
-  std::stringstream json;
-
-  json << "[";
-
-  if (res.has) {
-    json << "{\"id\" :" << res.id;
-    json << ",\"geomfield\" :\"" << reqor->getLayers()[res.fieldId].geomField
-         << "\"";
-    json << ",\"attrs\" : [";
-
-    bool first = true;
-
-    for (const auto& kv : res.cols) {
-      if (!first) {
-        json << ",";
-      }
-      json << "[\"" << util::jsonStringEscape(kv.first) << "\",\""
-           << util::jsonStringEscape(kv.second) << "\"]";
-
-      first = false;
-    }
-
-    auto ll = webMercToLatLng<float>(res.pos.getX(), res.pos.getY());
-
-    json << "]";
-    json << std::setprecision(10) << ",\"ll\":{\"lat\" : " << ll.getY()
-         << ",\"lng\":" << ll.getX() << "}";
-
-    if ((res.poly.size() != 0) + (res.point.size() != 0) +
-            (res.line.size() != 0) >
-        1) {
-      util::geo::Collection<double> col;
-      col.push_back(res.poly);
-      col.push_back(res.line);
-      col.push_back(res.point);
-
-      json << ",\"geom\":";
-      GeoJsonOutput out(json);
-      out.printLatLng(col, {});
-    } else if (res.poly.size()) {
-      json << ",\"geom\":";
-      GeoJsonOutput out(json);
-      out.printLatLng(res.poly, {});
-    } else if (res.line.size()) {
-      json << ",\"geom\":";
-      GeoJsonOutput out(json);
-      out.printLatLng(res.line, {});
-    } else {
-      json << ",\"geom\":";
-      GeoJsonOutput out(json);
-      out.printLatLng(res.point, {});
-    }
-
-    json << "}";
-  }
-
-  json << "]";
-
-  auto answ = util::http::Answer("200 OK", json.str());
   answ.params["Content-Type"] = "application/json; charset=utf-8";
 
   return answ;
@@ -2563,7 +2382,8 @@ RequestorConfig Server::getRequestorCfgFromJSON(
             if (layer.value().contains("toggle"))
               curField.toggle = layer.value()["toggle"];
             if (layer.value().contains("enabled"))
-              curField.enabled = layer.value()["enabled"].get<bool>();;
+              curField.enabled = layer.value()["enabled"].get<bool>();
+            ;
             if (layer.value().contains("rasterw"))
               curField.rasterW = layer.value()["rasterw"].get<double>();
             if (layer.value().contains("rasterh"))

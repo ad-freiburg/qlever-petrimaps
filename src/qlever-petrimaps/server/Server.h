@@ -54,13 +54,6 @@ class Server : public util::http::Handler {
   util::http::Answer handleWFSGetFeatureReq(const Params& pars,
                                             const HeaderParams& headerPars,
                                             int sock) const;
-  util::http::Answer handleWFSPickFeatureReq(const Params& pars,
-                                            const HeaderParams& headerPars,
-                                            int sock) const;
-  util::http::Answer handleNearestFeatureReq(const Params& pars,
-                                             const HeaderParams& headerPars,
-                                             int sock,
-                                             bool isWfsRequest) const;
 
   std::string getHeatLayer(const std::string& layer) const;
   static uint64_t validateTileCoordinates(int x, int y, int z);

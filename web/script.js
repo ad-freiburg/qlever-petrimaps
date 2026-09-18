@@ -4,8 +4,7 @@
 
 let sessionId;
 let curGeojson;
-let curGeojsonId = -1;
-let curGeojsonLayer = "";
+let curGeojsonId = "";
 
 let currentTileConfig = null;
 
@@ -99,29 +98,27 @@ function openPopup(data) {
                 .replace(/\^\^.*$/, "")
                 .replace(/\"(.*)\"(@[a-z]+)?$/, "$1");
 
-                    popup_content_strings.push(
-                        "<tr>" + (i == 0 ? image_cell : "") +
-                        "<td>" + key.replace(/_/g, " ") + "</td>" +
-                        "<td>" + value + "</td></tr>");
-        })
-            let popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
-            popup_html += '<a class="export-link" href="' + getWfsExportUrl(data[0]) + '">Export via GeoJSON</a>';
-            if (curGeojson) curGeojson.remove();
-
-
-            L.popup({"maxWidth" : 600})
-                .setLatLng(data[0]["ll"])
-                .setContent(popup_html)
-                .openOn(map)
-                .on('remove', function() {
-                    curGeojson.remove();
-                    curGeojsonId = -1;
-                });
+            popup_content_strings.push(
+                "<tr>" + (i == 0 ? image_cell : "") +
+                "<td>" + key.replace(/_/g, " ") + "</td>" +
+                "<td>" + value + "</td></tr>");
+        });
+        let popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
+        popup_html += '<a class="export-link" href="' + getWfsExportUrl(data[0]) + '">Export via GeoJSON</a>';
+        if (curGeojson) curGeojson.remove();
 
         curGeojson = getGeoJsonLayer(data[0].geom);
-        curGeojsonId = data[0].id;
-        curGeojsonLayer = data[0].geomfield;
+        curGeojsonId = data[0].featureId;
         curGeojson.addTo(map);
+
+        L.popup({"maxWidth" : 600})
+            .setLatLng(curGeojson.getBounds().getCenter())
+            .setContent(popup_html)
+            .openOn(map)
+            .on('remove', function() {
+                curGeojson.remove();
+                curGeojsonId = "";
+            });
     }
 }
 
@@ -146,10 +143,9 @@ function getWfsExportUrl(feature) {
         service: "WFS",
         version: "2.0.0",
         request: "GetFeature",
-        typeNames: sessionId + ":" + feature.geomfield,
+        resourceId: feature.featureId,
         outputFormat: "application/json"
     });
-    if (feature.id) params.gid = feature.id;
     return "wfs?" + params.toString();
 }
 
@@ -162,18 +158,13 @@ function wfsFeatureCollectionToPopupData(data) {
     const props = feature.properties || {};
 
     const attrs = Object.keys(props)
-        .filter(key => !["id", "gid", "featureID", "geomfield", "popup_lat", "popup_lng"].includes(key))
+        .filter(key => !["featureID"].includes(key))
         .filter(key => !isGeometryVariable(key))
         .map(key => [key, String(props[key])])
         .sort((a, b) => popupAttributePriority(a[0]) - popupAttributePriority(b[0]));
     return [{
-        id: props.id,
-        geomfield: props.geomfield,
+        featureId: props.featureID,
         attrs: attrs,
-        ll: {
-            lat: parseFloat(props.popup_lat),
-            lng: parseFloat(props.popup_lng)
-        },
         geom: feature.geometry
     }];
 }
@@ -196,6 +187,7 @@ function getGeoJsonLayer(geom) {
 
 function showError(err) {
     msg = err.toString();
+    console.error(err);
     document.getElementById("msg-info").style.display = "none";
     document.getElementById("load").style.display = "none";
     const heading = document.getElementById("msg-heading");
@@ -357,12 +349,20 @@ function fetchResults() {
             map.on('click', function(e) {
                 const pos = L.Projection.SphericalMercator.project(e.latlng);
 
-                const bounds = [pos.x, pos.y, pos.x, pos.y];
+                // padding based on zoom factor
+                const padding = 100 * Math.pow(2, 14 - map.getZoom());
+
+                // simplifcation also based on zomm factor
+                // NOTE: simplification is not a standard WFS parameter, but
+                // the code below does not depend on it, it simply gets a bit faster
+                const simplification = 20 * Math.pow(2, 14 - map.getZoom());
+                const bounds = [pos.x - padding, pos.y - padding, pos.x + padding, pos.y + padding];
 
                 fetch('wfs?service=WFS&version=2.0.0&request=GetFeature'
                     + '&typeNames=' + id + ":" + currentTileConfig.geomField
-                    + '&rad=' + (100 * Math.pow(2, 14 - map.getZoom()))
                     + '&bbox=' + bounds.join(',')
+                    + '&maxFeatures=1'
+                    + '&simplify=' + simplification
                     + '&srsName=EPSG:3857'
                     + '&outputFormat=application/json')
                     .then(response => {
@@ -374,8 +374,9 @@ function fetchResults() {
             });
 
             map.on('zoomend', function(e) {
-                if (curGeojsonId > -1) {
-                    fetch('geojson?gid=' + curGeojsonId + "&id=" + id + "&layer=" + curGeojsonLayer + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
+                if (curGeojsonId != "") {
+                    const simplification = 20 * Math.pow(2, 14 - map.getZoom());
+                    fetch('wfs?service=WFS&version=2.0.0&request=GetFeature&resourceId=' + curGeojsonId + "&simplify=" + simplification)
                         .then(response => response.json())
                         .then(function(data) {
                             curGeojson.remove();
@@ -444,7 +445,7 @@ function buildTileExportUrls() {
     return {
         tms: `${window.location.origin}/tms/${sessionId}/${layerId}/{x}/{y}/{z}.png`,
         wmts: `${window.location.origin}/wmts?service=WMTS&request=GetTile&version=1.0.0&layer=${sessionId}&style=${layerId}&format=image/png&tilematrixset=WebMercatorQuad&tilematrix={z}&tilerow={y}&tilecol={x}`,
-        wfs: `${window.location.origin}/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=${wfsTypeName}&layerid=${layerId}&bbox=${bbox}&srsName=EPSG:4326&outputFormat=application/json&count=100`
+        wfs: `${window.location.origin}/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=${wfsTypeName}&layerid=${layerId}&bbox=${bbox}&srsName=EPSG:4326&outputFormat=application/json&maxFeatures=100`
     };
 }
 
@@ -485,7 +486,6 @@ document.getElementById("ex-csv").onclick = function() {
 
 document.getElementById("ex-tile").onclick = function() {
     const urls = buildTileExportUrls();
-    console.log(urls);
     if (!urls) return;
     showTileDialog(urls);
 }

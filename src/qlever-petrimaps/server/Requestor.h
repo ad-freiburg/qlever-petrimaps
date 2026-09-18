@@ -209,13 +209,27 @@ class Requestor {
     return _objects[gid][oid].second;
   }
 
-  bool isCluster(size_t lid, ID_TYPE id) const {
-    return id >= getObjects(lid).size() + getDynamicPoints(lid).size();
+  bool isCluster(size_t lid, ID_TYPE oid) const {
+    return oid >= getObjects(lid).size() + getDynamicPoints(lid).size();
   }
 
-  size_t getLine(ID_TYPE id) const { return _cache->getLine(id); }
+  bool isDynamicPoint(size_t lid, ID_TYPE oid) const {
+    return oid >= getObjects(lid).size() && !isCluster(lid, oid);
+  }
 
-  size_t getLineEnd(ID_TYPE id) const { return _cache->getLineEnd(id); }
+  bool isPoint(size_t lid, ID_TYPE oid) const {
+    return (oid < getObjects(lid).size() &&
+            getObjects(lid)[oid].first < I_OFFSET) ||
+           isDynamicPoint(lid, oid);
+  }
+
+  bool isValidOId(size_t lid, ID_TYPE oid) const {
+    return oid < getObjects(lid).size() + getDynamicPoints(lid).size();
+  }
+
+  size_t getLine(ID_TYPE oid) const { return _cache->getLine(oid); }
+
+  size_t getLineEnd(ID_TYPE oid) const { return _cache->getLineEnd(oid); }
 
   const std::vector<util::geo::Point<int16_t>,
                     util::no_init_allocator<util::geo::Point<int16_t>>>&
@@ -223,8 +237,8 @@ class Requestor {
     return _cache->getLinePoints();
   }
 
-  util::geo::DBox getLineBBox(ID_TYPE id) const {
-    return _cache->getLineBBox(id);
+  util::geo::DBox getLineBBox(ID_TYPE oid) const {
+    return _cache->getLineBBox(oid);
   }
 
   const ResObj getNearest(size_t lid, util::geo::DPoint p, double rad,
@@ -245,14 +259,12 @@ class Requestor {
   bool isArea(size_t lineId) const;
   bool isInnerArea(size_t lineId) const;
 
-  double getLineDistance(
-      size_t lineId,
-      const util::geo::DPoint& queryPoint) const;
+  double getLineDistance(size_t lineId,
+                         const util::geo::DPoint& queryPoint) const;
 
-  double getPolygonDistance(
-      size_t polygonId,
-      const util::geo::DPoint& queryPoint,
-      double radius) const;
+  double getPolygonDistance(size_t polygonId,
+                            const util::geo::DPoint& queryPoint,
+                            double radius) const;
 
   // total number of objects over all distinct geometry columns
   size_t getNumObjects() const {

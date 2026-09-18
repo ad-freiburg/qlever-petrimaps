@@ -217,8 +217,10 @@ L.Control.ThemeLayerSwitcher = L.Control.extend({
       }
 
 	  if (!have) {
-        if (group.type === 'radio')
+        if (group.type === 'radio') {
           this._handleRadioGroup(group, entry.layer);
+          input.checked = true;
+        }
         have = true;
       }
 
