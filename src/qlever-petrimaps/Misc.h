@@ -49,6 +49,15 @@ union ID {
   uint8_t bytes[8];
 };
 
+// The datatype of a QLever ID is stored in its top four bits.
+inline uint8_t idDatatype(uint64_t id) {
+  return (id & (uint64_t(15) << 60)) >> 60;
+}
+
+// The datatype value for a point, used when a backend cannot be asked for it,
+// see `RequestReader::requestGeoPointDatatype`.
+const static uint8_t DEFAULT_GEOPOINT_DATATYPE = 9;
+
 inline bool operator<(const IdMapping& lh, const IdMapping& rh) {
   if (lh.qid < rh.qid) return true;
   return false;
@@ -196,6 +205,7 @@ struct RequestReader {
   std::map<size_t, std::pair<double, double>> requestRasterMeta(
       const std::string& query, const std::string& remoteAddr);
   std::string requestIndexHash(const std::string& configHash);
+  uint8_t requestGeoPointDatatype();
   void requestRows(const std::string& qurl, const std::string& remoteAddr);
   void requestRows(const std::string& query,
                    const std::function<void(const char*, size_t)>& parse,
