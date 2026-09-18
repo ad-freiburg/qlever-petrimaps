@@ -4,7 +4,9 @@
 
 #include <curl/curl.h>
 #include <fcntl.h>
+#ifdef _OPENMP
 #include <omp.h>
+#endif
 #include <stdlib.h>
 #include <unistd.h>
 
