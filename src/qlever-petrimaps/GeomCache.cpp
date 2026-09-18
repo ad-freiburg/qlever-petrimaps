@@ -1100,6 +1100,13 @@ std::string GeomCache::requestIndexHash() {
 }
 
 // _____________________________________________________________________________
+uint8_t GeomCache::requestGeoPointDatatype() {
+  auto r = RequestReader(getConfig().backend, _maxMemory, 0, 0, 0);
+
+  return r.requestGeoPointDatatype();
+}
+
+// _____________________________________________________________________________
 std::pair<double, double> GeomCache::getRasterMeta(size_t did) const {
   auto i = _rasterMeta.find(did);
   if (i != _rasterMeta.end()) return i->second;
@@ -1123,6 +1130,10 @@ std::string GeomCache::load(const std::string &cacheDir) {
               << ") and remote index hash (" << indexHash << ") dont match.";
     _ready = false;
   }
+
+  // Only ask for this when the cache is built or rebuilt, not for every query.
+  _geoPointDatatype = requestGeoPointDatatype();
+  LOG(INFO) << "Datatype of a point is " << static_cast<int>(_geoPointDatatype);
 
   if (cacheDir.size()) {
     std::string backend = getConfig().backend;

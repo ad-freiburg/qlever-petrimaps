@@ -988,29 +988,18 @@ std::vector<std::pair<util::geo::FPoint, ID_TYPE>> Requestor::getDynamicPoints(
 
   size_t count = 0;
 
+  // Points are not in the geometry cache, they are encoded in the ID itself.
+  uint8_t pointDatatype = _cache->getGeoPointDatatype();
+
   for (const auto& p : ids) {
-    uint8_t type = (p.qid & (uint64_t(15) << 60)) >> 60;
-    // A geo point in QLever used to have datatype bits `1000` before
-    // https://github.com/ad-freiburg/qlever/pull/3159 (merged on 2026-09-01),
-    // and has datatype bits `1001` since then.
-    //
-    // NOTE: Allowing both also treats a `WordVocabIndex` as a geo point for
-    // QLever indexes built before that change (where `1001` are the datatype
-    // bits of a `WordVocabIndex`), and a `Date` as a geo point for QLever
-    // indexes built since that change (where `1000` are the datatype bits of a
-    // `Date`). But a petrimaps request that asks to draw `Id`s of those types
-    // on a map should not happen in the first place, so this is not a problem
-    // in practice.
-    if (type == 8 || type == 9) count++;
+    if (idDatatype(p.qid) == pointDatatype) count++;
   }
 
   checkMem(sizeof(std::pair<util::geo::FPoint, ID_TYPE>) * count, _maxMemory);
   ret.reserve(count);
 
   for (const auto& p : ids) {
-    uint8_t type = (p.qid & (uint64_t(15) << 60)) >> 60;
-    // A geo point in QLever; see the comment above for a detailed explanation.
-    if (type != 8 && type != 9) continue;
+    if (idDatatype(p.qid) != pointDatatype) continue;
 
     uint64_t maskLng = 1073741823;
     uint64_t maskLat = static_cast<uint64_t>(1073741823) << 30;
