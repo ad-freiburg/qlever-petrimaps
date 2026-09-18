@@ -112,8 +112,12 @@ void RenderContext::drawPoint(size_t tid, int px, int py, double weight,
       }
     }
   } else if (_style == OBJECTS) {
+    // a disc of radius r; the + r keeps the outline round at small radii
+    // while still filling the full 3x3 square for r = 1
     for (int x = px - r; x <= px + r; x++) {
       for (int y = py - r; y <= py + r; y++) {
+        int dx = x - px, dy = y - py;
+        if (dx * dx + dy * dy > r * r + r) continue;
         if (x >= 0 && y >= 0 && x < _w && y < _h) {
           if (_weights[tid][_w * y + x] == 0)
             _points[tid].push_back(_w * y + x);
