@@ -3,11 +3,17 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <curl/curl.h>
+#include <fcntl.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #include <stdlib.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <cerrno>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -972,7 +978,8 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
   std::streampos posLines;
   std::streampos posQidToId;
 
-  // get total num points
+  // determines the sizes of the four blocks
+
   // points
   if (!f) throw std::runtime_error("Corrupted cache file");
   f.read(reinterpret_cast<char *>(&numPoints), sizeof(size_t));
@@ -1013,40 +1020,73 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
   _totalSize = numPoints + numLinePoints + numLines + numQidToId;
   _curRow = 0;
 
-  // read data from files, directly into the vector, in blocks of blockSize
-  auto readBlocks = [&](char *data, size_t num, size_t elemSize) {
-    for (size_t i = 0; i < num; i += blockSize) {
-      size_t n = std::min(blockSize, num - i);
-      f.read(data + i * elemSize, elemSize * n);
-      if (!f) throw std::runtime_error("Corrupted cache file");
-      _curRow += n;
-    }
+  f.close();
+
+  struct Block {
+    unsigned char *data;
+    size_t off;
+    size_t size;
+    size_t elemSize;
   };
 
-  // points
-  f.seekg(posPoints);
-  if (!f) throw std::runtime_error("Corrupted cache file");
-  readBlocks(reinterpret_cast<char *>(_points.data()), numPoints,
-             sizeof(util::geo::FPoint));
+  Block sections[4];
 
-  // linePoints
-  f.seekg(posLinePoints);
-  if (!f) throw std::runtime_error("Corrupted cache file");
-  readBlocks(reinterpret_cast<char *>(_linePoints.data()), numLinePoints,
-             sizeof(util::geo::Point<int16_t>));
+  sections[0].data = reinterpret_cast<unsigned char *>(_points.data());
+  sections[0].off = posPoints;
+  sections[0].size = numPoints;
+  sections[0].elemSize = sizeof(util::geo::FPoint);
 
-  // lines
-  f.seekg(posLines);
-  if (!f) throw std::runtime_error("Corrupted cache file");
-  readBlocks(reinterpret_cast<char *>(_lines.data()), numLines, sizeof(size_t));
+  sections[1].data = reinterpret_cast<unsigned char *>(_linePoints.data());
+  sections[1].off = posLinePoints;
+  sections[1].size = numLinePoints;
+  sections[1].elemSize = sizeof(util::geo::Point<int16_t>);
 
-  // qidToId
-  f.seekg(posQidToId);
-  if (!f) throw std::runtime_error("Corrupted cache file");
-  readBlocks(reinterpret_cast<char *>(_qidToId.data()), numQidToId,
-             sizeof(IdMapping));
+  sections[2].data = reinterpret_cast<unsigned char *>(_lines.data());
+  sections[2].off = posLines;
+  sections[2].size = numLines;
+  sections[2].elemSize = sizeof(size_t);
 
-  f.close();
+  sections[3].data = reinterpret_cast<unsigned char *>(_qidToId.data());
+  sections[3].off = posQidToId;
+  sections[3].size = numQidToId;
+  sections[3].elemSize = sizeof(IdMapping);
+
+  std::vector<Block> blocks;
+
+  // split the parsing into blocks of blockSize
+  for (const auto &sec : sections) {
+    for (size_t i = 0; i < sec.size; i += blockSize) {
+      size_t n = std::min(blockSize, sec.size - i);
+      blocks.push_back({sec.data + i * sec.elemSize,
+                        sec.off + static_cast<off_t>(i * sec.elemSize),
+                        n * sec.elemSize, sec.elemSize});
+    }
+  }
+
+  const int fd = open(fname.c_str(), O_RDONLY);
+  if (fd < 0) throw std::runtime_error("Could not open cache file " + fname);
+
+  std::atomic<bool> failed(false);
+
+#pragma omp parallel for schedule(dynamic)
+  for (size_t i = 0; i < blocks.size(); i++) {
+    if (failed) continue;  // unspin if we are in faiulre mode
+
+    auto block = blocks[i];
+
+    ssize_t n = util::preadAll(fd, block.data, block.size, block.off);
+    if (n != static_cast<ssize_t>(block.size)) {
+      failed = true;
+      continue;
+    }
+
+    // track how many elements we have already read for the status bar
+    _curRow += block.size / block.elemSize;
+  }
+
+  close(fd);
+
+  if (failed) throw std::runtime_error("Corrupted cache file");
 }
 
 // _____________________________________________________________________________
