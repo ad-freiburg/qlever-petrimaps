@@ -548,8 +548,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
       for (size_t idx = 0; idx < ret.size(); idx++) {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
-        auto lineId = r->getObjects(lid)[ret[idx]].first;
-        auto oid = r->getObjects(lid)[ret[idx]].second;
+        auto lineId = r->getObject(lid, ret[idx]).first;
+        auto oid = r->getObject(lid, ret[idx]).second;
         if (!util::geo::intersects(r->getLineBBox(lineId - I_OFFSET), bbox))
           continue;
 
@@ -615,8 +615,8 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
       for (size_t idx = 0; idx < ret.size(); idx++) {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
-        auto lineId = r->getObjects(lid)[ret[idx]].first;
-        auto oid = r->getObjects(lid)[ret[idx]].second;
+        auto lineId = r->getObject(lid, ret[idx]).first;
+        auto oid = r->getObject(lid, ret[idx]).second;
         auto geom = r->extractLineGeom(lineId - I_OFFSET, res);
         if (r->isInnerArea(lineId - I_OFFSET)) {
           rcontext.drawArea(0, geom, r->getVal(lid, oid), true, true);
@@ -1549,7 +1549,7 @@ util::http::Answer Server::handleWFSGetFeatureReq(
         auto p = reqor->getPoint(lid, oid);
         if (util::geo::contains(p, fbbox)) featureIds.push_back(oid);
       } else {
-        auto geomId = reqor->getObjects(lid)[oid].first;
+        auto geomId = reqor->getObject(lid, oid).first;
         size_t lineId = geomId - I_OFFSET;
 
         if (reqor->isArea(lineId)) {

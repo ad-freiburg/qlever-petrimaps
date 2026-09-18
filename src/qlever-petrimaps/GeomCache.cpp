@@ -967,6 +967,7 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
 
   // get total num points
   // points
+  if (!f) throw std::runtime_error("Corrupted cache file");
   f.read(reinterpret_cast<char *>(&numPoints), sizeof(size_t));
 
   checkMem(sizeof(util::geo::FPoint) * numPoints, _maxMemory);

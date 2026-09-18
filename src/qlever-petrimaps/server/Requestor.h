@@ -161,6 +161,10 @@ class Requestor {
     return _objects[_lidToObject[lid]];
   }
 
+  const std::pair<ID_TYPE, ID_TYPE>& getObject(size_t lid, ID_TYPE oid) const {
+    return _objects[_lidToObject[lid]][oid];
+  }
+
   const std::vector<std::pair<util::geo::FPoint, ID_TYPE>>& getDynamicPoints(
       size_t lid) const {
     return _dynamicPoints[_lidToObject[lid]];
