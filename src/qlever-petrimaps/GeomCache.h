@@ -97,9 +97,7 @@ class GeomCache {
  public:
   GeomCache() : _config(), _curRow(0), _maxMemory(-1) {}
   explicit GeomCache(const GeomCacheConfig& config, size_t maxMemory)
-      : _config(config),
-        _curRow(0),
-        _maxMemory(maxMemory) {}
+      : _config(config), _curRow(0), _maxMemory(maxMemory) {}
 
   GeomCache& operator=(GeomCache&& o) {
     _config = o._config;
@@ -216,8 +214,6 @@ class GeomCache {
 
   std::string queryFields(std::string query, size_t offset, size_t limit) const;
 
-  static util::geo::DLine createLineString(const std::string& a, size_t p);
-
   void addPolygon(const util::geo::Polygon<double>& p, size_t* i);
   void addMultiPoint(const util::geo::MultiPoint<double>& mp, size_t* i);
   void addMultiLineString(const util::geo::MultiLine<double>& ml, size_t* i);
@@ -226,9 +222,8 @@ class GeomCache {
 
   void insertLine(const util::geo::DLine& l, bool isArea, bool isInner = false);
 
-  static std::vector<size_t> getGeomStarts(const std::string& str, size_t a);
-
-  static util::geo::DPoint projD(const util::geo::DPoint& p, util::geo::CRSType sourceCRS) {
+  static util::geo::DPoint projD(const util::geo::DPoint& p,
+                                 util::geo::CRSType sourceCRS) {
     return util::geo::projectToWebMerc<double>(p, sourceCRS);
   }
 

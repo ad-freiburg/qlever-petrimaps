@@ -222,7 +222,7 @@ struct RequestReader {
   size_t _curCol = 0;
   size_t _curRow = 0;
 
-  std::string _dangling, _raw, _curVal;
+  std::string _dangling, _raw;
   size_t _curDatasetId = 0;
   double _curFieldWidth = 0;
   double _curFieldHeight = 0;
@@ -230,13 +230,12 @@ struct RequestReader {
 
   ParseState _state = IN_HEADER;
 
-  std::vector<std::vector<std::pair<std::string, std::string>>> rows;
-  std::vector<std::pair<std::string, std::string>> curCols;
+  std::vector<std::vector<std::pair<std::string, std::string>>> _rows;
+  std::vector<std::pair<std::string, std::string>> _curCols;
 
   uint8_t _curByte = 0;
   size_t _curIdCol = 0;
   ID _curId;
-  size_t _received = 0;
   std::vector<std::vector<IdMapping>> _ids;
   std::vector<std::vector<double>> _vals;
   std::vector<std::vector<size_t>> _rasterMetas;

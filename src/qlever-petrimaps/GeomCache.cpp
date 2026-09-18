@@ -981,6 +981,7 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
   // determines the sizes of the four blocks
 
   // points
+  if (!f) throw std::runtime_error("Corrupted cache file");
   f.read(reinterpret_cast<char *>(&numPoints), sizeof(size_t));
 
   checkMem(sizeof(util::geo::FPoint) * numPoints, _maxMemory);
@@ -1093,7 +1094,7 @@ void GeomCache::serializeToDisk(const std::string &fname) const {
   std::ofstream f;
   f.open(fname, std::ios::binary);
 
-  std::string h = _indexHash;
+  std::string h = _indexHash.substr(0, 99);
   h.insert(h.end(), 99 - h.size(), ' ');
 
   // null byte is 100

@@ -88,7 +88,8 @@
 }
 
 .leaflet-overlay-pane {
-    z-index: 400
+    z-index: 400;
+    transform: translate3d(-0.5px, -0.5px, 0);
 }
 
 .leaflet-shadow-pane {
@@ -800,15 +801,15 @@ h1, #msg-heading {
 	display: none;
 }
 
-.leaflet-control-layers .leaflet-control-layers-overlays:has(> :nth-child(3)) {
+.leaflet-control-layers .leaflet-control-layers-overlays:has(> :nth-child(2)) {
 	display: block;
-   margin-top:20px;
 }
 
 .leaflet-control-layers .leaflet-control-layers-separator {
   margin: 0;
   position: relative;
   top: 10px;
+  margin-bottom: 20px;
 }
 
 .export-link {

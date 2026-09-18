@@ -321,12 +321,12 @@ void RequestReader::parse(const char* c, size_t size) {
         }
       case IN_ROW:
         if (*c == '\t' || *c == '\n') {
-          curCols.push_back({_colNames[_curCol], _dangling});
+          _curCols.push_back({_colNames[_curCol], _dangling});
 
           if (*c == '\n') {
             _curRow++;
-            rows.push_back(curCols);
-            curCols = {};
+            _rows.push_back(_curCols);
+            _curCols = {};
             _curCol = 0;
           } else {
             _curCol++;
