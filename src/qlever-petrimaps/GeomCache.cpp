@@ -1022,7 +1022,7 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
   f.close();
 
   struct Block {
-    char *data;
+    unsigned char *data;
     size_t off;
     size_t size;
     size_t elemSize;
@@ -1030,22 +1030,22 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
 
   Block sections[4];
 
-  sections[0].data = reinterpret_cast<char *>(_points.data());
+  sections[0].data = reinterpret_cast<unsigned char *>(_points.data());
   sections[0].off = posPoints;
   sections[0].size = numPoints;
   sections[0].elemSize = sizeof(util::geo::FPoint);
 
-  sections[1].data = reinterpret_cast<char *>(_linePoints.data());
+  sections[1].data = reinterpret_cast<unsigned char *>(_linePoints.data());
   sections[1].off = posLinePoints;
   sections[1].size = numLinePoints;
   sections[1].elemSize = sizeof(util::geo::Point<int16_t>);
 
-  sections[2].data = reinterpret_cast<char *>(_lines.data());
+  sections[2].data = reinterpret_cast<unsigned char *>(_lines.data());
   sections[2].off = posLines;
   sections[2].size = numLines;
   sections[2].elemSize = sizeof(size_t);
 
-  sections[3].data = reinterpret_cast<char *>(_qidToId.data());
+  sections[3].data = reinterpret_cast<unsigned char *>(_qidToId.data());
   sections[3].off = posQidToId;
   sections[3].size = numQidToId;
   sections[3].elemSize = sizeof(IdMapping);
@@ -1072,17 +1072,11 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
     if (failed) continue;  // unspin if we are in faiulre mode
 
     auto block = blocks[i];
-    size_t done = 0;
 
-    while (done < block.size) {
-      const ssize_t n = pread(fd, block.data + done, block.size - done,
-                              block.off + static_cast<off_t>(done));
-      if (n < 0 && errno == EINTR) continue;
-      if (n <= 0) {
-        failed = true;
-        break;
-      }
-      done += n;
+    ssize_t n = util::preadAll(fd, block.data, block.size, block.off);
+    if (n != static_cast<ssize_t>(block.size)) {
+      failed = true;
+      continue;
     }
 
     // track how many elements we have already read for the status bar
