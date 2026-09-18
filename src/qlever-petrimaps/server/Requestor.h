@@ -41,10 +41,6 @@ struct LayerConfig {
   std::string colorscheme = "spectralexp";
   std::string style = "auto";
   ObjectStyle objectStyle;
-
-  const std::string geomFieldRaw() const {
-    return util::split(geomField, ':')[0];
-  }
 };
 
 struct RequestorConfig {
@@ -59,18 +55,13 @@ struct RequestorConfig {
                    layer.group + "|" + std::to_string(layer.rasterW) + "|" +
                    std::to_string(layer.rasterH) + "|" + layer.color + "|" +
                    layer.id + "|" + layer.name + "|" + layer.style + "|" +
-                   layer.colorscheme + "|" + layer.toggle;
+                   layer.colorscheme + "|" + layer.toggle + "|" +
+                   layer.rasterMetaField + "|" + (layer.enabled ? "1" : "0");
     return std::to_string(hashF(query + layersStr));
   }
 };
 
 struct ResObj {
-  bool has;
-  size_t id;
-  size_t fieldId;
-  util::geo::DPoint pos;
-  std::vector<std::pair<std::string, std::string>> cols;
-
   // the geometry
   util::geo::MultiPoint<double> point;
   util::geo::MultiLine<double> line;
@@ -175,11 +166,6 @@ class Requestor {
     return _dynamicPoints[_lidToObject[lid]];
   }
 
-  const std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>& getClusters(
-      size_t lid) const {
-    return _clusterObjects[_lidToObject[lid]];
-  }
-
   const std::pair<ID_TYPE, std::pair<size_t, size_t>>& getCluster(
       size_t lid, size_t oid) const {
     const size_t gid = _lidToObject[lid];
@@ -241,10 +227,6 @@ class Requestor {
     return _cache->getLineBBox(oid);
   }
 
-  const ResObj getNearest(size_t lid, util::geo::DPoint p, double rad,
-                          double res, util::geo::FBox box,
-                          const std::string& remoteAddr) const;
-
   const ResObj getGeom(size_t lid, size_t id, double rad) const;
 
   util::geo::MultiPolygon<double> geomPolyGeoms(size_t lid, size_t oid,
@@ -253,18 +235,10 @@ class Requestor {
                                              double eps) const;
   util::geo::MultiPoint<double> geomPointGeoms(size_t lid, size_t oid,
                                                double res) const;
-  util::geo::MultiPoint<double> geomPointGeoms(size_t lid, size_t oid) const;
 
   util::geo::DLine extractLineGeom(size_t lineId, double minD = 0) const;
   bool isArea(size_t lineId) const;
   bool isInnerArea(size_t lineId) const;
-
-  double getLineDistance(size_t lineId,
-                         const util::geo::DPoint& queryPoint) const;
-
-  double getPolygonDistance(size_t polygonId,
-                            const util::geo::DPoint& queryPoint,
-                            double radius) const;
 
   // total number of objects over all distinct geometry columns
   size_t getNumObjects() const {
@@ -329,8 +303,6 @@ class Requestor {
   }
 
  private:
-  std::string _backendUrl;
-
   std::shared_ptr<const GeomCache> _cache;
   RequestorConfig _rcfg;
   std::vector<LayerConfig> _layers;
@@ -358,7 +330,7 @@ class Requestor {
   // value of object oid of geom column gid, taken from value column vid
   double getValFor(size_t gid, size_t vid, size_t oid) const;
 
-  std::string _query, _sortColumn;
+  std::string _sortColumn;
 
   mutable std::mutex _m;
 

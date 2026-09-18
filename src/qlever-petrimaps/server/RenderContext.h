@@ -34,12 +34,6 @@ class RenderContext {
   const std::vector<uint32_t>& getLinePoints(size_t i) {
     return _linePoints[i];
   }
-  const std::vector<uint32_t>& getAreaFillPoints(size_t i) {
-    return _areaFillPoints[i];
-  }
-  const std::vector<std::pair<float, float>>& getRasterDims(size_t i) {
-    return _rasterDims[i];
-  }
   std::vector<unsigned char>& getImage() { return _image; }
   void drawLinePoint(size_t tid, int px, int py, double weight, double rasterW,
                      double rasterH, double rad);

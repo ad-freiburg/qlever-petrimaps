@@ -63,7 +63,7 @@ petrimaps::GeomCacheConfig cacheConfigFromDisk(const std::string& fname) {
     fillQuery = petrimaps::getFillQuery(canonized);
   }
 
-  return {canonized, petrimaps::getFillQuery(canonized)};
+  return {canonized, fillQuery};
 }
 
 // _____________________________________________________________________________

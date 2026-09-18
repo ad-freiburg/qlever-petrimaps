@@ -583,172 +583,12 @@ std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
 }
 
 // _____________________________________________________________________________
-const ResObj Requestor::getNearest(size_t lid, util::geo::DPoint rp, double rad,
-                                   double res, util::geo::FBox fullbox,
-                                   const std::string& remoteAddr) const {
-  if (!_cache->ready()) {
-    throw std::runtime_error("Geom cache not ready");
-  }
-
-  const size_t gid = _lidToObject[lid];
-  const size_t gsid = _lidToGrid[lid];
-
-  auto box = pad(getBoundingBox(rp), rad);
-  auto fbox = pad(getBoundingBox(util::geo::FPoint(rp.getX(), rp.getY())), rad);
-
-  auto frp = util::geo::FPoint{rp.getX(), rp.getY()};
-
-  size_t NUM_THREADS = std::thread::hardware_concurrency();
-
-  size_t nearest = 0;
-  double dBest = std::numeric_limits<double>::max();
-  std::vector<size_t> nearestVec(NUM_THREADS, 0);
-  std::vector<double> dBestVec(NUM_THREADS, std::numeric_limits<double>::max());
-
-  std::vector<size_t> nearestLVec(NUM_THREADS, 0);
-  std::vector<double> dBestLVec(NUM_THREADS,
-                                std::numeric_limits<double>::max());
-  size_t nearestL = 0;
-  double dBestL = std::numeric_limits<double>::max();
-#pragma omp parallel sections
-  {
-#pragma omp section
-    {
-      // points
-
-      std::vector<ID_TYPE> ret;
-
-      if (res > 0)
-        _pgrid[gsid].get(fullbox, &ret);
-      else
-        _pgrid[gsid].get(fbox, &ret);
-
-#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
-      for (size_t idx = 0; idx < ret.size(); idx++) {
-        auto oid = ret[idx];
-        util::geo::FPoint p;
-        if (isCluster(lid, oid)) {
-          auto dp = clusterGeom(lid, oid, res);
-          p = {dp.getX(), dp.getY()};
-        } else {
-          p = getPoint(lid, oid);
-        }
-
-        if (!util::geo::contains(p, fbox)) continue;
-
-        double d = util::geo::dist(p, frp);
-
-        if (d < dBestVec[omp_get_thread_num()]) {
-          nearestVec[omp_get_thread_num()] = oid;
-          dBestVec[omp_get_thread_num()] = d;
-        }
-      }
-    }
-
-#pragma omp section
-    {
-      // lines
-      std::vector<ID_TYPE> retL;
-      _lgrid[gsid].get(fbox, &retL);
-
-#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
-      for (size_t idx = 0; idx < retL.size(); idx++) {
-        const auto& oid = retL[idx];
-        const size_t geometryId = _objects[lid][oid].first - I_OFFSET;
-        const auto lBox = _cache->getLineBBox(geometryId);
-
-        if (!util::geo::intersects(lBox, box)) {
-          continue;
-        }
-
-        double distance;
-
-        if (isArea(geometryId)) {
-          distance = getPolygonDistance(geometryId, rp, rad);
-        } else {
-          distance = getLineDistance(geometryId, rp);
-        }
-
-        const auto threadId = omp_get_thread_num();
-
-        if (distance < dBestLVec[threadId]) {
-          nearestLVec[threadId] = oid;
-          dBestLVec[threadId] = distance;
-        }
-      }
-    }
-  }
-
-  // join threads
-  for (size_t i = 0; i < NUM_THREADS; i++) {
-    if (dBestVec[i] < dBest) {
-      dBest = dBestVec[i];
-      nearest = nearestVec[i];
-    }
-
-    if (dBestLVec[i] < dBestL) {
-      dBestL = dBestLVec[i];
-      nearestL = nearestLVec[i];
-    }
-  }
-
-  if (dBest < rad && dBest <= dBestL) {
-    size_t row = getRow(lid, nearest);
-    auto points = geomPointGeoms(lid, nearest, res);
-
-    return {true,
-            nearest,
-            lid,
-            points.size() == 1 ? points[0] : util::geo::centroid(points),
-            requestRow(row, remoteAddr),
-            points,
-            geomLineGeoms(lid, nearest, rad / 10),
-            geomPolyGeoms(lid, nearest, rad / 10)};
-  }
-
-  if (dBestL < rad && dBestL <= dBest) {
-    size_t lineId = _objects[gid][nearestL].first - I_OFFSET;
-    const auto& dline = extractLineGeom(lineId);
-
-    if (Requestor::isArea(lineId) &&
-        util::geo::contains(rp, util::geo::DPolygon(dline))) {
-      return {true,
-              nearestL,
-              lid,
-              {frp.getX(), frp.getY()},
-              requestRow(_objects[gid][nearestL].second, remoteAddr),
-              geomPointGeoms(lid, nearestL, res),
-              geomLineGeoms(lid, nearestL, rad / 10),
-              geomPolyGeoms(lid, nearestL, rad / 10)};
-    } else {
-      auto p = util::geo::PolyLine<double>(dline).projectOn(rp).p;
-      auto fp = util::geo::DPoint(p.getX(), p.getY());
-      return {true,
-              nearestL,
-              lid,
-              fp,
-              requestRow(_objects[gid][nearestL].second, remoteAddr),
-              geomPointGeoms(lid, nearestL, res),
-              geomLineGeoms(lid, nearestL, rad / 10),
-              geomPolyGeoms(lid, nearestL, rad / 10)};
-    }
-  }
-
-  return {false, 0, 0, {0, 0}, {}, {}, {}, {}};
-}
-
-// _____________________________________________________________________________
 const ResObj Requestor::getGeom(size_t lid, size_t id, double rad) const {
   if (!_cache->ready()) {
     throw std::runtime_error("Geom cache not ready");
   }
 
-  return {true,
-          id,
-          lid,
-          {0, 0},
-          {},
-          geomPointGeoms(lid, id, rad / 10),
+  return {geomPointGeoms(lid, id, rad / 10),
           geomLineGeoms(lid, id, rad / 10),
           geomPolyGeoms(lid, id, rad / 10)};
 }
@@ -811,69 +651,6 @@ bool Requestor::isInnerArea(size_t lineId) const {
 }
 
 // _____________________________________________________________________________
-double Requestor::getLineDistance(
-    size_t lineId,
-    const util::geo::DPoint& queryPoint) const {
-  const auto line = extractLineGeom(lineId);
-
-  if (line.size() < 2) {
-    return std::numeric_limits<double>::infinity();
-  }
-
-  double bestDistance =
-      std::numeric_limits<double>::infinity();
-
-  for (size_t i = 1; i < line.size(); ++i) {
-    const double currentDistance = util::geo::distToSegment(
-              line[i - 1],line[i], queryPoint);
-
-    if (currentDistance < bestDistance) {
-      bestDistance = currentDistance;
-    }
-
-    if (bestDistance < 0.0001) {
-      break;
-    }
-  }
-  return bestDistance;
-}
-
-// _____________________________________________________________________________
-double Requestor::getPolygonDistance(
-    size_t polygonId,
-    const util::geo::DPoint& queryPoint,
-    double radius) const {
-  const auto border = extractLineGeom(polygonId);
-
-  if (border.size() < 3) {
-    return std::numeric_limits<double>::infinity();
-  }
-
-  const util::geo::DPolygon polygon(border);
-
-  if (util::geo::contains(queryPoint, polygon)) {
-    return radius / 4;
-  }
-
-  double bestDistance = std::numeric_limits<double>::infinity();
-
-  for (size_t i = 1; i < border.size(); ++i) {
-    const double currentDistance = util::geo::distToSegment(
-      border[i - 1], border[i], queryPoint);
-
-    if (currentDistance < bestDistance) {
-      bestDistance = currentDistance;
-    }
-
-    if (bestDistance < 0.0001) {
-      break;
-    }
-  }
-
-  return bestDistance;
-}
-
-// _____________________________________________________________________________
 util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t lid,
                                                       size_t oid,
                                                       double eps) const {
@@ -907,11 +684,6 @@ util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t lid,
   return polys;
 }
 
-// _____________________________________________________________________________
-util::geo::MultiPoint<double> Requestor::geomPointGeoms(size_t lid,
-                                                        size_t oid) const {
-  return geomPointGeoms(lid, oid, -1);
-}
 
 // _____________________________________________________________________________
 util::geo::MultiPoint<double> Requestor::geomPointGeoms(size_t lid, size_t oid,

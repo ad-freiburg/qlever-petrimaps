@@ -1490,10 +1490,7 @@ util::http::Answer Server::handleWFSGetFeatureReq(
       throw std::invalid_argument("Invalid WFS BBOX specified.");
     }
 
-    double minX;
-    double minY;
-    double maxX;
-    double maxY;
+    double minX, minY, maxX, maxY;
 
     if (srsName == "epsg:3857" || srsName == "urn:ogc:def:crs:epsg::3857") {
       minX = std::atof(bboxParts[0].c_str());

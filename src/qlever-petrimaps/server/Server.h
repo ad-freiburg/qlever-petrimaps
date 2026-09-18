@@ -64,17 +64,10 @@ class Server : public util::http::Handler {
   util::http::Answer handleQueryReq(const Params& pars,
                                     const HeaderParams& headerPars,
                                     int sock) const;
-  util::http::Answer handleGeoJSONReq(const Params& pars,
-                                      const HeaderParams& headerPars,
-                                      int sock) const;
   util::http::Answer handleClearSessReq(const Params& pars,
                                         const HeaderParams& headerPars,
                                         int sock) const;
-  util::http::Answer handleLoadReq(const Params& pars, int sock) const;
 
-  util::http::Answer handleExportReq(const Params& pars,
-                                     const HeaderParams& headerPars,
-                                     int sock) const;
   util::http::Answer handleLoadStatusReq(const Params& pars,
                                          const HeaderParams& headers,
                                          int sock) const;
@@ -104,13 +97,6 @@ class Server : public util::http::Handler {
   void writePNG(const unsigned char* data, size_t w, size_t h, int sock) const;
 
   static int hexToInt(char c);
-
-  void drawPoint(std::vector<uint32_t>& points, std::vector<double>& weights,
-                 std::vector<std::pair<float, float>>& rasterDims, int px,
-                 int py, int w, int h, MapStyle style, double weight,
-                 double rasterW, double rasterH) const;
-  void drawLine(unsigned char* image, int x0, int y0, int x1, int y1, int w,
-                int h) const;
 
   size_t _maxMemory;
 
