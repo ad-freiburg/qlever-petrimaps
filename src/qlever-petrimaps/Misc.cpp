@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <sys/socket.h>
 
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -482,13 +483,23 @@ std::string RequestReader::requestIndexHash(const std::string& configHash) {
 }
 
 // _____________________________________________________________________________
-uint8_t RequestReader::requestGeoPointDatatype() {
-  // The datatype value for a point is not fixed, it changes whenever a
-  // datatype is added to QLever before it. Let the backend return a single
-  // point and read the value from the top four bits of its ID.
+petrimaps::GeoPointFormat RequestReader::requestGeoPointFormat() {
+  // Neither the datatype value for a point nor the encoding of its coordinates
+  // is fixed: the datatype value changes whenever a datatype is added to
+  // QLever before it, and the encoding changed with
+  // https://github.com/ad-freiburg/qlever/pull/3412. Let the backend return a
+  // single point with known coordinates: its top four bits give the datatype,
+  // and the encoding is the one that reproduces the coordinates.
+  //
+  // NOTE: The coordinates are deliberately not round numbers and far from the
+  // equator and the prime meridian, so that the two encodings yield results
+  // that are nowhere near each other.
+  const static double probeLongitude = 7.835;
+  const static double probeLatitude = 47.999;
   const static std::string query =
       "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
-      "SELECT ?point WHERE { BIND(\"POINT(0 0)\"^^geo:wktLiteral AS ?point) }";
+      "SELECT ?point WHERE { BIND(\"POINT(7.835 47.999)\"^^geo:wktLiteral AS "
+      "?point) }";
 
   std::string response;
 
@@ -498,20 +509,79 @@ uint8_t RequestReader::requestGeoPointDatatype() {
         [&response](const char* c, size_t n) { response.append(c, n); },
         nullptr);
   } catch (const std::exception& e) {
-    LOG(WARN) << "[GEOMCACHE] Could not obtain the datatype of a point: "
+    LOG(WARN) << "[GEOMCACHE] Could not obtain the format of a point: "
               << e.what();
-    return DEFAULT_GEOPOINT_DATATYPE;
+    return {};
   }
 
   // The answer is a single ID, in the byte order it was written in.
   if (response.size() != sizeof(ID)) {
     LOG(WARN) << "[GEOMCACHE] Unexpected answer of size " << response.size()
-              << " when asking for the datatype of a point";
-    return DEFAULT_GEOPOINT_DATATYPE;
+              << " when asking for the format of a point";
+    return {};
   }
 
   ID id;
   std::memcpy(id.bytes, response.data(), sizeof(id.bytes));
 
-  return idDatatype(id.val);
+  GeoPointFormat format;
+  format.datatype = idDatatype(id.val);
+
+  uint64_t valueBits = id.val & ((uint64_t(1) << 60) - 1);
+  for (auto encoding :
+       {GeoPointEncoding::ZOrder, GeoPointEncoding::LatitudeAndLongitude}) {
+    auto point = decodeGeoPoint(valueBits, encoding);
+    if (fabs(point.getX() - probeLongitude) < 0.001 &&
+        fabs(point.getY() - probeLatitude) < 0.001) {
+      format.encoding = encoding;
+      return format;
+    }
+  }
+
+  LOG(WARN) << "[GEOMCACHE] Could not tell how the backend encodes the "
+               "coordinates of a point, assuming latitude and longitude";
+  return format;
+}
+
+namespace {
+
+// The largest quantized coordinate of a point, that is, 30 one-bits (this is
+// `GeoPoint::maxCoordinateEncoded` in QLever).
+const uint64_t maxQuantizedCoordinate = (uint64_t(1) << 30) - 1;
+
+// Pack every second bit of `bits`, starting at the lowest, into a contiguous
+// number. This undoes the bit spreading with which a Z-order code is built.
+uint64_t everySecondBit(uint64_t bits) {
+  bits &= 0x5555555555555555ull;
+  bits = (bits | (bits >> 1)) & 0x3333333333333333ull;
+  bits = (bits | (bits >> 2)) & 0x0F0F0F0F0F0F0F0Full;
+  bits = (bits | (bits >> 4)) & 0x00FF00FF00FF00FFull;
+  bits = (bits | (bits >> 8)) & 0x0000FFFF0000FFFFull;
+  bits = (bits | (bits >> 16)) & 0x00000000FFFFFFFFull;
+  return bits & maxQuantizedCoordinate;
+}
+
+// A quantized coordinate back to degrees. The `maxValue` is 90 for a latitude
+// and 180 for a longitude.
+double coordinateInDegrees(uint64_t quantized, double maxValue) {
+  return (static_cast<double>(quantized) / maxQuantizedCoordinate) * 2 *
+             maxValue -
+         maxValue;
+}
+
+}  // namespace
+
+// _____________________________________________________________________________
+util::geo::FPoint petrimaps::decodeGeoPoint(uint64_t valueBits,
+                                            GeoPointEncoding encoding) {
+  uint64_t latitude, longitude;
+  if (encoding == GeoPointEncoding::ZOrder) {
+    latitude = everySecondBit(valueBits >> 1);
+    longitude = everySecondBit(valueBits);
+  } else {
+    latitude = (valueBits >> 30) & maxQuantizedCoordinate;
+    longitude = valueBits & maxQuantizedCoordinate;
+  }
+  return {static_cast<float>(coordinateInDegrees(longitude, 180.0)),
+          static_cast<float>(coordinateInDegrees(latitude, 90.0))};
 }

@@ -998,21 +998,16 @@ std::vector<std::pair<util::geo::FPoint, ID_TYPE>> Requestor::getDynamicPoints(
   checkMem(sizeof(std::pair<util::geo::FPoint, ID_TYPE>) * count, _maxMemory);
   ret.reserve(count);
 
+  auto pointEncoding = _cache->getGeoPointEncoding();
+
   for (const auto& p : ids) {
     if (idDatatype(p.qid) != pointDatatype) continue;
 
-    uint64_t maskLng = 1073741823;
-    uint64_t maskLat = static_cast<uint64_t>(1073741823) << 30;
-
-    auto lng =
-        ((static_cast<double>((p.qid & maskLng)) / maskLng) * 2 * 180.0) -
-        180.0;
-    auto lat =
-        ((static_cast<double>((p.qid & maskLat) >> 30) / maskLng) * 2 * 90.0) -
-        90.0;
+    uint64_t valueBits = p.qid & ((uint64_t(1) << 60) - 1);
 
     ret.push_back(
-        {util::geo::latLngToWebMerc(util::geo::FPoint{lng, lat}), p.id});
+        {util::geo::latLngToWebMerc(decodeGeoPoint(valueBits, pointEncoding)),
+         p.id});
   }
 
   return ret;

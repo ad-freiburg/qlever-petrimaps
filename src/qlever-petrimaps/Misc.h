@@ -14,6 +14,7 @@
 #include <unordered_map>
 
 #include "util/Misc.h"
+#include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
 #ifndef PETRIMAPS_MISC_H_
@@ -55,8 +56,36 @@ inline uint8_t idDatatype(uint64_t id) {
 }
 
 // The datatype value for a point, used when a backend cannot be asked for it,
-// see `RequestReader::requestGeoPointDatatype`.
+// see `RequestReader::requestGeoPointFormat`.
 const static uint8_t DEFAULT_GEOPOINT_DATATYPE = 9;
+
+// How a backend encodes the two coordinates of a point in the 60 value bits of
+// its ID. Before https://github.com/ad-freiburg/qlever/pull/3412 the quantized
+// latitude occupied the upper 30 of those bits and the quantized longitude the
+// lower 30. Since then the bits of the two coordinates are interleaved (a
+// Morton or Z-order code), so that the points of a geographic rectangle have
+// IDs in few contiguous ranges, which is what makes QLever's prefilter for
+// spatial joins work for points.
+enum class GeoPointEncoding { LatitudeAndLongitude, ZOrder };
+
+// The encoding used when a backend cannot be asked for it, see
+// `RequestReader::requestGeoPointFormat`. It is the one that every index has
+// that was not rebuilt or converted since the change above.
+const static GeoPointEncoding DEFAULT_GEOPOINT_ENCODING =
+    GeoPointEncoding::LatitudeAndLongitude;
+
+// What a backend does with points: which datatype value it gives them, and how
+// it encodes their coordinates. Both can only be found out by asking it, see
+// `RequestReader::requestGeoPointFormat`.
+struct GeoPointFormat {
+  uint8_t datatype = DEFAULT_GEOPOINT_DATATYPE;
+  GeoPointEncoding encoding = DEFAULT_GEOPOINT_ENCODING;
+};
+
+// The coordinates of the point with the given `valueBits` (its ID without the
+// four datatype bits), according to the given `encoding`. The longitude is the
+// x and the latitude the y coordinate of the result.
+util::geo::FPoint decodeGeoPoint(uint64_t valueBits, GeoPointEncoding encoding);
 
 inline bool operator<(const IdMapping& lh, const IdMapping& rh) {
   if (lh.qid < rh.qid) return true;
@@ -205,7 +234,7 @@ struct RequestReader {
   std::map<size_t, std::pair<double, double>> requestRasterMeta(
       const std::string& query, const std::string& remoteAddr);
   std::string requestIndexHash(const std::string& configHash);
-  uint8_t requestGeoPointDatatype();
+  GeoPointFormat requestGeoPointFormat();
   void requestRows(const std::string& qurl, const std::string& remoteAddr);
   void requestRows(const std::string& query,
                    const std::function<void(const char*, size_t)>& parse,
