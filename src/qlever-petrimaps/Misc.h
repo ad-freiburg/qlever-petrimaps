@@ -55,36 +55,23 @@ inline uint8_t idDatatype(uint64_t id) {
   return (id & (uint64_t(15) << 60)) >> 60;
 }
 
-// The datatype value for a point, used when a backend cannot be asked for it,
-// see `RequestReader::requestGeoPointFormat`.
+// Default datatype value for a point if it can't be determined from the backend
 const static uint8_t DEFAULT_GEOPOINT_DATATYPE = 9;
 
-// How a backend encodes the two coordinates of a point in the 60 value bits of
-// its ID. Before https://github.com/ad-freiburg/qlever/pull/3412 the quantized
-// latitude occupied the upper 30 of those bits and the quantized longitude the
-// lower 30. Since then the bits of the two coordinates are interleaved (a
-// Morton or Z-order code), so that the points of a geographic rectangle have
-// IDs in few contiguous ranges, which is what makes QLever's prefilter for
-// spatial joins work for points.
+// How a backend encodes the two coordinates of a point, see
+// https://github.com/ad-freiburg/qlever/pull/3412
 enum class GeoPointEncoding { LatitudeAndLongitude, ZOrder };
 
-// The encoding used when a backend cannot be asked for it, see
-// `RequestReader::requestGeoPointFormat`. It is the one that every index has
-// that was not rebuilt or converted since the change above.
+// Default point encoding if it can't be determined from the backend
 const static GeoPointEncoding DEFAULT_GEOPOINT_ENCODING =
     GeoPointEncoding::LatitudeAndLongitude;
 
-// What a backend does with points: which datatype value it gives them, and how
-// it encodes their coordinates. Both can only be found out by asking it, see
-// `RequestReader::requestGeoPointFormat`.
+// Storage format of geo points in backend
 struct GeoPointFormat {
   uint8_t datatype = DEFAULT_GEOPOINT_DATATYPE;
   GeoPointEncoding encoding = DEFAULT_GEOPOINT_ENCODING;
 };
 
-// The coordinates of the point with the given `valueBits` (its ID without the
-// four datatype bits), according to the given `encoding`. The longitude is the
-// x and the latitude the y coordinate of the result.
 util::geo::FPoint decodeGeoPoint(uint64_t valueBits, GeoPointEncoding encoding);
 
 inline bool operator<(const IdMapping& lh, const IdMapping& rh) {

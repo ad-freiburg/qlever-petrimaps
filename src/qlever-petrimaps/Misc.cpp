@@ -21,8 +21,32 @@ using util::LogLevel::ERROR;
 using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
+// Probe coordinate used to obtain the point encoding from the backend,
+// deliberately not round number and far from the equator and prime meridian, so
+// that the two encodings yield results that are nowhere near each other.
+#define PROBE_LON 7.835
+#define PROBE_LAT 47.999
+
+#define STR_(x) #x
+#define STR(x) STR_(x)
+
 // change on each index-breaking change to the code base
 const static std::string INDEX_HASH_PREFIX = "_6_";
+
+// max quantized point coordinate (`GeoPoint::maxCoordinateEncoded` in QLever)
+const static uint64_t MAX_QUANTIZED_COORD = (uint64_t(1) << 30) - 1;
+
+// _____________________________________________________________________________
+static uint64_t everySecondBit(uint64_t bits) {
+  // Returns number constructed from every second bit of the input
+  bits &= 0x5555555555555555ull;
+  bits = (bits | (bits >> 1)) & 0x3333333333333333ull;
+  bits = (bits | (bits >> 2)) & 0x0F0F0F0F0F0F0F0Full;
+  bits = (bits | (bits >> 4)) & 0x00FF00FF00FF00FFull;
+  bits = (bits | (bits >> 8)) & 0x0000FFFF0000FFFFull;
+  bits = (bits | (bits >> 16)) & 0x00000000FFFFFFFFull;
+  return bits & MAX_QUANTIZED_COORD;
+}
 
 // _____________________________________________________________________________
 void petrimaps::performCurlRequest(
@@ -80,8 +104,7 @@ void petrimaps::performCurlRequest(
     headers = curl_slist_append(headers, ("Accept: " + acceptHeader).c_str());
   }
   if (xRealIP.size()) {
-    headers = curl_slist_append(headers,
-                                ("X-Real-IP: " + xRealIP).c_str());
+    headers = curl_slist_append(headers, ("X-Real-IP: " + xRealIP).c_str());
   }
 
   if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -399,8 +422,7 @@ std::string petrimaps::canonizeURL(const std::string& inURL,
 
   struct curl_slist* headers = 0;
   if (remoteAddr.size()) {
-    headers =
-        curl_slist_append(headers, ("X-Real-IP: " + remoteAddr).c_str());
+    headers = curl_slist_append(headers, ("X-Real-IP: " + remoteAddr).c_str());
   }
 
   if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -484,22 +506,11 @@ std::string RequestReader::requestIndexHash(const std::string& configHash) {
 
 // _____________________________________________________________________________
 petrimaps::GeoPointFormat RequestReader::requestGeoPointFormat() {
-  // Neither the datatype value for a point nor the encoding of its coordinates
-  // is fixed: the datatype value changes whenever a datatype is added to
-  // QLever before it, and the encoding changed with
-  // https://github.com/ad-freiburg/qlever/pull/3412. Let the backend return a
-  // single point with known coordinates: its top four bits give the datatype,
-  // and the encoding is the one that reproduces the coordinates.
-  //
-  // NOTE: The coordinates are deliberately not round numbers and far from the
-  // equator and the prime meridian, so that the two encodings yield results
-  // that are nowhere near each other.
-  const static double probeLongitude = 7.835;
-  const static double probeLatitude = 47.999;
+  // Probe query to determine the point format from a known coordinate.
   const static std::string query =
       "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
-      "SELECT ?point WHERE { BIND(\"POINT(7.835 47.999)\"^^geo:wktLiteral AS "
-      "?point) }";
+      "SELECT ?point WHERE { BIND(\"POINT(" STR(PROBE_LON) " " STR(
+          PROBE_LAT) ")\"^^geo:wktLiteral AS ?point) }";
 
   std::string response;
 
@@ -514,10 +525,12 @@ petrimaps::GeoPointFormat RequestReader::requestGeoPointFormat() {
     return {};
   }
 
-  // The answer is a single ID, in the byte order it was written in.
+  // The answer is a single ID in the byte order it was stored in
   if (response.size() != sizeof(ID)) {
-    LOG(WARN) << "[GEOMCACHE] Unexpected answer of size " << response.size()
-              << " when asking for the format of a point";
+    LOG(WARN)
+        << "[GEOMCACHE] Unexpected answer of size " << response.size()
+        << " when asking for the format of a point, expected single ID of size "
+        << sizeof(ID);
     return {};
   }
 
@@ -531,57 +544,28 @@ petrimaps::GeoPointFormat RequestReader::requestGeoPointFormat() {
   for (auto encoding :
        {GeoPointEncoding::ZOrder, GeoPointEncoding::LatitudeAndLongitude}) {
     auto point = decodeGeoPoint(valueBits, encoding);
-    if (fabs(point.getX() - probeLongitude) < 0.001 &&
-        fabs(point.getY() - probeLatitude) < 0.001) {
+    if (fabs(point.getX() - PROBE_LON) < 0.001 &&
+        fabs(point.getY() - PROBE_LAT) < 0.001) {
       format.encoding = encoding;
       return format;
     }
   }
 
-  LOG(WARN) << "[GEOMCACHE] Could not tell how the backend encodes the "
-               "coordinates of a point, assuming latitude and longitude";
+  LOG(WARN) << "[GEOMCACHE] Could determine point encoding, assuming lat/lon";
   return format;
 }
-
-namespace {
-
-// The largest quantized coordinate of a point, that is, 30 one-bits (this is
-// `GeoPoint::maxCoordinateEncoded` in QLever).
-const uint64_t maxQuantizedCoordinate = (uint64_t(1) << 30) - 1;
-
-// Pack every second bit of `bits`, starting at the lowest, into a contiguous
-// number. This undoes the bit spreading with which a Z-order code is built.
-uint64_t everySecondBit(uint64_t bits) {
-  bits &= 0x5555555555555555ull;
-  bits = (bits | (bits >> 1)) & 0x3333333333333333ull;
-  bits = (bits | (bits >> 2)) & 0x0F0F0F0F0F0F0F0Full;
-  bits = (bits | (bits >> 4)) & 0x00FF00FF00FF00FFull;
-  bits = (bits | (bits >> 8)) & 0x0000FFFF0000FFFFull;
-  bits = (bits | (bits >> 16)) & 0x00000000FFFFFFFFull;
-  return bits & maxQuantizedCoordinate;
-}
-
-// A quantized coordinate back to degrees. The `maxValue` is 90 for a latitude
-// and 180 for a longitude.
-double coordinateInDegrees(uint64_t quantized, double maxValue) {
-  return (static_cast<double>(quantized) / maxQuantizedCoordinate) * 2 *
-             maxValue -
-         maxValue;
-}
-
-}  // namespace
 
 // _____________________________________________________________________________
 util::geo::FPoint petrimaps::decodeGeoPoint(uint64_t valueBits,
                                             GeoPointEncoding encoding) {
-  uint64_t latitude, longitude;
+  uint64_t lat, lon;
   if (encoding == GeoPointEncoding::ZOrder) {
-    latitude = everySecondBit(valueBits >> 1);
-    longitude = everySecondBit(valueBits);
+    lat = everySecondBit(valueBits >> 1);
+    lon = everySecondBit(valueBits);
   } else {
-    latitude = (valueBits >> 30) & maxQuantizedCoordinate;
-    longitude = valueBits & maxQuantizedCoordinate;
+    lat = (valueBits >> 30) & MAX_QUANTIZED_COORD;
+    lon = valueBits & MAX_QUANTIZED_COORD;
   }
-  return {static_cast<float>(coordinateInDegrees(longitude, 180.0)),
-          static_cast<float>(coordinateInDegrees(latitude, 90.0))};
+  return {(static_cast<double>(lon) / MAX_QUANTIZED_COORD) * 2 * 180 - 180,
+          (static_cast<double>(lat) / MAX_QUANTIZED_COORD) * 2 * 90 - 90};
 }

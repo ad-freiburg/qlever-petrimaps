@@ -138,10 +138,7 @@ class GeomCache {
 
   // The datatype value this backend uses for points and how it encodes their
   // coordinates, see `RequestReader::requestGeoPointFormat`.
-  uint8_t getGeoPointDatatype() const { return _geoPointFormat.datatype; }
-  GeoPointEncoding getGeoPointEncoding() const {
-    return _geoPointFormat.encoding;
-  }
+  GeoPointFormat getGeoPointFormat() const { return _geoPointFormat; }
 
   const std::vector<util::geo::FPoint,
                     util::no_init_allocator<util::geo::FPoint>>&
