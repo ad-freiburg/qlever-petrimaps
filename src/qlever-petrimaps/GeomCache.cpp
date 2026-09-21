@@ -1147,10 +1147,10 @@ std::string GeomCache::requestIndexHash() {
 }
 
 // _____________________________________________________________________________
-uint8_t GeomCache::requestGeoPointDatatype() {
+petrimaps::GeoPointFormat GeomCache::requestGeoPointFormat() {
   auto r = RequestReader(getConfig().backend, _maxMemory, 0, 0, 0);
 
-  return r.requestGeoPointDatatype();
+  return r.requestGeoPointFormat();
 }
 
 // _____________________________________________________________________________
@@ -1179,8 +1179,13 @@ std::string GeomCache::load(const std::string &cacheDir) {
   }
 
   // Only ask for this when the cache is built or rebuilt, not for every query.
-  _geoPointDatatype = requestGeoPointDatatype();
-  LOG(INFO) << "Datatype of a point is " << static_cast<int>(_geoPointDatatype);
+  _geoPointFormat = requestGeoPointFormat();
+  LOG(INFO) << "Datatype of a point is "
+            << static_cast<int>(_geoPointFormat.datatype)
+            << ", its coordinates are encoded "
+            << (_geoPointFormat.encoding == GeoPointEncoding::ZOrder
+                    ? "in Z-order"
+                    : "as latitude and longitude");
 
   if (cacheDir.size()) {
     std::string backend = getConfig().backend;

@@ -405,7 +405,8 @@ void Requestor::request(const std::string& remoteAddr) {
                   (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
 
               if (lineIsArea && gi != 3) {
-                area += (lastP.getX() + curP.getX()) * (lastP.getY() - curP.getY());
+                area +=
+                    (lastP.getX() + curP.getX()) * (lastP.getY() - curP.getY());
                 fbox = extendBox(curP, fbox);
               }
 
@@ -798,21 +799,19 @@ bool Requestor::isInnerArea(size_t lineId) const {
 }
 
 // _____________________________________________________________________________
-double Requestor::getLineDistance(
-    size_t lineId,
-    const util::geo::DPoint& queryPoint) const {
+double Requestor::getLineDistance(size_t lineId,
+                                  const util::geo::DPoint& queryPoint) const {
   const auto line = extractLineGeom(lineId);
 
   if (line.size() < 2) {
     return std::numeric_limits<double>::infinity();
   }
 
-  double bestDistance =
-      std::numeric_limits<double>::infinity();
+  double bestDistance = std::numeric_limits<double>::infinity();
 
   for (size_t i = 1; i < line.size(); ++i) {
-    const double currentDistance = util::geo::distToSegment(
-              line[i - 1],line[i], queryPoint);
+    const double currentDistance =
+        util::geo::distToSegment(line[i - 1], line[i], queryPoint);
 
     if (currentDistance < bestDistance) {
       bestDistance = currentDistance;
@@ -826,10 +825,9 @@ double Requestor::getLineDistance(
 }
 
 // _____________________________________________________________________________
-double Requestor::getPolygonDistance(
-    size_t polygonId,
-    const util::geo::DPoint& queryPoint,
-    double radius) const {
+double Requestor::getPolygonDistance(size_t polygonId,
+                                     const util::geo::DPoint& queryPoint,
+                                     double radius) const {
   const auto border = extractLineGeom(polygonId);
 
   if (border.size() < 3) {
@@ -845,8 +843,8 @@ double Requestor::getPolygonDistance(
   double bestDistance = std::numeric_limits<double>::infinity();
 
   for (size_t i = 1; i < border.size(); ++i) {
-    const double currentDistance = util::geo::distToSegment(
-      border[i - 1], border[i], queryPoint);
+    const double currentDistance =
+        util::geo::distToSegment(border[i - 1], border[i], queryPoint);
 
     if (currentDistance < bestDistance) {
       bestDistance = currentDistance;
@@ -989,30 +987,23 @@ std::vector<std::pair<util::geo::FPoint, ID_TYPE>> Requestor::getDynamicPoints(
   size_t count = 0;
 
   // Points are not in the geometry cache, they are encoded in the ID itself.
-  uint8_t pointDatatype = _cache->getGeoPointDatatype();
+  auto pointFormat = _cache->getGeoPointFormat();
 
   for (const auto& p : ids) {
-    if (idDatatype(p.qid) == pointDatatype) count++;
+    if (idDatatype(p.qid) == pointFormat.datatype) count++;
   }
 
   checkMem(sizeof(std::pair<util::geo::FPoint, ID_TYPE>) * count, _maxMemory);
   ret.reserve(count);
 
   for (const auto& p : ids) {
-    if (idDatatype(p.qid) != pointDatatype) continue;
+    if (idDatatype(p.qid) != pointFormat.datatype) continue;
 
-    uint64_t maskLng = 1073741823;
-    uint64_t maskLat = static_cast<uint64_t>(1073741823) << 30;
+    uint64_t valueBits = p.qid & ((uint64_t(1) << 60) - 1);
 
-    auto lng =
-        ((static_cast<double>((p.qid & maskLng)) / maskLng) * 2 * 180.0) -
-        180.0;
-    auto lat =
-        ((static_cast<double>((p.qid & maskLat) >> 30) / maskLng) * 2 * 90.0) -
-        90.0;
-
-    ret.push_back(
-        {util::geo::latLngToWebMerc(util::geo::FPoint{lng, lat}), p.id});
+    ret.push_back({util::geo::latLngToWebMerc(
+                       decodeGeoPoint(valueBits, pointFormat.encoding)),
+                   p.id});
   }
 
   return ret;
