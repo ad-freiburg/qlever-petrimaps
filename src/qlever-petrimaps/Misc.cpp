@@ -395,7 +395,7 @@ int64_t addGeneratedNode(OsmPrimitiveStore* store, int64_t* nextNodeId,
   return id;
 }
 
-void addWayFromLine(
+int64_t addWayFromLine(
   OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
   const util::geo::DLine& line,
   const std::unordered_map<std::string, std::string>& tags) {
@@ -409,35 +409,273 @@ void addWayFromLine(
   }
 
   store->ways.push_back(way);
+  return way.id;
 }
 
-void addWayFromPolygon(
+int64_t addWayFromRing(
     OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
-    const util::geo::DPolygon& polygon,
-    const std::unordered_map<std::string, std::string>& tags,
-    const std::string& osmId) {
-  if (!polygon.getInners().empty()) {
-    throw std::runtime_error("Polygon holes are not supported for osm_id: " +
-                             osmId);
-  }
-
+    const util::geo::DLine& ring,
+    const std::unordered_map<std::string, std::string>& tags) {
   OsmWay way;
   way.id = (*nextWayId)--;
   way.tags = tags;
 
-  const auto& outer = polygon.getOuter();
-
-  for (const auto& point : outer) {
-    way.nodeRefs.push_back(addGeneratedNode(store, nextNodeId, point));
+  const bool inputIsClosed =
+      ring.size() > 1 && ring.front() == ring.back();
+  auto end = ring.end();
+  if (inputIsClosed) {
+    --end;
   }
 
-  if (!outer.empty() && outer.front() != outer.back()) {
-    way.nodeRefs.push_back(addGeneratedNode(store, nextNodeId, outer.front()));
+  for (auto it = ring.begin(); it != end; ++it) {
+    way.nodeRefs.push_back(addGeneratedNode(store, nextNodeId, *it));
+  }
+
+  if (!way.nodeRefs.empty()) {
+    way.nodeRefs.push_back(way.nodeRefs.front());
   }
 
   store->ways.push_back(way);
+  return way.id;
 }
 
+void addPolygonMembersToRelation(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    const util::geo::DPolygon& polygon, OsmRelation* relation) {
+  const std::unordered_map<std::string, std::string> noTags;
+
+  const auto outerWayId = addWayFromRing(
+      store, nextNodeId, nextWayId, polygon.getOuter(), noTags);
+  relation->members.push_back({"way", outerWayId, "outer"});
+
+  for (const auto& inner : polygon.getInners()) {
+    const auto innerWayId =
+        addWayFromRing(store, nextNodeId, nextWayId, inner, noTags);
+    relation->members.push_back({"way", innerWayId, "inner"});
+  }
+}
+
+void setRelationTags(
+    OsmRelation* relation,
+    const std::unordered_map<std::string, std::string>& tags,
+    const std::string& relationType, const std::string& osmId) {
+  relation->tags = tags;
+
+  const auto typeIt = relation->tags.find("type");
+  if (typeIt != relation->tags.end() &&
+      typeIt->second != relationType) {
+    throw std::runtime_error(
+        "Cannot replace non-" + relationType +
+        " type tag for osm_id " + osmId);
+  }
+
+  relation->tags["type"] = relationType;
+}
+
+OsmRelationMember addWayFromPolygon(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    int64_t* nextRelationId, const util::geo::DPolygon& polygon,
+    const std::unordered_map<std::string, std::string>& tags,
+    const std::string& osmId) {
+  const auto& outer = polygon.getOuter();
+  const auto& inners = polygon.getInners();
+
+  if (inners.empty()) {
+    const auto wayId=
+        addWayFromRing(store, nextNodeId, nextWayId, outer, tags);
+    return {"way", wayId, ""};
+  }
+
+  OsmRelation relation;
+  relation.id = (*nextRelationId)--;
+
+  addPolygonMembersToRelation(
+      store, nextNodeId, nextWayId, polygon, &relation);
+  setRelationTags(&relation, tags, "multipolygon", osmId);
+
+  store->relations.push_back(relation);
+  return {"relation", relation.id, ""};
+}
+
+OsmRelationMember addWayFromMultiPolygon(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    int64_t* nextRelationId,
+    const util::geo::DMultiPolygon& multiPolygon,
+    const std::unordered_map<std::string, std::string>& tags,
+    const std::string& osmId) {
+  OsmRelation relation;
+  relation.id = (*nextRelationId)--;
+
+  for (const auto& polygon : multiPolygon) {
+    addPolygonMembersToRelation(
+        store, nextNodeId, nextWayId, polygon, &relation);
+  }
+
+  setRelationTags(&relation, tags, "multipolygon", osmId);
+  store->relations.push_back(relation);
+  return {"relation", relation.id, ""};
+}
+
+OsmRelationMember addNodesFromMultiPoint(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextRelationId,
+    const util::geo::DMultiPoint& multiPoint,
+    const std::unordered_map<std::string, std::string>& tags,
+    const std::string& osmId) {
+  OsmRelation relation;
+  relation.id = (*nextRelationId)--;
+
+  for (const auto& point : multiPoint) {
+    const auto nodeId = addGeneratedNode(store, nextNodeId, point);
+    relation.members.push_back({"node", nodeId, ""});
+  }
+
+  setRelationTags(&relation, tags, "multipoint", osmId);
+  store->relations.push_back(relation);
+  return {"relation", relation.id, ""};
+}
+
+bool isEscapedLiteralQuote(const std::string& value, size_t quotePosition) {
+  size_t precedingBackslashes = 0;
+
+  while (quotePosition > precedingBackslashes &&
+         value[quotePosition - precedingBackslashes - 1] == '\\') {
+    ++precedingBackslashes;
+  }
+
+  return precedingBackslashes % 2 == 1;
+}
+
+OsmRelationMember addWaysFromMultiLine(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    int64_t* nextRelationId, const util::geo::DMultiLine& multiLine,
+    const std::unordered_map<std::string, std::string>& tags,
+    const std::string& osmId) {
+  OsmRelation relation;
+  relation.id = (*nextRelationId)--;
+
+  const std::unordered_map<std::string, std::string> noTags;
+
+  for (const auto& line : multiLine) {
+    const auto wayId =
+        addWayFromLine(store, nextNodeId, nextWayId, line, noTags);
+    relation.members.push_back({"way", wayId, ""});
+  }
+
+  setRelationTags(&relation, tags, "multilinestring", osmId);
+  store->relations.push_back(relation);
+  return {"relation", relation.id, ""};
+}
+
+OsmRelationMember addCollectionMember(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    int64_t* nextRelationId,
+    const util::geo::AnyGeometry<double>& geometry);
+
+OsmRelationMember addGeometryCollection(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    int64_t* nextRelationId, const util::geo::DCollection& collection,
+    const std::unordered_map<std::string, std::string>& tags,
+    const std::string& osmId) {
+  OsmRelation relation;
+  relation.id = (*nextRelationId)--;
+
+  for (const auto& geometry : collection) {
+    relation.members.push_back(addCollectionMember(
+        store, nextNodeId, nextWayId, nextRelationId, geometry));
+  }
+
+  setRelationTags(&relation, tags, "geometrycollection", osmId);
+  store->relations.push_back(relation);
+
+  return {"relation", relation.id, ""};
+}
+
+OsmRelationMember addCollectionMember(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    int64_t* nextRelationId,
+    const util::geo::AnyGeometry<double>& geometry) {
+  const std::unordered_map<std::string, std::string> noTags;
+
+  switch (geometry.getType()) {
+    case 0: {
+      const auto nodeId =
+          addGeneratedNode(store, nextNodeId, geometry.getPoint());
+      return {"node", nodeId, ""};
+    }
+
+    case 1: {
+      const auto wayId = addWayFromLine(
+          store, nextNodeId, nextWayId, geometry.getLine(), noTags);
+      return {"way", wayId, ""};
+    }
+
+    case 2:
+      return addWayFromPolygon(
+          store, nextNodeId, nextWayId, nextRelationId,
+          geometry.getPolygon(), noTags, "");
+
+    case 3:
+      return addWaysFromMultiLine(
+          store, nextNodeId, nextWayId, nextRelationId,
+          geometry.getMultiLine(), noTags,"");
+
+    case 4:
+      return addWayFromMultiPolygon(
+          store, nextNodeId, nextWayId, nextRelationId,
+          geometry.getMultiPolygon(), noTags, "");
+
+    case 5:
+      return addGeometryCollection(
+          store, nextNodeId, nextWayId, nextRelationId,
+          geometry.getCollection(), noTags, "");
+
+    case 6:
+      return addNodesFromMultiPoint(
+          store, nextNodeId, nextRelationId,
+          geometry.getMultiPoint(), noTags, "");
+
+    default:
+      throw std::runtime_error(
+          "Unsupported geometry inside GEOMETRYCOLLECTION");
+  }
+}
+
+std::string unescapeSparqlLiteralLexicalForm(const std::string& lexicalForm) {
+  std::string result;
+  result.reserve(lexicalForm.size());
+
+  for (size_t i = 0; i < lexicalForm.size(); ++i) {
+    if (lexicalForm[i] != '\\' || i + 1 == lexicalForm.size()) {
+      result += lexicalForm[i];
+      continue;
+    }
+
+    const auto escapedCharacter = lexicalForm[++i];
+    switch (escapedCharacter) {
+      case '"':
+        result += '"';
+        break;
+      case '\\':
+        result += '\\';
+        break;
+      case 'n':
+        result += '\n';
+        break;
+      case 'r':
+        result += '\r';
+        break;
+      case 't':
+        result += '\t';
+        break;
+      default:
+        result += '\\';
+        result += escapedCharacter;
+        break;
+      }
+  }
+
+  return result;
+}
 }  // namespace
 // _____________________________________________________________________________
 std::string normalizeSparqlResultColumn(std::string column) {
@@ -446,6 +684,31 @@ std::string normalizeSparqlResultColumn(std::string column) {
   }
 
   return column;
+}
+
+// _____________________________________________________________________________
+std::string normalizeSparqlLiteralValue(std::string value) {
+  if (value.empty() || value.front() != '"') {
+    return value;
+  }
+
+  for (size_t i = 1; i < value.size(); ++i) {
+    if (value[i] != '"' || isEscapedLiteralQuote(value, i)) {
+      continue;
+    }
+
+    const auto suffix = value.substr(i + 1);
+    const bool hasValidSuffix =
+        suffix.empty() || suffix.front() == '@' || suffix.rfind("^^", 0) == 0;
+
+    if (!hasValidSuffix) {
+      return value;
+    }
+
+    return unescapeSparqlLiteralLexicalForm(value.substr(1, i - 1));
+  }
+
+  return value;
 }
 // _____________________________________________________________________________
 std::string normalizeOsmTagKey(std::string key) {
@@ -498,7 +761,8 @@ std::vector<OsmObject> osmObjectsFromTsvRows(
   for (const auto& row : rows) {
     const auto osmId = getRequiredCell(row, "osm_id");
     const auto tagKey = normalizeOsmTagKey(getRequiredCell(row, "a"));
-    const auto tagValue = getRequiredCell(row, "b");
+    const auto tagValue =
+        normalizeSparqlLiteralValue(getRequiredCell(row, "b"));
     const auto wkt = getRequiredCell(row, "hasgeometry");
 
     if (!hasCurrent || current.id != osmId) {
@@ -620,7 +884,8 @@ void OsmResultReader::mergeRowIntoCurrentObject() {
   const auto osmId = getRequiredCell(_colNames, _curRow, "osm_id");
   const auto tagKey =
       normalizeOsmTagKey(getRequiredCell(_colNames, _curRow, "a"));
-  const auto tagValue = getRequiredCell(_colNames, _curRow, "b");
+  const auto tagValue =
+      normalizeSparqlLiteralValue(getRequiredCell(_colNames, _curRow, "b"));
   const auto wkt = getRequiredCell(_colNames, _curRow, "hasgeometry");
 
   if (!_hasCurrent || _current.id != osmId) {
@@ -652,14 +917,38 @@ void OsmPrimitiveBuilder::append(const OsmObject& object,
     const auto point = util::geo::pointFromWKT<double>(wktStart, nullptr);
     store->nodes.push_back(
         {_nextNodeId--, point.getX(), point.getY(), object.tags});
+  } else if (wktType == util::geo::WKTType::MULTIPOINT) {
+    const auto multiPoint =
+        util::geo::multiPointFromWKT<double>(wktStart, nullptr);
+    addNodesFromMultiPoint(
+        store, &_nextNodeId, &_nextRelationId, multiPoint, object.tags,
+        object.id);
   } else if (wktType == util::geo::WKTType::LINESTRING) {
     const auto line = util::geo::lineFromWKT<double>(wktStart, nullptr);
     addWayFromLine(store, &_nextNodeId, &_nextWayId, line, object.tags);
+  } else if (wktType == util::geo::WKTType::MULTILINESTRING) {
+    const auto multiLine =
+        util::geo::multiLineFromWKT<double>(wktStart, nullptr);
+    addWaysFromMultiLine(
+        store, &_nextNodeId, &_nextWayId, &_nextRelationId, multiLine,
+        object.tags, object.id);
   } else if (wktType == util::geo::WKTType::POLYGON) {
     const auto polygon =
         util::geo::polygonFromWKT<double>(wktStart, nullptr);
-    addWayFromPolygon(store, &_nextNodeId, &_nextWayId, polygon,
-                      object.tags, object.id);
+    addWayFromPolygon(store, &_nextNodeId, &_nextWayId, &_nextRelationId,
+                      polygon, object.tags, object.id);
+  } else if (wktType == util::geo::WKTType::MULTIPOLYGON) {
+    const auto multiPolygon =
+        util::geo::multiPolygonFromWKT<double>(wktStart, nullptr);
+    addWayFromMultiPolygon(
+        store, &_nextNodeId, &_nextWayId, &_nextRelationId, multiPolygon,
+        object.tags, object.id);
+  } else if (wktType == util::geo::WKTType::COLLECTION) {
+    const auto collection =
+        util::geo::collectionFromWKT<double>(wktStart, nullptr);
+    addGeometryCollection(
+        store, &_nextNodeId, &_nextWayId, &_nextRelationId, collection,
+        object.tags, object.id);
   } else {
     throw std::runtime_error("Unsupported WKT type for osm_id: " + object.id);
   }
@@ -722,6 +1011,25 @@ void OsmXmlStreamWriter::writeWay(const OsmWay& way) {
   _xml->closeTag();
 }
 
+void OsmXmlStreamWriter::writeRelation(const OsmRelation& relation) {
+  _xml->openTag("relation", {{"id", intToXmlAttr(relation.id)}});
+
+  for (const auto& member : relation.members) {
+    _xml->openTag("member",
+                  {{"type", member.type},
+                   {"ref", intToXmlAttr(member.ref)},
+                   {"role", member.role}});
+    _xml->closeTag();
+  }
+
+  for (const auto& tag : relation.tags) {
+    _xml->openTag("tag", {{"k", tag.first}, {"v", tag.second}});
+    _xml->closeTag();
+  }
+
+  _xml->closeTag();
+}
+
 void OsmXmlStreamWriter::write(const OsmPrimitiveStore& store) {
   if (_finished) {
     throw std::runtime_error("Cannot write to a finished OSM XML document");
@@ -733,6 +1041,10 @@ void OsmXmlStreamWriter::write(const OsmPrimitiveStore& store) {
 
   for (const auto& way : store.ways) {
     writeWay(way);
+  }
+
+  for (const auto& relation : store.relations) {
+    writeRelation(relation);
   }
 }
 

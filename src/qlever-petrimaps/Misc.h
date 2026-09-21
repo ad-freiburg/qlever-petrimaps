@@ -67,9 +67,22 @@ struct OsmWay {
   std::unordered_map<std::string, std::string> tags;
 };
 
+struct OsmRelationMember {
+  std::string type;
+  int64_t ref;
+  std::string role;
+};
+
+struct OsmRelation {
+  int64_t id;
+  std::vector<OsmRelationMember> members;
+  std::unordered_map<std::string, std::string> tags;
+};
+
 struct OsmPrimitiveStore {
   std::vector<OsmNode> nodes;
   std::vector<OsmWay> ways;
+  std::vector<OsmRelation> relations;
 };
 
 class OsmPrimitiveBuilder {
@@ -79,6 +92,7 @@ class OsmPrimitiveBuilder {
   private:
     int64_t _nextNodeId = -1;
     int64_t _nextWayId = -1000000001;
+    int64_t _nextRelationId = -2000000001;
 };
 
 class OsmXmlStreamWriter {
@@ -92,6 +106,7 @@ class OsmXmlStreamWriter {
   private:
     void writeNode(const OsmNode& node);
     void writeWay(const OsmWay& way);
+    void writeRelation(const OsmRelation& relation);
 
     std::ostream& _out;
     std::unique_ptr<util::xml::XmlWriter> _xml;
@@ -99,6 +114,7 @@ class OsmXmlStreamWriter {
 };
 
 std::string normalizeSparqlResultColumn(std::string column);
+std::string normalizeSparqlLiteralValue(std::string value);
 std::string normalizeOsmTagKey(std::string key);
 std::string inferOsmObjectType(const std::string& id);
 
