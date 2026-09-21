@@ -798,18 +798,22 @@ h1, #msg-heading {
 }
 
 .leaflet-control-layers .leaflet-control-layers-overlays {
-	display: none;
+    margin-top: 20px;
+    display: none;
 }
 
 .leaflet-control-layers .leaflet-control-layers-overlays:has(> :nth-child(2)) {
 	display: block;
 }
 
+.leaflet-control-layers .leaflet-control-layers-overlays:nth-child(1) {
+    margin-top: 0;
+}
+
 .leaflet-control-layers .leaflet-control-layers-separator {
   margin: 0;
   position: relative;
   top: 10px;
-  margin-bottom: 20px;
 }
 
 .export-link {
