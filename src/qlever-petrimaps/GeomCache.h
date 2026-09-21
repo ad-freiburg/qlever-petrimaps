@@ -134,9 +134,9 @@ class GeomCache {
 
   const GeomCacheConfig& getConfig() const { return _config; }
 
-  // The datatype value this backend uses for points, see
-  // `RequestReader::requestGeoPointDatatype`.
-  uint8_t getGeoPointDatatype() const { return _geoPointDatatype; }
+  // The datatype value this backend uses for points and how it encodes their
+  // coordinates, see `RequestReader::requestGeoPointFormat`.
+  GeoPointFormat getGeoPointFormat() const { return _geoPointFormat; }
 
   const std::vector<util::geo::FPoint,
                     util::no_init_allocator<util::geo::FPoint>>&
@@ -208,7 +208,7 @@ class GeomCache {
 
   std::string requestIndexHash();
 
-  uint8_t requestGeoPointDatatype();
+  GeoPointFormat requestGeoPointFormat();
 
   void requestRasterMeta();
 
@@ -265,7 +265,7 @@ class GeomCache {
 
   std::string _indexHash;
 
-  uint8_t _geoPointDatatype = DEFAULT_GEOPOINT_DATATYPE;
+  GeoPointFormat _geoPointFormat;
 };
 }  // namespace petrimaps
 

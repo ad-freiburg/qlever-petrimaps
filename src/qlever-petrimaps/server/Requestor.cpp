@@ -770,30 +770,23 @@ std::vector<std::pair<util::geo::FPoint, ID_TYPE>> Requestor::getDynamicPoints(
   size_t count = 0;
 
   // Points are not in the geometry cache, they are encoded in the ID itself.
-  uint8_t pointDatatype = _cache->getGeoPointDatatype();
+  auto pointFormat = _cache->getGeoPointFormat();
 
   for (const auto& p : ids) {
-    if (idDatatype(p.qid) == pointDatatype) count++;
+    if (idDatatype(p.qid) == pointFormat.datatype) count++;
   }
 
   checkMem(sizeof(std::pair<util::geo::FPoint, ID_TYPE>) * count, _maxMemory);
   ret.reserve(count);
 
   for (const auto& p : ids) {
-    if (idDatatype(p.qid) != pointDatatype) continue;
+    if (idDatatype(p.qid) != pointFormat.datatype) continue;
 
-    uint64_t maskLng = 1073741823;
-    uint64_t maskLat = static_cast<uint64_t>(1073741823) << 30;
+    uint64_t valueBits = p.qid & ((uint64_t(1) << 60) - 1);
 
-    auto lng =
-        ((static_cast<double>((p.qid & maskLng)) / maskLng) * 2 * 180.0) -
-        180.0;
-    auto lat =
-        ((static_cast<double>((p.qid & maskLat) >> 30) / maskLng) * 2 * 90.0) -
-        90.0;
-
-    ret.push_back(
-        {util::geo::latLngToWebMerc(util::geo::FPoint{lng, lat}), p.id});
+    ret.push_back({util::geo::latLngToWebMerc(
+                       decodeGeoPoint(valueBits, pointFormat.encoding)),
+                   p.id});
   }
 
   return ret;

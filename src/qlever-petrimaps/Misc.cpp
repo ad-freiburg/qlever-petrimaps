@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <sys/socket.h>
 
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -20,8 +21,32 @@ using util::LogLevel::ERROR;
 using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
+// Probe coordinate used to obtain the point encoding from the backend,
+// deliberately not round number and far from the equator and prime meridian, so
+// that the two encodings yield results that are nowhere near each other.
+#define PROBE_LON 7.835
+#define PROBE_LAT 47.999
+
+#define STR_(x) #x
+#define STR(x) STR_(x)
+
 // change on each index-breaking change to the code base
 const static std::string INDEX_HASH_PREFIX = "_6_";
+
+// max quantized point coordinate (`GeoPoint::maxCoordinateEncoded` in QLever)
+const static uint64_t MAX_QUANTIZED_COORD = (uint64_t(1) << 30) - 1;
+
+// _____________________________________________________________________________
+static uint64_t everySecondBit(uint64_t bits) {
+  // Returns number constructed from every second bit of the input
+  bits &= 0x5555555555555555ull;
+  bits = (bits | (bits >> 1)) & 0x3333333333333333ull;
+  bits = (bits | (bits >> 2)) & 0x0F0F0F0F0F0F0F0Full;
+  bits = (bits | (bits >> 4)) & 0x00FF00FF00FF00FFull;
+  bits = (bits | (bits >> 8)) & 0x0000FFFF0000FFFFull;
+  bits = (bits | (bits >> 16)) & 0x00000000FFFFFFFFull;
+  return bits & MAX_QUANTIZED_COORD;
+}
 
 // _____________________________________________________________________________
 void petrimaps::performCurlRequest(
@@ -79,8 +104,7 @@ void petrimaps::performCurlRequest(
     headers = curl_slist_append(headers, ("Accept: " + acceptHeader).c_str());
   }
   if (xRealIP.size()) {
-    headers = curl_slist_append(headers,
-                                ("X-Real-IP: " + xRealIP).c_str());
+    headers = curl_slist_append(headers, ("X-Real-IP: " + xRealIP).c_str());
   }
 
   if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -398,8 +422,7 @@ std::string petrimaps::canonizeURL(const std::string& inURL,
 
   struct curl_slist* headers = 0;
   if (remoteAddr.size()) {
-    headers =
-        curl_slist_append(headers, ("X-Real-IP: " + remoteAddr).c_str());
+    headers = curl_slist_append(headers, ("X-Real-IP: " + remoteAddr).c_str());
   }
 
   if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -482,13 +505,12 @@ std::string RequestReader::requestIndexHash(const std::string& configHash) {
 }
 
 // _____________________________________________________________________________
-uint8_t RequestReader::requestGeoPointDatatype() {
-  // The datatype value for a point is not fixed, it changes whenever a
-  // datatype is added to QLever before it. Let the backend return a single
-  // point and read the value from the top four bits of its ID.
+petrimaps::GeoPointFormat RequestReader::requestGeoPointFormat() {
+  // Probe query to determine the point format from a known coordinate.
   const static std::string query =
       "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
-      "SELECT ?point WHERE { BIND(\"POINT(0 0)\"^^geo:wktLiteral AS ?point) }";
+      "SELECT ?point WHERE { BIND(\"POINT(" STR(PROBE_LON) " " STR(
+          PROBE_LAT) ")\"^^geo:wktLiteral AS ?point) }";
 
   std::string response;
 
@@ -498,20 +520,52 @@ uint8_t RequestReader::requestGeoPointDatatype() {
         [&response](const char* c, size_t n) { response.append(c, n); },
         nullptr);
   } catch (const std::exception& e) {
-    LOG(WARN) << "[GEOMCACHE] Could not obtain the datatype of a point: "
+    LOG(WARN) << "[GEOMCACHE] Could not obtain the format of a point: "
               << e.what();
-    return DEFAULT_GEOPOINT_DATATYPE;
+    return {};
   }
 
-  // The answer is a single ID, in the byte order it was written in.
+  // The answer is a single ID in the byte order it was stored in
   if (response.size() != sizeof(ID)) {
-    LOG(WARN) << "[GEOMCACHE] Unexpected answer of size " << response.size()
-              << " when asking for the datatype of a point";
-    return DEFAULT_GEOPOINT_DATATYPE;
+    LOG(WARN)
+        << "[GEOMCACHE] Unexpected answer of size " << response.size()
+        << " when asking for the format of a point, expected single ID of size "
+        << sizeof(ID);
+    return {};
   }
 
   ID id;
   std::memcpy(id.bytes, response.data(), sizeof(id.bytes));
 
-  return idDatatype(id.val);
+  GeoPointFormat format;
+  format.datatype = idDatatype(id.val);
+
+  uint64_t valueBits = id.val & ((uint64_t(1) << 60) - 1);
+  for (auto encoding :
+       {GeoPointEncoding::ZOrder, GeoPointEncoding::LatitudeAndLongitude}) {
+    auto point = decodeGeoPoint(valueBits, encoding);
+    if (fabs(point.getX() - PROBE_LON) < 0.001 &&
+        fabs(point.getY() - PROBE_LAT) < 0.001) {
+      format.encoding = encoding;
+      return format;
+    }
+  }
+
+  LOG(WARN) << "[GEOMCACHE] Could determine point encoding, assuming lat/lon";
+  return format;
+}
+
+// _____________________________________________________________________________
+util::geo::FPoint petrimaps::decodeGeoPoint(uint64_t valueBits,
+                                            GeoPointEncoding encoding) {
+  uint64_t lat, lon;
+  if (encoding == GeoPointEncoding::ZOrder) {
+    lat = everySecondBit(valueBits >> 1);
+    lon = everySecondBit(valueBits);
+  } else {
+    lat = (valueBits >> 30) & MAX_QUANTIZED_COORD;
+    lon = valueBits & MAX_QUANTIZED_COORD;
+  }
+  return {(static_cast<double>(lon) / MAX_QUANTIZED_COORD) * 2 * 180 - 180,
+          (static_cast<double>(lat) / MAX_QUANTIZED_COORD) * 2 * 90 - 90};
 }
