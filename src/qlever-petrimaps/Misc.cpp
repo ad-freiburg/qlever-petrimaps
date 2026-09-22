@@ -8,13 +8,9 @@
 #include <sys/socket.h>
 
 #include <cmath>
-#include <condition_variable>
 #include <cstring>
-#include <deque>
 #include <exception>
-#include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "qlever-petrimaps/Misc.h"
@@ -52,7 +48,6 @@ static uint64_t everySecondBit(uint64_t bits) {
   bits = (bits | (bits >> 16)) & 0x00000000FFFFFFFFull;
   return bits & MAX_QUANTIZED_COORD;
 }
-
 
 // _____________________________________________________________________________
 void petrimaps::performCurlRequest(
