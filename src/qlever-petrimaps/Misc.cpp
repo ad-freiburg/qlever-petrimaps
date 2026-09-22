@@ -1,6 +1,7 @@
 // Copyright 2022, University of Freiburg,
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
+//          Bohyun Kim <bk233@email.uni-freiburg.de>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -9,12 +10,18 @@
 
 #include <cmath>
 #include <cstring>
+#include <fstream>
+#include <iomanip>
+#include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
 #include "qlever-petrimaps/Misc.h"
 #include "util/String.h"
+#include "util/geo/Geo.h"
 #include "util/log/Log.h"
+#include "util/xml/XmlWriter.h"
 
 using petrimaps::RequestReader;
 using util::LogLevel::ERROR;
@@ -367,6 +374,804 @@ void RequestReader::parse(const char* c, size_t size) {
     }
   }
 }
+
+namespace petrimaps {
+namespace {
+
+std::string getRequiredCell(
+    const std::vector<std::pair<std::string, std::string>>& row,
+    const std::string& wantedColumn) {
+  for (const auto& cell : row) {
+    if (normalizeSparqlResultColumn(cell.first) == wantedColumn) {
+      return cell.second;
+    }
+  }
+
+  throw std::runtime_error("Missing required column: " + wantedColumn);
+}
+
+std::string getRequiredCell(const std::vector<std::string>& columns,
+                            const std::vector<std::string>& row,
+                            const std::string& wantedColumn) {
+  for (size_t i = 0; i < columns.size() && i < row.size(); i++) {
+    if (normalizeSparqlResultColumn(columns[i]) == wantedColumn) {
+      return row[i];
+    }
+  }
+
+  throw std::runtime_error("Missing required column: " + wantedColumn);
+}
+
+std::string doubleToXmlAttr(double value) {
+  std::stringstream out;
+  out << std::setprecision(15) << value;
+  return out.str();
+}
+
+std::string intToXmlAttr(int64_t value) {
+  return std::to_string(value);
+}
+
+int64_t addGeneratedNode(OsmPrimitiveStore* store, int64_t* nextNodeId,
+                         const util::geo::DPoint& point) {
+  const int64_t id = (*nextNodeId)--;
+  store->nodes.push_back({id, point.getX(), point.getY(), {}});
+  return id;
+}
+
+int64_t addWayFromLine(
+  OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+  const util::geo::DLine& line,
+  const std::unordered_map<std::string, std::string>& tags) {
+  OsmWay way;
+  way.id = (*nextWayId)--;
+  way.tags = tags;
+
+  for (const auto& point : line) {
+    way.nodeRefs.push_back(
+      addGeneratedNode(store, nextNodeId, point));
+  }
+
+  store->ways.push_back(way);
+  return way.id;
+}
+
+int64_t addWayFromRing(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    const util::geo::DLine& ring,
+    const std::unordered_map<std::string, std::string>& tags) {
+  OsmWay way;
+  way.id = (*nextWayId)--;
+  way.tags = tags;
+
+  const bool inputIsClosed =
+      ring.size() > 1 && ring.front() == ring.back();
+  auto end = ring.end();
+  if (inputIsClosed) {
+    --end;
+  }
+
+  for (auto it = ring.begin(); it != end; ++it) {
+    way.nodeRefs.push_back(addGeneratedNode(store, nextNodeId, *it));
+  }
+
+  if (!way.nodeRefs.empty()) {
+    way.nodeRefs.push_back(way.nodeRefs.front());
+  }
+
+  store->ways.push_back(way);
+  return way.id;
+}
+
+void addPolygonMembersToRelation(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    const util::geo::DPolygon& polygon, OsmRelation* relation) {
+  const std::unordered_map<std::string, std::string> noTags;
+
+  const auto outerWayId = addWayFromRing(
+      store, nextNodeId, nextWayId, polygon.getOuter(), noTags);
+  relation->members.push_back({"way", outerWayId, "outer"});
+
+  for (const auto& inner : polygon.getInners()) {
+    const auto innerWayId =
+        addWayFromRing(store, nextNodeId, nextWayId, inner, noTags);
+    relation->members.push_back({"way", innerWayId, "inner"});
+  }
+}
+
+void setRelationTags(
+    OsmRelation* relation,
+    const std::unordered_map<std::string, std::string>& tags,
+    const std::string& relationType, const std::string& osmId) {
+  relation->tags = tags;
+
+  const auto typeIt = relation->tags.find("type");
+  if (typeIt != relation->tags.end() &&
+      typeIt->second != relationType) {
+    throw std::runtime_error(
+        "Cannot replace non-" + relationType +
+        " type tag for osm_id " + osmId);
+  }
+
+  relation->tags["type"] = relationType;
+}
+
+OsmRelationMember addWayFromPolygon(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    int64_t* nextRelationId, const util::geo::DPolygon& polygon,
+    const std::unordered_map<std::string, std::string>& tags,
+    const std::string& osmId) {
+  const auto& outer = polygon.getOuter();
+  const auto& inners = polygon.getInners();
+
+  if (inners.empty()) {
+    const auto wayId=
+        addWayFromRing(store, nextNodeId, nextWayId, outer, tags);
+    return {"way", wayId, ""};
+  }
+
+  OsmRelation relation;
+  relation.id = (*nextRelationId)--;
+
+  addPolygonMembersToRelation(
+      store, nextNodeId, nextWayId, polygon, &relation);
+  setRelationTags(&relation, tags, "multipolygon", osmId);
+
+  store->relations.push_back(relation);
+  return {"relation", relation.id, ""};
+}
+
+OsmRelationMember addWayFromMultiPolygon(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    int64_t* nextRelationId,
+    const util::geo::DMultiPolygon& multiPolygon,
+    const std::unordered_map<std::string, std::string>& tags,
+    const std::string& osmId) {
+  OsmRelation relation;
+  relation.id = (*nextRelationId)--;
+
+  for (const auto& polygon : multiPolygon) {
+    addPolygonMembersToRelation(
+        store, nextNodeId, nextWayId, polygon, &relation);
+  }
+
+  setRelationTags(&relation, tags, "multipolygon", osmId);
+  store->relations.push_back(relation);
+  return {"relation", relation.id, ""};
+}
+
+OsmRelationMember addNodesFromMultiPoint(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextRelationId,
+    const util::geo::DMultiPoint& multiPoint,
+    const std::unordered_map<std::string, std::string>& tags,
+    const std::string& osmId) {
+  OsmRelation relation;
+  relation.id = (*nextRelationId)--;
+
+  for (const auto& point : multiPoint) {
+    const auto nodeId = addGeneratedNode(store, nextNodeId, point);
+    relation.members.push_back({"node", nodeId, ""});
+  }
+
+  setRelationTags(&relation, tags, "multipoint", osmId);
+  store->relations.push_back(relation);
+  return {"relation", relation.id, ""};
+}
+
+bool isEscapedLiteralQuote(const std::string& value, size_t quotePosition) {
+  size_t precedingBackslashes = 0;
+
+  while (quotePosition > precedingBackslashes &&
+         value[quotePosition - precedingBackslashes - 1] == '\\') {
+    ++precedingBackslashes;
+  }
+
+  return precedingBackslashes % 2 == 1;
+}
+
+OsmRelationMember addWaysFromMultiLine(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    int64_t* nextRelationId, const util::geo::DMultiLine& multiLine,
+    const std::unordered_map<std::string, std::string>& tags,
+    const std::string& osmId) {
+  OsmRelation relation;
+  relation.id = (*nextRelationId)--;
+
+  const std::unordered_map<std::string, std::string> noTags;
+
+  for (const auto& line : multiLine) {
+    const auto wayId =
+        addWayFromLine(store, nextNodeId, nextWayId, line, noTags);
+    relation.members.push_back({"way", wayId, ""});
+  }
+
+  setRelationTags(&relation, tags, "multilinestring", osmId);
+  store->relations.push_back(relation);
+  return {"relation", relation.id, ""};
+}
+
+OsmRelationMember addCollectionMember(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    int64_t* nextRelationId,
+    const util::geo::AnyGeometry<double>& geometry);
+
+OsmRelationMember addGeometryCollection(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    int64_t* nextRelationId, const util::geo::DCollection& collection,
+    const std::unordered_map<std::string, std::string>& tags,
+    const std::string& osmId) {
+  OsmRelation relation;
+  relation.id = (*nextRelationId)--;
+
+  for (const auto& geometry : collection) {
+    relation.members.push_back(addCollectionMember(
+        store, nextNodeId, nextWayId, nextRelationId, geometry));
+  }
+
+  setRelationTags(&relation, tags, "geometrycollection", osmId);
+  store->relations.push_back(relation);
+
+  return {"relation", relation.id, ""};
+}
+
+OsmRelationMember addCollectionMember(
+    OsmPrimitiveStore* store, int64_t* nextNodeId, int64_t* nextWayId,
+    int64_t* nextRelationId,
+    const util::geo::AnyGeometry<double>& geometry) {
+  const std::unordered_map<std::string, std::string> noTags;
+
+  switch (geometry.getType()) {
+    case 0: {
+      const auto nodeId =
+          addGeneratedNode(store, nextNodeId, geometry.getPoint());
+      return {"node", nodeId, ""};
+    }
+
+    case 1: {
+      const auto wayId = addWayFromLine(
+          store, nextNodeId, nextWayId, geometry.getLine(), noTags);
+      return {"way", wayId, ""};
+    }
+
+    case 2:
+      return addWayFromPolygon(
+          store, nextNodeId, nextWayId, nextRelationId,
+          geometry.getPolygon(), noTags, "");
+
+    case 3:
+      return addWaysFromMultiLine(
+          store, nextNodeId, nextWayId, nextRelationId,
+          geometry.getMultiLine(), noTags,"");
+
+    case 4:
+      return addWayFromMultiPolygon(
+          store, nextNodeId, nextWayId, nextRelationId,
+          geometry.getMultiPolygon(), noTags, "");
+
+    case 5:
+      return addGeometryCollection(
+          store, nextNodeId, nextWayId, nextRelationId,
+          geometry.getCollection(), noTags, "");
+
+    case 6:
+      return addNodesFromMultiPoint(
+          store, nextNodeId, nextRelationId,
+          geometry.getMultiPoint(), noTags, "");
+
+    default:
+      throw std::runtime_error(
+          "Unsupported geometry inside GEOMETRYCOLLECTION");
+  }
+}
+
+std::string unescapeSparqlLiteralLexicalForm(const std::string& lexicalForm) {
+  std::string result;
+  result.reserve(lexicalForm.size());
+
+  for (size_t i = 0; i < lexicalForm.size(); ++i) {
+    if (lexicalForm[i] != '\\' || i + 1 == lexicalForm.size()) {
+      result += lexicalForm[i];
+      continue;
+    }
+
+    const auto escapedCharacter = lexicalForm[++i];
+    switch (escapedCharacter) {
+      case '"':
+        result += '"';
+        break;
+      case '\\':
+        result += '\\';
+        break;
+      case 'n':
+        result += '\n';
+        break;
+      case 'r':
+        result += '\r';
+        break;
+      case 't':
+        result += '\t';
+        break;
+      default:
+        result += '\\';
+        result += escapedCharacter;
+        break;
+      }
+  }
+
+  return result;
+}
+}  // namespace
+// _____________________________________________________________________________
+std::string normalizeSparqlResultColumn(std::string column) {
+  if (!column.empty() && (column[0] == '?' || column[0] == '$')) {
+    column.erase(0, 1);
+  }
+
+  return column;
+}
+
+// _____________________________________________________________________________
+std::string normalizeSparqlLiteralValue(std::string value) {
+  if (value.empty() || value.front() != '"') {
+    return value;
+  }
+
+  for (size_t i = 1; i < value.size(); ++i) {
+    if (value[i] != '"' || isEscapedLiteralQuote(value, i)) {
+      continue;
+    }
+
+    const auto suffix = value.substr(i + 1);
+    const bool hasValidSuffix =
+        suffix.empty() || suffix.front() == '@' || suffix.rfind("^^", 0) == 0;
+
+    if (!hasValidSuffix) {
+      return value;
+    }
+
+    return unescapeSparqlLiteralLexicalForm(value.substr(1, i - 1));
+  }
+
+  return value;
+}
+// _____________________________________________________________________________
+std::string normalizeOsmTagKey(std::string key) {
+  if (key.size() >= 2 && key.front() == '<' && key.back() == '>') {
+    key = key.substr(1, key.size() - 2);
+  }
+
+  const std::string osmKeyPrefix = "osmkey:";
+  if (key.rfind(osmKeyPrefix, 0) == 0) {
+    return key.substr(osmKeyPrefix.size());
+  }
+
+  const std::string osmKeyHttpUri = "http://www.openstreetmap.org/wiki/Key:";
+  if (key.rfind(osmKeyHttpUri, 0) == 0) {
+    return key.substr(osmKeyHttpUri.size());
+  }
+
+  const std::string osmKeyHttpsUri = "https://www.openstreetmap.org/wiki/Key:";
+  if (key.rfind(osmKeyHttpsUri, 0) == 0) {
+    return key.substr(osmKeyHttpsUri.size());
+  }
+
+  return key;
+}
+// _____________________________________________________________________________
+std::string inferOsmObjectType(const std::string& id) {
+  if (id.rfind("osmnode:", 0) == 0 ||
+      id.find("/node/") != std::string::npos) {
+    return "node";
+  }
+  if (id.rfind("osmway:", 0) == 0 ||
+      id.find("/way/") != std::string::npos) {
+    return "way";
+  }
+
+  if (id.rfind("osmrel:", 0) == 0 ||
+      id.rfind("osmrelation:", 0) == 0 ||
+      id.find("/relation/") != std::string::npos) {
+    return "relation";
+  }
+  return "unknown";
+}
+// _____________________________________________________________________________
+std::vector<OsmObject> osmObjectsFromTsvRows(
+    const std::vector<std::vector<std::pair<std::string, std::string>>>& rows) {
+  std::vector<OsmObject> objects;
+  OsmObject current;
+  bool hasCurrent = false;
+
+  for (const auto& row : rows) {
+    const auto osmId = getRequiredCell(row, "osm_id");
+    const auto tagKey = normalizeOsmTagKey(getRequiredCell(row, "a"));
+    const auto tagValue =
+        normalizeSparqlLiteralValue(getRequiredCell(row, "b"));
+    const auto wkt = getRequiredCell(row, "hasgeometry");
+
+    if (!hasCurrent || current.id != osmId) {
+      if (hasCurrent) {
+        objects.push_back(current);
+      }
+
+      current = {};
+      current.id = osmId;
+      current.type = inferOsmObjectType(osmId);
+      current.wkt = wkt;
+      hasCurrent = true;
+    } else if (current.wkt != wkt) {
+      throw std::runtime_error("Conflicting WKT for osm_id: " + osmId);
+    }
+
+    auto it = current.tags.find(tagKey);
+    if (it != current.tags.end() && it->second != tagValue) {
+      throw std::runtime_error("Conflicting tag value for osm_id: " + osmId +
+                               ", key: " + tagKey);
+    }
+
+    current.tags[tagKey] = tagValue;
+  }
+
+  if (hasCurrent) {
+    objects.push_back(current);
+  }
+  return objects;
+}
+
+OsmResultReader::OsmResultReader(ObjectCallback cb) : _cb(cb) {}
+
+void OsmResultReader::parse(const char* data, size_t size) {
+  const char* start = data;
+  while (data < start + size) {
+    switch (_state) {
+      case IN_HEADER:
+        if (*data == '\t' || *data == '\n') {
+          finishCell();
+        }
+
+        if (*data == '\n') {
+          _state = IN_ROW;
+          data++;
+          continue;
+        }
+
+        if (*data != '\t') _dangling += *data;
+        data++;
+        continue;
+
+      case IN_ROW:
+        if (*data == '\t' || *data == '\n') {
+          finishCell();
+
+          if (*data == '\n') {
+            finishRow();
+          }
+
+          data++;
+          continue;
+        }
+
+        _dangling += *data;
+        data++;
+        break;
+    }
+  }
+}
+
+void OsmResultReader::finish() {
+  if (!_dangling.empty()) {
+    finishCell();
+  }
+
+  if (!_curRow.empty()) {
+    finishRow();
+  }
+
+  if (_hasCurrent) {
+    _cb(_current);
+    _hasCurrent = false;
+  }
+}
+
+void OsmResultReader::finishCell() {
+  if (_state == IN_HEADER) {
+    _colNames.push_back(_dangling);
+  } else {
+    _curRow.push_back(_dangling);
+  }
+
+  _dangling.clear();
+}
+
+void OsmResultReader::finishRow() {
+  if (_curRow.empty()) return;
+
+  mergeRowIntoCurrentObject();
+  _curRow.clear();
+  _curCol = 0;
+}
+
+void OsmResultReader::startObject(const std::string& osmId,
+                                  const std::string& wkt) {
+  if (_hasCurrent) {
+    _cb(_current);
+  }
+
+  _current = {};
+  _current.id = osmId;
+  _current.type = inferOsmObjectType(osmId);
+  _current.wkt = wkt;
+  _hasCurrent = true;
+}
+
+void OsmResultReader::mergeRowIntoCurrentObject() {
+  const auto osmId = getRequiredCell(_colNames, _curRow, "osm_id");
+  const auto tagKey =
+      normalizeOsmTagKey(getRequiredCell(_colNames, _curRow, "a"));
+  const auto tagValue =
+      normalizeSparqlLiteralValue(getRequiredCell(_colNames, _curRow, "b"));
+  const auto wkt = getRequiredCell(_colNames, _curRow, "hasgeometry");
+
+  if (!_hasCurrent || _current.id != osmId) {
+    startObject(osmId, wkt);
+  } else if (_current.wkt != wkt) {
+    throw std::runtime_error("Conflicting WKT for osm_id: " + osmId);
+  }
+
+  auto it = _current.tags.find(tagKey);
+  if (it != _current.tags.end() && it->second != tagValue) {
+    throw std::runtime_error("Conflicting tag value for osm_id: " + osmId +
+                             ", key: " + tagKey);
+  }
+
+  _current.tags[tagKey] = tagValue;
+}
+
+void OsmPrimitiveBuilder::append(const OsmObject& object,
+                                 OsmPrimitiveStore* store) {
+  const char* wktStart = nullptr;
+  const auto crsType = util::geo::getCRSType(object.wkt.c_str(), &wktStart);
+  const auto wktType = util::geo::getWKTType(wktStart, &wktStart);
+
+  if (crsType == util::geo::CRSType::UNSUPPORTED) {
+    throw std::runtime_error("Unsupported CRS for osm_id: " + object.id);
+  }
+
+  if (wktType == util::geo::WKTType::POINT) {
+    const auto point = util::geo::pointFromWKT<double>(wktStart, nullptr);
+    store->nodes.push_back(
+        {_nextNodeId--, point.getX(), point.getY(), object.tags});
+  } else if (wktType == util::geo::WKTType::MULTIPOINT) {
+    const auto multiPoint =
+        util::geo::multiPointFromWKT<double>(wktStart, nullptr);
+    addNodesFromMultiPoint(
+        store, &_nextNodeId, &_nextRelationId, multiPoint, object.tags,
+        object.id);
+  } else if (wktType == util::geo::WKTType::LINESTRING) {
+    const auto line = util::geo::lineFromWKT<double>(wktStart, nullptr);
+    addWayFromLine(store, &_nextNodeId, &_nextWayId, line, object.tags);
+  } else if (wktType == util::geo::WKTType::MULTILINESTRING) {
+    const auto multiLine =
+        util::geo::multiLineFromWKT<double>(wktStart, nullptr);
+    addWaysFromMultiLine(
+        store, &_nextNodeId, &_nextWayId, &_nextRelationId, multiLine,
+        object.tags, object.id);
+  } else if (wktType == util::geo::WKTType::POLYGON) {
+    const auto polygon =
+        util::geo::polygonFromWKT<double>(wktStart, nullptr);
+    addWayFromPolygon(store, &_nextNodeId, &_nextWayId, &_nextRelationId,
+                      polygon, object.tags, object.id);
+  } else if (wktType == util::geo::WKTType::MULTIPOLYGON) {
+    const auto multiPolygon =
+        util::geo::multiPolygonFromWKT<double>(wktStart, nullptr);
+    addWayFromMultiPolygon(
+        store, &_nextNodeId, &_nextWayId, &_nextRelationId, multiPolygon,
+        object.tags, object.id);
+  } else if (wktType == util::geo::WKTType::COLLECTION) {
+    const auto collection =
+        util::geo::collectionFromWKT<double>(wktStart, nullptr);
+    addGeometryCollection(
+        store, &_nextNodeId, &_nextWayId, &_nextRelationId, collection,
+        object.tags, object.id);
+  } else {
+    throw std::runtime_error("Unsupported WKT type for osm_id: " + object.id);
+  }
+}
+
+// _____________________________________________________________________________
+OsmPrimitiveStore osmPrimitivesFromOsmObjects(
+    const std::vector<OsmObject>& objects) {
+  OsmPrimitiveStore store;
+  OsmPrimitiveBuilder builder;
+
+  for (const auto& object : objects) {
+    builder.append(object, &store);
+  }
+
+  return store;
+}
+
+OsmXmlStreamWriter::OsmXmlStreamWriter(std::ostream& out)
+    : _out(out), 
+    _xml(new util::xml::XmlWriter(&out, true, 2)) {
+  _out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>";
+
+  _xml->openTag("osm", {
+      {"version", "0.6"},
+      {"generator", "qlever-petrimaps"},
+  });
+}
+
+OsmXmlStreamWriter::~OsmXmlStreamWriter() = default;
+
+void OsmXmlStreamWriter::writeNode(const OsmNode& node) {
+  _xml->openTag("node", {
+      {"id", intToXmlAttr(node.id)},
+      {"lat", doubleToXmlAttr(node.lat)},
+      {"lon", doubleToXmlAttr(node.lon)},
+  });
+
+  for (const auto& tag : node.tags) {
+    _xml->openTag("tag", {{"k", tag.first}, {"v", tag.second}});
+    _xml->closeTag();
+  }
+
+  _xml->closeTag();
+}
+
+void OsmXmlStreamWriter::writeWay(const OsmWay& way) {
+  _xml->openTag("way", {{"id", intToXmlAttr(way.id)}});
+
+  for (const auto& nodeRef : way.nodeRefs) {
+    _xml->openTag("nd", {{"ref", intToXmlAttr(nodeRef)}});
+    _xml->closeTag();
+  }
+
+  for (const auto& tag : way.tags) {
+    _xml->openTag("tag", {{"k", tag.first}, {"v", tag.second}});
+    _xml->closeTag();
+  }
+
+  _xml->closeTag();
+}
+
+void OsmXmlStreamWriter::writeRelation(const OsmRelation& relation) {
+  _xml->openTag("relation", {{"id", intToXmlAttr(relation.id)}});
+
+  for (const auto& member : relation.members) {
+    _xml->openTag("member",
+                  {{"type", member.type},
+                   {"ref", intToXmlAttr(member.ref)},
+                   {"role", member.role}});
+    _xml->closeTag();
+  }
+
+  for (const auto& tag : relation.tags) {
+    _xml->openTag("tag", {{"k", tag.first}, {"v", tag.second}});
+    _xml->closeTag();
+  }
+
+  _xml->closeTag();
+}
+
+void OsmXmlStreamWriter::write(const OsmPrimitiveStore& store) {
+  if (_finished) {
+    throw std::runtime_error("Cannot write to a finished OSM XML document");
+  }
+
+  for (const auto& node : store.nodes) {
+    writeNode(node);
+  }
+
+  for (const auto& way : store.ways) {
+    writeWay(way);
+  }
+
+  for (const auto& relation : store.relations) {
+    writeRelation(relation);
+  }
+}
+
+void OsmXmlStreamWriter::finish() {
+  if (_finished) {
+    throw std::runtime_error("OSM XML document was already finished");
+  }
+
+  _xml->closeTag();
+  _out << "\n";
+
+  if (!_out) {
+    throw std::runtime_error("Failed to write OSM XML output");
+  }
+
+  _finished = true;
+}
+
+// _____________________________________________________________________________
+void exportQleverTsvToOsmXml(const std::string& backendUrl,
+                             const std::string& query,
+                             std::ostream& out,
+                             const std::string& remoteAddr) {
+  OsmTsvToXmlExporter exporter(out);
+
+  RequestReader reader(backendUrl, 0, 0, 0, 0);
+  reader.requestRows(
+      query,
+      [&exporter](const char* data, size_t size) {
+        exporter.parse(data, size);
+      },
+      remoteAddr);
+
+  exporter.finish();
+}
+
+// _____________________________________________________________________________
+void exportQleverTsvToOsmXmlFile(const std::string& backendUrl,
+                                 const std::string& query,
+                                 const std::string& fileName,
+                                 const std::string& remoteAddr) {
+  std::ofstream out(fileName);
+
+  if (!out) {
+    throw std::runtime_error("Could not open OSM XML output file: " + fileName);
+  }
+
+  exportQleverTsvToOsmXml(backendUrl, query, out, remoteAddr);
+
+  if (!out) {
+    throw std::runtime_error("Failed to write OSM XML output file: " +
+                             fileName);
+  }
+}
+
+// _____________________________________________________________________________
+OsmTsvToXmlExporter::OsmTsvToXmlExporter(std::ostream& out)
+    : _xmlWriter(out),
+      _reader([this](const OsmObject& object) {
+        OsmPrimitiveStore store;
+        _primitiveBuilder.append(object, &store);
+        _xmlWriter.write(store);
+      }) {}
+
+void OsmTsvToXmlExporter::parse(const char* data, size_t size) {
+  if (_finished) {
+    throw std::runtime_error("Cannot parse into a finished OSM XML export");
+  }
+
+  _reader.parse(data, size);
+}
+
+void OsmTsvToXmlExporter::finish() {
+  if (_finished) {
+    throw std::runtime_error("OSM XML export was already finished");
+  }
+
+  _reader.finish();
+  _xmlWriter.finish();
+  _finished = true;
+}
+// _____________________________________________________________________________
+void writeOsmXml(const OsmPrimitiveStore& store, std::ostream& out) {
+  OsmXmlStreamWriter writer(out);
+  writer.write(store);
+  writer.finish();
+}
+
+void writeOsmXmlFile(const OsmPrimitiveStore& store,
+                     const std::string& fileName) {
+  std::ofstream out(fileName);
+
+  if (!out) {
+    throw std::runtime_error("Could not open OSM XML output file: " + fileName);
+  }
+
+  writeOsmXml(store, out);
+
+  if (!out) {
+    throw std::runtime_error("Failed to write OSM XML output file: " + fileName);
+  }
+}
+}  // namespace petrimaps
 
 // _____________________________________________________________________________
 std::string petrimaps::normalizeURL(const std::string& inURL) {

@@ -85,6 +85,9 @@ class Server : public util::http::Handler {
   util::http::Answer handleExportReq(const Params& pars,
                                      const HeaderParams& headerPars,
                                      int sock) const;
+  util::http::Answer handleOsmExportReq(const Params& pars,
+                                        const HeaderParams& headerPars,
+                                        int sock) const;
   util::http::Answer handleLoadStatusReq(const Params& pars,
                                          const HeaderParams& headers,
                                          int sock) const;
