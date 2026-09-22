@@ -5,14 +5,17 @@
 #include <curl/curl.h>
 #include <stdint.h>
 
+#include <atomic>
 #include <exception>
 #include <functional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <vector>
+#include <thread>
 #include <unordered_map>
+#include <vector>
 
+#include "util/JobQueue.h"
 #include "util/Misc.h"
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
@@ -33,6 +36,10 @@ const static int16_t M_COORD_GRANULARITY = 12230;
 const static int16_t M_COORD_OFFSET = 16384;
 
 const static std::string CURL_USER_AGENT = "petrimaps";
+
+const static size_t MIN_BLOCK_SIZE = 1024 * 1024;
+
+const static size_t MAX_QUEUED_BLOCKS = 8;
 
 typedef std::unordered_map<std::string, std::string> HeaderParams;
 
@@ -104,6 +111,69 @@ void performCurlRequest(const std::string& url, const std::string& postFields,
                         const std::function<void(const char*, size_t)>& parse,
                         const std::string* raw);
 
+// Simple parse thread which collects chunks of size MIN_BLOCK_SIZE on a queue
+// and parses them in the order received
+class CurlParseThread {
+ public:
+  explicit CurlParseThread(
+      const std::function<void(const char*, size_t)>& parse)
+      : _parse(parse),
+        _queue(MAX_QUEUED_BLOCKS),
+        _thread(&CurlParseThread::run, this) {
+    _curBuf.reserve(MIN_BLOCK_SIZE);
+  }
+
+  ~CurlParseThread() { finalize(); }
+
+  CurlParseThread(const CurlParseThread&) = delete;
+  CurlParseThread& operator=(const CurlParseThread&) = delete;
+
+  bool push(const char* c, size_t n) {
+    _curBuf.append(c, n);
+    if (_curBuf.size() >= MIN_BLOCK_SIZE) flush();
+    return !_failed;
+  }
+
+  void finalize() {
+    if (_finalized) return;
+    _finalized = true;
+    flush();
+    _queue.add({});  // the DONE element
+    if (_thread.joinable()) _thread.join();
+  }
+
+  std::exception_ptr exception() const { return _exception; }
+
+ private:
+  void flush() {
+    if (_curBuf.empty()) return;
+    _queue.add(std::move(_curBuf));
+    _curBuf.clear();
+    _curBuf.reserve(MIN_BLOCK_SIZE);
+  }
+
+  void run() {
+    std::string block;
+    while (!(block = _queue.get()).empty()) {
+      if (_failed) continue;  // unspin
+      try {
+        _parse(block.data(), block.size());
+      } catch (...) {
+        _exception = std::current_exception();
+        _failed = true;
+      }
+    }
+  }
+
+  const std::function<void(const char*, size_t)>& _parse;
+  std::string _curBuf;
+  util::JobQueue<std::string> _queue;
+  std::exception_ptr _exception;
+  std::atomic<bool> _failed{false};
+  bool _finalized = false;
+  std::thread _thread;
+};
+
 class OutOfMemoryError : public std::exception {
  public:
   explicit OutOfMemoryError(double want, size_t have, size_t max) {
@@ -158,8 +228,7 @@ inline std::string httpRequest(const std::string& url,
   }
   struct curl_slist* headers = 0;
   if (xRealIP.size()) {
-    headers = curl_slist_append(headers,
-                                ("X-Real-IP: " + xRealIP).c_str());
+    headers = curl_slist_append(headers, ("X-Real-IP: " + xRealIP).c_str());
   }
   if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeStringCb);
