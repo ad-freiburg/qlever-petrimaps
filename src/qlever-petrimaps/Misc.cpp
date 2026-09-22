@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <exception>
 #include <string>
 #include <vector>
 
@@ -63,13 +64,8 @@ void petrimaps::performCurlRequest(
   char errbuf[CURL_ERROR_SIZE];
   errbuf[0] = 0;
 
-  // this is a context that holds to things: a std::function for parsing, and
-  // an exception_ptr for storing any exception encountered during parsing (for
-  // later rethrow)
-  struct CallbackContext {
-    const std::function<void(const char*, size_t)>& parse;
-    std::exception_ptr exception;
-  } cbContext{parse, nullptr};
+  // separate parsing thread to be able to continue receiving while parsing
+  CurlParseThread parseThread(parse);
 
   petrimapsCurlSetup(curl);
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -83,12 +79,8 @@ void petrimaps::performCurlRequest(
   size_t (*cb)(void* contents, size_t size, size_t nmemb, void* userp) =
       [](void* contents, size_t size, size_t nmemb, void* userp) -> size_t {
     size_t realsize = size * nmemb;
-    auto* c = static_cast<CallbackContext*>(userp);
-    try {
-      c->parse(static_cast<const char*>(contents), realsize);
-    } catch (...) {
-      // store exception, then return with an error (aborts curl request)
-      c->exception = std::current_exception();
+    auto* t = static_cast<CurlParseThread*>(userp);
+    if (!t->push(static_cast<const char*>(contents), realsize)) {
       return CURLE_WRITE_ERROR;
     }
     return realsize;
@@ -96,7 +88,7 @@ void petrimaps::performCurlRequest(
 
   // any newly read block will be given to the parse() method of the handed cb
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, cb);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &cbContext);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &parseThread);
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
 
   struct curl_slist* headers = 0;
@@ -111,21 +103,16 @@ void petrimaps::performCurlRequest(
 
   CURLcode res = curl_easy_perform(curl);
 
+  parseThread.finalize();
+
   long httpCode = 0;
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
   if (headers) curl_slist_free_all(headers);
   curl_easy_cleanup(curl);
 
-  if (httpCode != 200) {
-    std::stringstream ss;
-    ss << "QLever backend returned status code " << httpCode;
-    if (raw) ss << "\n" << *raw;
-    throw std::runtime_error(ss.str());
-  }
-
-  // rethrow any exception encountered during write callback
-  if (cbContext.exception) std::rethrow_exception(cbContext.exception);
+  // rethrow any exception encountered while parsing
+  if (parseThread.exception()) std::rethrow_exception(parseThread.exception());
 
   if (res != CURLE_OK) {
     std::stringstream ss;
@@ -137,6 +124,13 @@ void petrimaps::performCurlRequest(
       LOG(ERROR) << "[CURL] " << curl_easy_strerror(res);
       ss << curl_easy_strerror(res);
     }
+    throw std::runtime_error(ss.str());
+  }
+
+  if (httpCode != 200) {
+    std::stringstream ss;
+    ss << "QLever backend returned status code " << httpCode;
+    if (raw) ss << "\n" << *raw;
     throw std::runtime_error(ss.str());
   }
 }
