@@ -140,7 +140,8 @@ class Requestor {
           cb,
       const std::string& remoteAddr) const;
 
-  const petrimaps::Grid<OID_TYPE, float, float>& getPointGrid(size_t lid) const {
+  const petrimaps::Grid<OID_TYPE, float, float>& getPointGrid(
+      size_t lid) const {
     return _pgrid[_lidToGrid[lid]];
   }
 
@@ -157,15 +158,17 @@ class Requestor {
     return _agrid[_lidToGrid[lid]];
   }
 
-  const std::vector<std::pair<GID_TYPE, ROW_TYPE>>& getObjects(size_t lid) const {
+  const std::vector<std::pair<GID_TYPE, ROW_TYPE>>& getObjects(
+      size_t lid) const {
     return _objects[_lidToObject[lid]];
   }
 
-  const std::pair<GID_TYPE, ROW_TYPE>& getObject(size_t lid, OID_TYPE oid) const {
+  const std::pair<GID_TYPE, ROW_TYPE>& getObject(size_t lid,
+                                                 OID_TYPE oid) const {
     return _objects[_lidToObject[lid]][oid];
   }
 
-  const std::vector<std::pair<util::geo::FPoint, ID_TYPE>>& getDynamicPoints(
+  const std::vector<std::pair<util::geo::FPoint, ROW_TYPE>>& getDynamicPoints(
       size_t lid) const {
     return _dynamicPoints[_lidToObject[lid]];
   }
@@ -217,9 +220,13 @@ class Requestor {
     return oid < getObjects(lid).size() + getDynamicPoints(lid).size();
   }
 
-  size_t getLineByGid(GID_TYPE gid) const { return _cache->getLineByLid(LINEID_TYPE{gid - I_OFFSET}); }
+  size_t getLine(GID_TYPE gid) const {
+    return _cache->getLine(LINEID_TYPE{gid - I_OFFSET});
+  }
 
-  size_t getLineEndByGid(GID_TYPE gid) const { return _cache->getLineEndByLid(LINEID_TYPE{gid - I_OFFSET}); }
+  size_t getLineEnd(GID_TYPE gid) const {
+    return _cache->getLineEnd(LINEID_TYPE{gid - I_OFFSET});
+  }
 
   const std::vector<util::geo::Point<int16_t>,
                     util::no_init_allocator<util::geo::Point<int16_t>>>&
@@ -227,20 +234,20 @@ class Requestor {
     return _cache->getLinePoints();
   }
 
-  util::geo::DBox getLineBBoxByGid(GID_TYPE gid) const {
-    return _cache->getLineBBoxByLid(LINEID_TYPE{gid - I_OFFSET});
+  util::geo::DBox getLineBBox(GID_TYPE gid) const {
+    return _cache->getLineBBox(LINEID_TYPE{gid - I_OFFSET});
   }
 
   const ResObj getGeom(size_t lid, OID_TYPE oid, double rad) const;
 
-  util::geo::MultiPolygon<double> geomPolyGeoms(size_t lid, size_t oid,
+  util::geo::MultiPolygon<double> geomPolyGeoms(size_t lid, OID_TYPE oid,
                                                 double eps) const;
-  util::geo::MultiLine<double> geomLineGeoms(size_t lid, size_t oid,
+  util::geo::MultiLine<double> geomLineGeoms(size_t lid, OID_TYPE oid,
                                              double eps) const;
   util::geo::MultiPoint<double> geomPointGeoms(size_t lid, OID_TYPE oid,
                                                double res) const;
 
-  util::geo::DLine extractLineGeomByGid(GID_TYPE gid, double minD = 0) const;
+  util::geo::DLine extractLineGeom(GID_TYPE gid, double minD = 0) const;
   bool isArea(GID_TYPE gid) const;
   bool isInnerArea(GID_TYPE gid) const;
 
@@ -255,13 +262,13 @@ class Requestor {
   size_t getNumObjects(size_t lid) const {
     return _numObjects[_lidToObject[lid]];
   }
-  util::geo::DPoint clusterGeom(size_t lid, size_t oid, double res) const;
+  util::geo::DPoint clusterGeom(size_t lid, OID_TYPE oid, double res) const;
 
   static std::vector<std::string> getColumns(const std::string& backend,
                                              std::string query);
 
-  double getVal(size_t lid, size_t oid) const;
-  std::pair<double, double> getRasterMetas(size_t lid, size_t oid) const;
+  double getVal(size_t lid, OID_TYPE oid) const;
+  std::pair<double, double> getRasterMetas(size_t lid, OID_TYPE oid) const;
 
   size_t getNumLayers() const { return _layers.size(); }
   bool lineIntersects(GID_TYPE gid, const util::geo::DBox& bbox) const;
@@ -317,7 +324,7 @@ class Requestor {
                         std::string sortBy) const;
   std::string prepQueryRow(std::string query, uint64_t row) const;
 
-  std::vector<std::pair<util::geo::FPoint, ID_TYPE>> getDynamicPoints(
+  std::vector<std::pair<util::geo::FPoint, ROW_TYPE>> getDynamicPoints(
       const std::vector<IdMapping>& ids) const;
 
   static size_t uniqueCol(const std::string& col,
@@ -332,7 +339,7 @@ class Requestor {
   }
 
   // value of object oid of geom column gid, taken from value column vid
-  double getValFor(size_t gid, size_t vid, size_t oid) const;
+  double getValFor(size_t gid, size_t vid, OID_TYPE oid) const;
 
   std::string _sortColumn;
 
@@ -340,7 +347,7 @@ class Requestor {
 
   // per distinct geometry column
   std::vector<std::vector<std::pair<GID_TYPE, ROW_TYPE>>> _objects;
-  std::vector<std::vector<std::pair<util::geo::FPoint, ID_TYPE>>>
+  std::vector<std::vector<std::pair<util::geo::FPoint, ROW_TYPE>>>
       _dynamicPoints;
   std::vector<std::vector<std::pair<OID_TYPE, std::pair<size_t, size_t>>>>
       _clusterObjects;

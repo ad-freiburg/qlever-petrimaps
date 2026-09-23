@@ -161,10 +161,10 @@ void Requestor::request(const std::string& remoteAddr) {
           pointBoxes[t] =
               util::geo::extendBox(_cache->getPoints()[pId], pointBoxes[t]);
         } else if (geomId < std::numeric_limits<ID_TYPE>::max()) {
-          auto lineId = geomId - I_OFFSET;
+          LINEID_TYPE lineId{geomId - I_OFFSET};
 
           lineBoxes[t] =
-              util::geo::extendBox(_cache->getLineBBoxByLid(LINEID_TYPE{lineId}), lineBoxes[t]);
+              util::geo::extendBox(_cache->getLineBBox(lineId), lineBoxes[t]);
           numLines[t]++;
         }
       }
@@ -261,12 +261,12 @@ void Requestor::request(const std::string& remoteAddr) {
     checkMem(8 * (lxWidth * lyHeight), _maxMemory);
     // checkMem(8 * (lxWidth * lyHeight), _maxMemory);
 
-    _pgrid[gsid] =
-        petrimaps::Grid<OID_TYPE, float, float>(GRID_SIZE, GRID_SIZE, pointBbox);
-    _lgrid[gsid] =
-        petrimaps::Grid<OID_TYPE, float, float>(GRID_SIZE, GRID_SIZE, fLineBbox);
-    _agrid[gsid] =
-        petrimaps::Grid<OID_TYPE, float, float>(GRID_SIZE, GRID_SIZE, fLineBbox);
+    _pgrid[gsid] = petrimaps::Grid<OID_TYPE, float, float>(GRID_SIZE, GRID_SIZE,
+                                                           pointBbox);
+    _lgrid[gsid] = petrimaps::Grid<OID_TYPE, float, float>(GRID_SIZE, GRID_SIZE,
+                                                           fLineBbox);
+    _agrid[gsid] = petrimaps::Grid<OID_TYPE, float, float>(GRID_SIZE, GRID_SIZE,
+                                                           fLineBbox);
     _lpgrid[gsid] = petrimaps::Grid<util::geo::Point<uint8_t>, float, float>(
         GRID_SIZE, GRID_SIZE, fLineBbox);
 
@@ -295,14 +295,16 @@ void Requestor::request(const std::string& remoteAddr) {
             for (size_t m = 0; m < clusterI; m++) {
               const auto& p = _objects[gid][oid - m];
               _pgrid[gsid].add(_cache->getPoints()[p.first],
-                               getValFor(gid, vid, oid - m), OID_TYPE{j});
+                               getValFor(gid, vid, OID_TYPE{oid - m}),
+                               OID_TYPE{j});
               if (buildClusters)
-                _clusterObjects[gid].push_back({OID_TYPE{oid - m}, {m, clusterI}});
+                _clusterObjects[gid].push_back(
+                    {OID_TYPE{oid - m}, {m, clusterI}});
               j++;
             }
           } else {
             _pgrid[gsid].add(_cache->getPoints()[geomId],
-                             getValFor(gid, vid, oid), OID_TYPE{oid});
+                             getValFor(gid, vid, OID_TYPE{oid}), OID_TYPE{oid});
           }
 
           // every 100000 objects, check memory...
@@ -333,16 +335,18 @@ void Requestor::request(const std::string& remoteAddr) {
               const auto& p = _dynamicPoints[gid][i - m];
               auto geom = p.first;
               _pgrid[gsid].add(
-                  geom, getValFor(gid, vid, i - m + _objects[gid].size()), OID_TYPE{j});
+                  geom,
+                  getValFor(gid, vid, OID_TYPE{i - m + _objects[gid].size()}),
+                  OID_TYPE{j});
               if (buildClusters)
                 _clusterObjects[gid].push_back(
                     {OID_TYPE{i - m + _objects[gid].size()}, {m, clusterI}});
               j++;
             }
           } else {
-            _pgrid[gsid].add(geom,
-                             getValFor(gid, vid, i + _objects[gid].size()),
-                             OID_TYPE{i + _objects[gid].size()});
+            _pgrid[gsid].add(
+                geom, getValFor(gid, vid, OID_TYPE{i + _objects[gid].size()}),
+                OID_TYPE{i + _objects[gid].size()});
           }
 
           // every 100000 objects, check memory...
@@ -363,11 +367,12 @@ void Requestor::request(const std::string& remoteAddr) {
         for (const auto& l : _objects[gid]) {
           if (l.first >= I_OFFSET &&
               l.first < std::numeric_limits<ID_TYPE>::max()) {
-            auto box = getLineBBoxByGid(l.first);
+            auto box = getLineBBox(l.first);
             util::geo::FBox fbox = {
                 {box.getLowerLeft().getX(), box.getLowerLeft().getY()},
                 {box.getUpperRight().getX(), box.getUpperRight().getY()}};
-            _lgrid[gsid].add(fbox, getValFor(gid, vid, i), OID_TYPE{i});
+            _lgrid[gsid].add(fbox, getValFor(gid, vid, OID_TYPE{i}),
+                             OID_TYPE{i});
           }
           i++;
 
@@ -392,8 +397,8 @@ void Requestor::request(const std::string& remoteAddr) {
             LINEID_TYPE lineId{l.first - I_OFFSET};
             bool lineIsArea = isArea(l.first);
 
-            size_t start = _cache->getLineByLid(lineId);
-            size_t end = _cache->getLineEndByLid(lineId);
+            size_t start = _cache->getLine(lineId);
+            size_t end = _cache->getLineEnd(lineId);
 
             double mainX = 0;
             double mainY = 0;
@@ -403,7 +408,7 @@ void Requestor::request(const std::string& remoteAddr) {
             int lastX = 0;
             int lastY = 0;
 
-            double val = getValFor(gid, vid, i);
+            double val = getValFor(gid, vid, OID_TYPE{i});
 
             double area = 0;
             util::geo::FBox fbox;
@@ -587,17 +592,16 @@ const ResObj Requestor::getGeom(size_t lid, OID_TYPE oid, double rad) const {
     throw std::runtime_error("Geom cache not ready");
   }
 
-  return {geomPointGeoms(lid, oid, rad / 10),
-          geomLineGeoms(lid, oid, rad / 10),
+  return {geomPointGeoms(lid, oid, rad / 10), geomLineGeoms(lid, oid, rad / 10),
           geomPolyGeoms(lid, oid, rad / 10)};
 }
 
 // _____________________________________________________________________________
-util::geo::DLine Requestor::extractLineGeomByGid(GID_TYPE gid, double minD) const {
+util::geo::DLine Requestor::extractLineGeom(GID_TYPE gid, double minD) const {
   util::geo::DLine dline;
 
-  size_t start = getLineByGid(gid);
-  size_t end = getLineEndByGid(gid);
+  size_t start = getLine(gid);
+  size_t end = getLineEnd(gid);
 
   double mainX = 0;
   double mainY = 0;
@@ -632,7 +636,7 @@ util::geo::DLine Requestor::extractLineGeomByGid(GID_TYPE gid, double minD) cons
 
 // _____________________________________________________________________________
 bool Requestor::isArea(GID_TYPE gid) const {
-  size_t end = getLineEndByGid(gid);
+  size_t end = getLineEnd(gid);
 
   if (end == 0) return false;
 
@@ -641,7 +645,7 @@ bool Requestor::isArea(GID_TYPE gid) const {
 
 // _____________________________________________________________________________
 bool Requestor::isInnerArea(GID_TYPE gid) const {
-  size_t end = getLineEndByGid(gid);
+  size_t end = getLineEnd(gid);
 
   if (end == 0) return false;
 
@@ -650,8 +654,7 @@ bool Requestor::isInnerArea(GID_TYPE gid) const {
 }
 
 // _____________________________________________________________________________
-util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t lid,
-                                                      size_t oid,
+util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t lid, OID_TYPE oid,
                                                       double eps) const {
   const size_t gid = _lidToObject[lid];
   std::vector<util::geo::DLine> polys;
@@ -663,7 +666,7 @@ util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t lid,
     if (_objects[gid][i].first < I_OFFSET ||
         Requestor::isArea(_objects[gid][i].first))
       continue;
-    const auto& fline = extractLineGeomByGid(_objects[gid][i].first);
+    const auto& fline = extractLineGeom(_objects[gid][i].first);
     polys.push_back(util::geo::simplify(fline, eps));
   }
 
@@ -675,7 +678,7 @@ util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t lid,
       if (_objects[gid][i].first < I_OFFSET ||
           Requestor::isArea(_objects[gid][i].first))
         continue;
-      const auto& fline = extractLineGeomByGid(_objects[gid][i].first);
+      const auto& fline = extractLineGeom(_objects[gid][i].first);
       polys.push_back(util::geo::simplify(fline, eps));
     }
   }
@@ -683,9 +686,9 @@ util::geo::MultiLine<double> Requestor::geomLineGeoms(size_t lid,
   return polys;
 }
 
-
 // _____________________________________________________________________________
-util::geo::MultiPoint<double> Requestor::geomPointGeoms(size_t lid, OID_TYPE oid,
+util::geo::MultiPoint<double> Requestor::geomPointGeoms(size_t lid,
+                                                        OID_TYPE oid,
                                                         double res) const {
   const size_t gid = _lidToObject[lid];
   std::vector<util::geo::DPoint> points;
@@ -729,7 +732,8 @@ util::geo::MultiPoint<double> Requestor::geomPointGeoms(size_t lid, OID_TYPE oid
 }
 
 // _____________________________________________________________________________
-util::geo::MultiPolygon<double> Requestor::geomPolyGeoms(size_t lid, size_t oid,
+util::geo::MultiPolygon<double> Requestor::geomPolyGeoms(size_t lid,
+                                                         OID_TYPE oid,
                                                          double eps) const {
   const size_t gid = _lidToObject[lid];
   std::vector<util::geo::DPolygon> polys;
@@ -741,7 +745,7 @@ util::geo::MultiPolygon<double> Requestor::geomPolyGeoms(size_t lid, size_t oid,
     if (_objects[gid][i].first < I_OFFSET ||
         !Requestor::isArea(_objects[gid][i].first))
       continue;
-    const auto& dline = extractLineGeomByGid(_objects[gid][i].first);
+    const auto& dline = extractLineGeom(_objects[gid][i].first);
     polys.push_back(util::geo::DPolygon(util::geo::simplify(dline, eps)));
   }
 
@@ -753,7 +757,7 @@ util::geo::MultiPolygon<double> Requestor::geomPolyGeoms(size_t lid, size_t oid,
       if (_objects[gid][i].first < I_OFFSET ||
           !Requestor::isArea(_objects[gid][i].first))
         continue;
-      const auto& dline = extractLineGeomByGid(_objects[gid][i].first);
+      const auto& dline = extractLineGeom(_objects[gid][i].first);
       polys.push_back(util::geo::DPolygon(util::geo::simplify(dline, eps)));
     }
   }
@@ -762,9 +766,9 @@ util::geo::MultiPolygon<double> Requestor::geomPolyGeoms(size_t lid, size_t oid,
 }
 
 // _____________________________________________________________________________
-std::vector<std::pair<util::geo::FPoint, ID_TYPE>> Requestor::getDynamicPoints(
+std::vector<std::pair<util::geo::FPoint, ROW_TYPE>> Requestor::getDynamicPoints(
     const std::vector<IdMapping>& ids) const {
-  std::vector<std::pair<util::geo::FPoint, ID_TYPE>> ret;
+  std::vector<std::pair<util::geo::FPoint, ROW_TYPE>> ret;
 
   size_t count = 0;
 
@@ -775,7 +779,7 @@ std::vector<std::pair<util::geo::FPoint, ID_TYPE>> Requestor::getDynamicPoints(
     if (idDatatype(p.qid) == pointFormat.datatype) count++;
   }
 
-  checkMem(sizeof(std::pair<util::geo::FPoint, ID_TYPE>) * count, _maxMemory);
+  checkMem(sizeof(std::pair<util::geo::FPoint, ROW_TYPE>) * count, _maxMemory);
   ret.reserve(count);
 
   for (const auto& p : ids) {
@@ -783,16 +787,17 @@ std::vector<std::pair<util::geo::FPoint, ID_TYPE>> Requestor::getDynamicPoints(
 
     uint64_t valueBits = p.qid & ((uint64_t(1) << 60) - 1);
 
+    // the `id` of a requested entry is the result row it came from
     ret.push_back({util::geo::latLngToWebMerc(
                        decodeGeoPoint(valueBits, pointFormat.encoding)),
-                   p.id});
+                   ROW_TYPE{p.id.val()}});
   }
 
   return ret;
 }
 
 // _____________________________________________________________________________
-util::geo::DPoint Requestor::clusterGeom(size_t lid, size_t oid,
+util::geo::DPoint Requestor::clusterGeom(size_t lid, OID_TYPE oid,
                                          double res) const {
   const size_t gid = _lidToObject[lid];
   size_t cid = oid - getObjects(lid).size() - getDynamicPoints(lid).size();
@@ -838,10 +843,10 @@ util::geo::DPoint Requestor::clusterGeom(size_t lid, size_t oid,
 // _____________________________________________________________________________
 bool Requestor::lineIntersects(GID_TYPE gid,
                                const util::geo::DBox& bbox) const {
-  const auto& lbox = getLineBBoxByGid(gid);
+  const auto& lbox = getLineBBox(gid);
   if (!util::geo::intersects(lbox, bbox)) return false;
-  size_t start = getLineByGid(gid);
-  size_t end = getLineEndByGid(gid);
+  size_t start = getLine(gid);
+  size_t end = getLineEnd(gid);
 
   util::geo::DPoint curPa, curPb;
   int s = 0;
@@ -896,8 +901,8 @@ std::pair<double, double> Requestor::getValRange(size_t lid) const {
 }
 
 // _____________________________________________________________________________
-std::pair<double, double> Requestor::getRasterMetas(
-    size_t lid, size_t oid) const {
+std::pair<double, double> Requestor::getRasterMetas(size_t lid,
+                                                    OID_TYPE oid) const {
   const size_t gid = _lidToObject[lid];
   const size_t rid = _lidToRaster[lid];
 
@@ -918,12 +923,12 @@ std::pair<double, double> Requestor::getRasterMetas(
 }
 
 // _____________________________________________________________________________
-double Requestor::getVal(size_t lid, size_t oid) const {
+double Requestor::getVal(size_t lid, OID_TYPE oid) const {
   return getValFor(_lidToObject[lid], _lidToValue[lid], oid);
 }
 
 // _____________________________________________________________________________
-double Requestor::getValFor(size_t gid, size_t vid, size_t oid) const {
+double Requestor::getValFor(size_t gid, size_t vid, OID_TYPE oid) const {
   // shortcut
   if (vid == NO_COL) return 1;
 

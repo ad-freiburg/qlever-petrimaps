@@ -145,7 +145,8 @@ void GeomCache::parse(const char *c, size_t size) {
 
             // dummy element to keep sync
             if (i == 0) {
-              IdMapping idm{0, ID_TYPE{std::numeric_limits<RAW_ID_TYPE>::max()}};
+              IdMapping idm{0,
+                            ID_TYPE{std::numeric_limits<RAW_ID_TYPE>::max()}};
               _lastQidToId = idm;
               _qidToIdF.write(reinterpret_cast<const char *>(&idm),
                               sizeof(IdMapping));
@@ -370,7 +371,8 @@ void GeomCache::request() {
   _linePoints.clear();
   _qidToId.clear();
 
-  _lastQidToId = {std::numeric_limits<QLEVER_ID_TYPE>::max(), ID_TYPE{std::numeric_limits<RAW_ID_TYPE>::max()}};
+  _lastQidToId = {std::numeric_limits<QLEVER_ID_TYPE>::max(),
+                  ID_TYPE{std::numeric_limits<RAW_ID_TYPE>::max()}};
 
   _raw.clear();
   _raw.reserve(1000);
@@ -575,10 +577,11 @@ void GeomCache::addMultiPolygon(const util::geo::MultiPolygon<double> &mp,
       _linesFSize++;
       insertLine(poly.getOuter(), true);
 
-      if (_linesFSize - 1 >= std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
+      if (_linesFSize - 1 >=
+          std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
         std::stringstream ss;
         ss << "Maximum number of non-point objects ("
-           << std::numeric_limits<ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+           << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET << ") exceeded.";
         throw std::runtime_error(ss.str());
       }
 
@@ -596,10 +599,12 @@ void GeomCache::addMultiPolygon(const util::geo::MultiPolygon<double> &mp,
         _linesFSize++;
         insertLine(line, true, true);
 
-        if (_linesFSize - 1 >= std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
+        if (_linesFSize - 1 >=
+            std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
           std::stringstream ss;
           ss << "Maximum number of non-point objects ("
-             << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+             << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET
+             << ") exceeded.";
           throw std::runtime_error(ss.str());
         }
 
@@ -647,10 +652,12 @@ void GeomCache::addMultiLineString(const util::geo::MultiLine<double> &ml,
       _linesFSize++;
       insertLine(line, false);
 
-      if (_linesFSize - 1 >= std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
+      if (_linesFSize - 1 >=
+          std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
         std::stringstream ss;
         ss << "Maximum number of non-point objects ("
-           << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+           << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET
+           << ") exceeded.";
         throw std::runtime_error(ss.str());
       }
 
@@ -692,10 +699,12 @@ void GeomCache::addPolygon(const util::geo::Polygon<double> &poly, size_t *i) {
       _linesFSize++;
       insertLine(inner, true, true);
 
-      if (_linesFSize - 1 >= std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
+      if (_linesFSize - 1 >=
+          std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
         std::stringstream ss;
         ss << "Maximum number of non-point objects ("
-           << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+           << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET
+           << ") exceeded.";
         throw std::runtime_error(ss.str());
       }
 
@@ -729,7 +738,8 @@ GeomCache::getRelObjects(const std::vector<IdMapping> &ids) const {
 
       while (j < _qidToId.size() && ids[i].qid == _qidToId[j].qid) {
         if (ret.size() == 0 || ret.back().second != ids[i].id) numObjects++;
-        ret.push_back({GID_TYPE{_qidToId[j].id}, ROW_TYPE{ids[i].id}});
+        ret.push_back(
+            {GID_TYPE{_qidToId[j].id.val()}, ROW_TYPE{ids[i].id.val()}});
         j++;
       }
 
@@ -880,9 +890,9 @@ void GeomCache::insertLine(const util::geo::DLine &lR, bool isArea,
 }
 
 // _____________________________________________________________________________
-util::geo::DBox GeomCache::getLineBBoxByLid(LINEID_TYPE lid) const {
+util::geo::DBox GeomCache::getLineBBox(LINEID_TYPE lineId) const {
   util::geo::DBox ret;
-  size_t start = getLineByLid(lid);
+  size_t start = getLine(lineId);
 
   bool s = false;
 

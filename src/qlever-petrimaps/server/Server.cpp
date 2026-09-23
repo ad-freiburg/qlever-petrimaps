@@ -548,22 +548,19 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
       for (size_t idx = 0; idx < ret.size(); idx++) {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
-        auto gid = r->getObject(lid, ret[idx]).first;
-        auto oid = r->getObject(lid, ret[idx]).second;
-        if (!util::geo::intersects(r->getLineBBoxByGid(gid), bbox))
-          continue;
+        auto oid = ret[idx];
+        auto gid = r->getObject(lid, oid).first;
+        if (!util::geo::intersects(r->getLineBBox(gid), bbox)) continue;
 
-        if (r->isArea(gid) &&
-            !r->isInnerArea(gid)) {
-          rcontext.drawArea(0, r->extractLineGeomByGid(gid, 3 * res),
+        if (r->isArea(gid) && !r->isInnerArea(gid)) {
+          rcontext.drawArea(0, r->extractLineGeom(gid, 3 * res),
                             r->getVal(lid, oid));
-        } else if (r->isArea(gid) &&
-                   r->isInnerArea(gid)) {
-          rcontext.drawArea(0, r->extractLineGeomByGid(gid, 3 * res),
+        } else if (r->isArea(gid) && r->isInnerArea(gid)) {
+          rcontext.drawArea(0, r->extractLineGeom(gid, 3 * res),
                             r->getVal(lid, oid), true, true);
         } else {
           if (!r->lineIntersects(gid, bbox)) continue;
-          rcontext.drawLine(0, r->extractLineGeomByGid(gid, 3 * res),
+          rcontext.drawLine(0, r->extractLineGeom(gid, 3 * res),
                             r->getVal(lid, oid));
         }
       }
@@ -615,9 +612,9 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
       for (size_t idx = 0; idx < ret.size(); idx++) {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
-        auto gid = r->getObject(lid, ret[idx]).first;
-        auto oid = r->getObject(lid, ret[idx]).second;
-        auto geom = r->extractLineGeomByGid(gid, res);
+        auto oid = ret[idx];
+        auto gid = r->getObject(lid, oid).first;
+        auto geom = r->extractLineGeom(gid, res);
         if (r->isInnerArea(gid)) {
           rcontext.drawArea(0, geom, r->getVal(lid, oid), true, true);
         } else {
@@ -1547,12 +1544,15 @@ util::http::Answer Server::handleWFSGetFeatureReq(
 
       if (reqor->isPoint(lid, oid)) {
         auto p = reqor->getPoint(lid, oid);
+
+        // TODO: for cluster geoms, p is now the original coordinate, not the
+        // cluster coordinate, and therefore not contained in the fbbox
         if (util::geo::contains(p, fbbox)) featureIds.push_back(oid);
       } else {
         auto gid = reqor->getObject(lid, oid).first;
 
         if (reqor->isArea(gid)) {
-          const auto& dline = reqor->extractLineGeomByGid(gid);
+          const auto& dline = reqor->extractLineGeom(gid);
           if (util::geo::intersects(dbbox, util::geo::DPolygon(dline)))
             featureIds.push_back(oid);
         } else {
@@ -1569,7 +1569,8 @@ util::http::Answer Server::handleWFSGetFeatureReq(
       size_t featureLid = reqor->getLidByGeomField(parts[1]);
       size_t oid = atoi(parts[2].c_str());
 
-      if (maxFeatures > 0 && featureLid == lid && reqor->isValidOId(lid, OID_TYPE{oid})) {
+      if (maxFeatures > 0 && featureLid == lid &&
+          reqor->isValidOId(lid, OID_TYPE{oid})) {
         featureIds = {oid};
       }
     }

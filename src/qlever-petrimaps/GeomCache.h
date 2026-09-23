@@ -157,13 +157,13 @@ class GeomCache {
   util::geo::FBox getPointBBox(size_t id) const {
     return util::geo::getBoundingBox(_points[id]);
   }
-  util::geo::DBox getLineBBoxByLid(LINEID_TYPE lid) const;
+  util::geo::DBox getLineBBox(LINEID_TYPE lineId) const;
 
   void serializeToDisk(const std::string& fname) const;
 
   void fromDisk(const std::string& fname, size_t blockSize = 1024 * 1024);
 
-  size_t getLineByLid(LINEID_TYPE lid) const { return _lines[lid]; }
+  size_t getLine(LINEID_TYPE lineId) const { return _lines[lineId]; }
   bool setConfig(const GeomCacheConfig& cfg) {
     if (_config.fillQuery != cfg.fillQuery) {
       _config = cfg;
@@ -172,8 +172,8 @@ class GeomCache {
     return false;
   }
 
-  size_t getLineEndByLid(LINEID_TYPE lid) const {
-    return lid + 1 < _lines.size() ? _lines[lid + 1] : _linePoints.size();
+  size_t getLineEnd(LINEID_TYPE lineId) const {
+    return lineId + 1 < _lines.size() ? _lines[lineId + 1] : _linePoints.size();
   }
 
   static std::string indexHashFromDisk(const std::string& fname);

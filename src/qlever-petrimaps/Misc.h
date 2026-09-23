@@ -8,10 +8,12 @@
 #include <atomic>
 #include <exception>
 #include <functional>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -26,43 +28,75 @@
 #define RAW_ID_TYPE uint32_t
 #define QLEVER_ID_TYPE size_t
 
-struct ID_TYPE {
+// This is basically a ROW_ID_TYPE (current uint32_t) with a tag that can be
+// checked during compile time. Because of all IDs were previously simply
+// distinguished by their parameter name, it was extremely easy to confuse them
+template <typename Tag>
+struct TYPED_ID {
   RAW_ID_TYPE _val;
-  explicit ID_TYPE(const RAW_ID_TYPE val) : _val{val} {};
-  explicit ID_TYPE(const size_t val) : _val{val} {};
-  ID_TYPE() : _val{0} {};
+
+  TYPED_ID() : _val{0} {}
+
+  // NO implicit instantation from RAW_ID_TYPE ore size_t, always spell it out
+  explicit TYPED_ID(const RAW_ID_TYPE val) : _val{val} {}
+  explicit TYPED_ID(const size_t val)
+      : _val{static_cast<RAW_ID_TYPE>(val)} {}
+
   operator RAW_ID_TYPE() const { return _val; }
+
+  RAW_ID_TYPE val() const { return _val; }
+
+  // NO conversion from any other ID type to another
+  template <typename Other>
+  TYPED_ID(const TYPED_ID<Other>&) = delete;
 };
 
-struct GID_TYPE : public ID_TYPE{
-	using ID_TYPE::ID_TYPE;
+struct ID_TAG;
+struct GID_TAG;
+struct LINEID_TAG;
+struct OID_TAG;
+struct ROW_TAG;
+
+// generic ID type, used during cache load
+typedef TYPED_ID<ID_TAG> ID_TYPE;
+
+// geometry ID in the cache, point if < I_OFFSET, else line/polygon
+typedef TYPED_ID<GID_TAG> GID_TYPE;
+
+// index into the cache's line vector, always GID_TYPE - I_OFFSET
+typedef TYPED_ID<LINEID_TAG> LINEID_TYPE;
+
+// index into the object list of a geometry column
+typedef TYPED_ID<OID_TAG> OID_TYPE;
+
+// a row in the SPARQL result
+typedef TYPED_ID<ROW_TAG> ROW_TYPE;
+
+namespace std {
+// hash required for unordered_map
+template <typename Tag>
+struct hash<TYPED_ID<Tag>> {
+  std::size_t operator()(const TYPED_ID<Tag>& id) const noexcept {
+    return std::hash<RAW_ID_TYPE>{}(id.val());
+  }
 };
 
-struct LINEID_TYPE : public ID_TYPE{
-	using ID_TYPE::ID_TYPE;
-};
+// To make std::numeric_limits<ID_TYPE>::max()` work
+template <typename Tag>
+struct numeric_limits<TYPED_ID<Tag>> {
+  static constexpr bool is_specialized = true;
+  static constexpr bool is_integer = true;
+  static constexpr bool is_signed = false;
 
-struct OID_TYPE : public ID_TYPE{
-	using ID_TYPE::ID_TYPE;
+  static constexpr TYPED_ID<Tag> min() {
+    return TYPED_ID<Tag>{std::numeric_limits<RAW_ID_TYPE>::min()};
+  }
+  static constexpr TYPED_ID<Tag> max() {
+    return TYPED_ID<Tag>{std::numeric_limits<RAW_ID_TYPE>::max()};
+  }
+  static constexpr TYPED_ID<Tag> lowest() { return min(); }
 };
-
-struct ROW_TYPE : public ID_TYPE{
-	using ID_TYPE::ID_TYPE;
-};
-
-template<>
-struct std::hash<ID_TYPE> {
-    std::size_t operator()(const ID_TYPE& id) const noexcept {
-        return std::hash<RAW_ID_TYPE>{}(id);
-    }
-};
-
-template<>
-struct std::hash<OID_TYPE> {
-    std::size_t operator()(const OID_TYPE& id) const noexcept {
-        return std::hash<RAW_ID_TYPE>{}(id);
-    }
-};
+}  // namespace std
 
 // half of the ID space for points, half for the rest
 const static RAW_ID_TYPE I_OFFSET = 2147483648;
@@ -89,6 +123,15 @@ struct IdMapping {
   QLEVER_ID_TYPE qid;
   ID_TYPE id;
 };
+
+// IdMapping is written to and read from the cache files as raw bytes, so the
+// ID types must not grow a vtable or stop being memcpy-able
+static_assert(sizeof(ID_TYPE) == sizeof(RAW_ID_TYPE),
+              "an ID must be exactly as big as its raw value");
+static_assert(std::is_trivially_copyable<ID_TYPE>::value,
+              "an ID must be trivially copyable, it is serialized as raw bytes");
+static_assert(std::is_standard_layout<IdMapping>::value,
+              "IdMapping must be standard layout, it is serialized as raw bytes");
 
 union ID {
   uint64_t val;
