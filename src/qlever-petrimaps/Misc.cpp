@@ -284,7 +284,7 @@ void RequestReader::parseIds(const char* c, size_t size) {
     if (_curByte == 0) {
       if (_curIdCol < _geomFields) {
         // geometry ID
-        _ids[_curIdCol].push_back({_curId.val, _ids[_curIdCol].size()});
+        _ids[_curIdCol].push_back({QLEVER_ID_TYPE{_curId.val}, ID_TYPE{_ids[_curIdCol].size()}});
       } else if (_curIdCol < _valFields + _geomFields) {
         // value
 

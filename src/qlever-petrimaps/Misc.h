@@ -23,11 +23,49 @@
 #ifndef PETRIMAPS_MISC_H_
 #define PETRIMAPS_MISC_H_
 
-#define ID_TYPE uint32_t
+#define RAW_ID_TYPE uint32_t
 #define QLEVER_ID_TYPE size_t
 
+struct ID_TYPE {
+  RAW_ID_TYPE _val;
+  explicit ID_TYPE(const RAW_ID_TYPE val) : _val{val} {};
+  explicit ID_TYPE(const size_t val) : _val{val} {};
+  ID_TYPE() : _val{0} {};
+  operator RAW_ID_TYPE() const { return _val; }
+};
+
+struct GID_TYPE : public ID_TYPE{
+	using ID_TYPE::ID_TYPE;
+};
+
+struct LINEID_TYPE : public ID_TYPE{
+	using ID_TYPE::ID_TYPE;
+};
+
+struct OID_TYPE : public ID_TYPE{
+	using ID_TYPE::ID_TYPE;
+};
+
+struct ROW_TYPE : public ID_TYPE{
+	using ID_TYPE::ID_TYPE;
+};
+
+template<>
+struct std::hash<ID_TYPE> {
+    std::size_t operator()(const ID_TYPE& id) const noexcept {
+        return std::hash<RAW_ID_TYPE>{}(id);
+    }
+};
+
+template<>
+struct std::hash<OID_TYPE> {
+    std::size_t operator()(const OID_TYPE& id) const noexcept {
+        return std::hash<RAW_ID_TYPE>{}(id);
+    }
+};
+
 // half of the ID space for points, half for the rest
-const static ID_TYPE I_OFFSET = 2147483648;
+const static RAW_ID_TYPE I_OFFSET = 2147483648;
 const static size_t MAXROWS = 18446744073709551615u;
 
 // major coordinates will fit into 2^15, as coordinates go from

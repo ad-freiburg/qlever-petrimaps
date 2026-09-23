@@ -443,16 +443,16 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   if (intersects(r->getPointGrid(lid).getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display points...";
     if (res < THRESHOLD) {
-      std::vector<ID_TYPE> ret;
+      std::vector<OID_TYPE> ret;
 
       // duplicates are not possible with points, so no sorting here
       r->getPointGrid(lid).get(fbbox, &ret);
 
       for (size_t j = 0; j < ret.size(); j++) {
-        size_t oid = ret[j];
+        OID_TYPE oid = ret[j];
 
         if (r->isCluster(lid, oid) && style == OBJECTS) {
-          size_t refOid = r->getCluster(lid, oid).first;
+          OID_TYPE refOid = r->getCluster(lid, oid).first;
 
           FPoint p = r->getPoint(lid, refOid);
           if (!contains(p, fbbox)) continue;
@@ -538,7 +538,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   if (intersects(lgrid.getBBox(), fbbox)) {
     LOG(INFO) << "[SERVER] Looking up display lines...";
     if (res < THRESHOLD) {
-      std::vector<ID_TYPE> ret;
+      std::vector<OID_TYPE> ret;
 
       // retrieve line points
       lgrid.get(fbbox, &ret);
@@ -548,22 +548,22 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
       for (size_t idx = 0; idx < ret.size(); idx++) {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
-        auto lineId = r->getObject(lid, ret[idx]).first;
+        auto gid = r->getObject(lid, ret[idx]).first;
         auto oid = r->getObject(lid, ret[idx]).second;
-        if (!util::geo::intersects(r->getLineBBox(lineId - I_OFFSET), bbox))
+        if (!util::geo::intersects(r->getLineBBoxByGid(gid), bbox))
           continue;
 
-        if (r->isArea(lineId - I_OFFSET) &&
-            !r->isInnerArea(lineId - I_OFFSET)) {
-          rcontext.drawArea(0, r->extractLineGeom(lineId - I_OFFSET, 3 * res),
+        if (r->isArea(gid) &&
+            !r->isInnerArea(gid)) {
+          rcontext.drawArea(0, r->extractLineGeomByGid(gid, 3 * res),
                             r->getVal(lid, oid));
-        } else if (r->isArea(lineId - I_OFFSET) &&
-                   r->isInnerArea(lineId - I_OFFSET)) {
-          rcontext.drawArea(0, r->extractLineGeom(lineId - I_OFFSET, 3 * res),
+        } else if (r->isArea(gid) &&
+                   r->isInnerArea(gid)) {
+          rcontext.drawArea(0, r->extractLineGeomByGid(gid, 3 * res),
                             r->getVal(lid, oid), true, true);
         } else {
-          if (!r->lineIntersects(lineId, bbox)) continue;
-          rcontext.drawLine(0, r->extractLineGeom(lineId - I_OFFSET, 3 * res),
+          if (!r->lineIntersects(gid, bbox)) continue;
+          rcontext.drawLine(0, r->extractLineGeomByGid(gid, 3 * res),
                             r->getVal(lid, oid));
         }
       }
@@ -605,7 +605,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         }
       }
 
-      std::vector<ID_TYPE> ret;
+      std::vector<OID_TYPE> ret;
 
       // retrieve very large areas for fill
       agrid.get(fbbox, &ret);
@@ -615,10 +615,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
       for (size_t idx = 0; idx < ret.size(); idx++) {
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
-        auto lineId = r->getObject(lid, ret[idx]).first;
+        auto gid = r->getObject(lid, ret[idx]).first;
         auto oid = r->getObject(lid, ret[idx]).second;
-        auto geom = r->extractLineGeom(lineId - I_OFFSET, res);
-        if (r->isInnerArea(lineId - I_OFFSET)) {
+        auto geom = r->extractLineGeomByGid(gid, res);
+        if (r->isInnerArea(gid)) {
           rcontext.drawArea(0, geom, r->getVal(lid, oid), true, true);
         } else {
           rcontext.drawArea(0, geom, r->getVal(lid, oid), true);
@@ -1532,7 +1532,7 @@ util::http::Answer Server::handleWFSGetFeatureReq(
           "maxFeatures for bounding box based GetFeatures must be <= 1");
     }
     // select by bounding box
-    std::unordered_set<ID_TYPE> candidates;
+    std::unordered_set<OID_TYPE> candidates;
 
     if (intersects(reqor->getPointGrid(lid).getBBox(), fbbox)) {
       reqor->getPointGrid(lid).get(fbbox, &candidates);
@@ -1549,15 +1549,14 @@ util::http::Answer Server::handleWFSGetFeatureReq(
         auto p = reqor->getPoint(lid, oid);
         if (util::geo::contains(p, fbbox)) featureIds.push_back(oid);
       } else {
-        auto geomId = reqor->getObject(lid, oid).first;
-        size_t lineId = geomId - I_OFFSET;
+        auto gid = reqor->getObject(lid, oid).first;
 
-        if (reqor->isArea(lineId)) {
-          const auto& dline = reqor->extractLineGeom(lineId);
+        if (reqor->isArea(gid)) {
+          const auto& dline = reqor->extractLineGeomByGid(gid);
           if (util::geo::intersects(dbbox, util::geo::DPolygon(dline)))
             featureIds.push_back(oid);
         } else {
-          if (reqor->lineIntersects(lineId, dbbox)) featureIds.push_back(oid);
+          if (reqor->lineIntersects(gid, dbbox)) featureIds.push_back(oid);
         }
       }
 
@@ -1570,7 +1569,7 @@ util::http::Answer Server::handleWFSGetFeatureReq(
       size_t featureLid = reqor->getLidByGeomField(parts[1]);
       size_t oid = atoi(parts[2].c_str());
 
-      if (maxFeatures > 0 && featureLid == lid && reqor->isValidOId(lid, oid)) {
+      if (maxFeatures > 0 && featureLid == lid && reqor->isValidOId(lid, OID_TYPE{oid})) {
         featureIds = {oid};
       }
     }
@@ -1653,7 +1652,7 @@ util::http::Answer Server::handleWFSGetFeatureReq(
         remoteAddr);
   } else {
     for (size_t idx = featureStart; idx < featureEnd; idx++) {
-      size_t oid = featureIds[idx];
+      OID_TYPE oid{featureIds[idx]};
       std::string featureId =
           sessionId + ":" + layerCfg.geomField + ":" + std::to_string(oid);
 

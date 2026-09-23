@@ -129,7 +129,7 @@ class GeomCache {
   void parseIds(const char*, size_t size);
   void parseCount(const char*, size_t size);
 
-  std::pair<std::vector<std::pair<ID_TYPE, ID_TYPE>>, size_t> getRelObjects(
+  std::pair<std::vector<std::pair<GID_TYPE, ROW_TYPE>>, size_t> getRelObjects(
       const std::vector<IdMapping>& id) const;
 
   const GeomCacheConfig& getConfig() const { return _config; }
@@ -157,13 +157,13 @@ class GeomCache {
   util::geo::FBox getPointBBox(size_t id) const {
     return util::geo::getBoundingBox(_points[id]);
   }
-  util::geo::DBox getLineBBox(size_t id) const;
+  util::geo::DBox getLineBBoxByLid(LINEID_TYPE lid) const;
 
   void serializeToDisk(const std::string& fname) const;
 
   void fromDisk(const std::string& fname, size_t blockSize = 1024 * 1024);
 
-  size_t getLine(ID_TYPE id) const { return _lines[id]; }
+  size_t getLineByLid(LINEID_TYPE lid) const { return _lines[lid]; }
   bool setConfig(const GeomCacheConfig& cfg) {
     if (_config.fillQuery != cfg.fillQuery) {
       _config = cfg;
@@ -172,8 +172,8 @@ class GeomCache {
     return false;
   }
 
-  size_t getLineEnd(ID_TYPE id) const {
-    return id + 1 < _lines.size() ? _lines[id + 1] : _linePoints.size();
+  size_t getLineEndByLid(LINEID_TYPE lid) const {
+    return lid + 1 < _lines.size() ? _lines[lid + 1] : _linePoints.size();
   }
 
   static std::string indexHashFromDisk(const std::string& fname);

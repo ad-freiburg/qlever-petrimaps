@@ -140,11 +140,11 @@ class Requestor {
           cb,
       const std::string& remoteAddr) const;
 
-  const petrimaps::Grid<ID_TYPE, float, float>& getPointGrid(size_t lid) const {
+  const petrimaps::Grid<OID_TYPE, float, float>& getPointGrid(size_t lid) const {
     return _pgrid[_lidToGrid[lid]];
   }
 
-  const petrimaps::Grid<ID_TYPE, float, float>& getLineGrid(size_t lid) const {
+  const petrimaps::Grid<OID_TYPE, float, float>& getLineGrid(size_t lid) const {
     return _lgrid[_lidToGrid[lid]];
   }
 
@@ -153,15 +153,15 @@ class Requestor {
     return _lpgrid[_lidToGrid[lid]];
   }
 
-  const petrimaps::Grid<ID_TYPE, float, float>& getAreaGrid(size_t lid) const {
+  const petrimaps::Grid<OID_TYPE, float, float>& getAreaGrid(size_t lid) const {
     return _agrid[_lidToGrid[lid]];
   }
 
-  const std::vector<std::pair<ID_TYPE, ID_TYPE>>& getObjects(size_t lid) const {
+  const std::vector<std::pair<GID_TYPE, ROW_TYPE>>& getObjects(size_t lid) const {
     return _objects[_lidToObject[lid]];
   }
 
-  const std::pair<ID_TYPE, ID_TYPE>& getObject(size_t lid, ID_TYPE oid) const {
+  const std::pair<GID_TYPE, ROW_TYPE>& getObject(size_t lid, OID_TYPE oid) const {
     return _objects[_lidToObject[lid]][oid];
   }
 
@@ -170,28 +170,28 @@ class Requestor {
     return _dynamicPoints[_lidToObject[lid]];
   }
 
-  const std::pair<ID_TYPE, std::pair<size_t, size_t>>& getCluster(
-      size_t lid, size_t oid) const {
+  const std::pair<OID_TYPE, std::pair<size_t, size_t>>& getCluster(
+      size_t lid, OID_TYPE oid) const {
     const size_t gid = _lidToObject[lid];
     size_t cid = oid - _objects[gid].size() - _dynamicPoints[gid].size();
     return _clusterObjects[gid][cid];
   }
 
-  const util::geo::FPoint& getCPoint(size_t lid, ID_TYPE oid) const {
+  const util::geo::FPoint& getCPoint(size_t lid, OID_TYPE oid) const {
     return _cache->getPoints()[_objects[_lidToObject[lid]][oid].first];
   }
 
-  const util::geo::FPoint& getDPoint(size_t lid, ID_TYPE oid) const {
+  const util::geo::FPoint& getDPoint(size_t lid, OID_TYPE oid) const {
     const size_t gid = _lidToObject[lid];
     return _dynamicPoints[gid][oid - _objects[gid].size()].first;
   }
 
-  const util::geo::FPoint& getPoint(size_t lid, ID_TYPE oid) const {
+  const util::geo::FPoint& getPoint(size_t lid, OID_TYPE oid) const {
     if (oid < _objects[_lidToObject[lid]].size()) return getCPoint(lid, oid);
     return getDPoint(lid, oid);
   }
 
-  size_t getRow(size_t lid, ID_TYPE oid) const {
+  size_t getRow(size_t lid, OID_TYPE oid) const {
     const size_t gid = _lidToObject[lid];
     if (isCluster(lid, oid)) oid = getCluster(lid, oid).first;
     if (oid >= _objects[gid].size())
@@ -199,27 +199,27 @@ class Requestor {
     return _objects[gid][oid].second;
   }
 
-  bool isCluster(size_t lid, ID_TYPE oid) const {
+  bool isCluster(size_t lid, OID_TYPE oid) const {
     return oid >= getObjects(lid).size() + getDynamicPoints(lid).size();
   }
 
-  bool isDynamicPoint(size_t lid, ID_TYPE oid) const {
+  bool isDynamicPoint(size_t lid, OID_TYPE oid) const {
     return oid >= getObjects(lid).size() && !isCluster(lid, oid);
   }
 
-  bool isPoint(size_t lid, ID_TYPE oid) const {
+  bool isPoint(size_t lid, OID_TYPE oid) const {
     return (oid < getObjects(lid).size() &&
             getObjects(lid)[oid].first < I_OFFSET) ||
            isDynamicPoint(lid, oid);
   }
 
-  bool isValidOId(size_t lid, ID_TYPE oid) const {
+  bool isValidOId(size_t lid, OID_TYPE oid) const {
     return oid < getObjects(lid).size() + getDynamicPoints(lid).size();
   }
 
-  size_t getLine(ID_TYPE oid) const { return _cache->getLine(oid); }
+  size_t getLineByGid(GID_TYPE gid) const { return _cache->getLineByLid(LINEID_TYPE{gid - I_OFFSET}); }
 
-  size_t getLineEnd(ID_TYPE oid) const { return _cache->getLineEnd(oid); }
+  size_t getLineEndByGid(GID_TYPE gid) const { return _cache->getLineEndByLid(LINEID_TYPE{gid - I_OFFSET}); }
 
   const std::vector<util::geo::Point<int16_t>,
                     util::no_init_allocator<util::geo::Point<int16_t>>>&
@@ -227,22 +227,22 @@ class Requestor {
     return _cache->getLinePoints();
   }
 
-  util::geo::DBox getLineBBox(ID_TYPE oid) const {
-    return _cache->getLineBBox(oid);
+  util::geo::DBox getLineBBoxByGid(GID_TYPE gid) const {
+    return _cache->getLineBBoxByLid(LINEID_TYPE{gid - I_OFFSET});
   }
 
-  const ResObj getGeom(size_t lid, size_t id, double rad) const;
+  const ResObj getGeom(size_t lid, OID_TYPE oid, double rad) const;
 
   util::geo::MultiPolygon<double> geomPolyGeoms(size_t lid, size_t oid,
                                                 double eps) const;
   util::geo::MultiLine<double> geomLineGeoms(size_t lid, size_t oid,
                                              double eps) const;
-  util::geo::MultiPoint<double> geomPointGeoms(size_t lid, size_t oid,
+  util::geo::MultiPoint<double> geomPointGeoms(size_t lid, OID_TYPE oid,
                                                double res) const;
 
-  util::geo::DLine extractLineGeom(size_t lineId, double minD = 0) const;
-  bool isArea(size_t lineId) const;
-  bool isInnerArea(size_t lineId) const;
+  util::geo::DLine extractLineGeomByGid(GID_TYPE gid, double minD = 0) const;
+  bool isArea(GID_TYPE gid) const;
+  bool isInnerArea(GID_TYPE gid) const;
 
   // total number of objects over all distinct geometry columns
   size_t getNumObjects() const {
@@ -264,7 +264,7 @@ class Requestor {
   std::pair<double, double> getRasterMetas(size_t lid, size_t oid) const;
 
   size_t getNumLayers() const { return _layers.size(); }
-  bool lineIntersects(size_t lid, const util::geo::DBox& bbox) const;
+  bool lineIntersects(GID_TYPE gid, const util::geo::DBox& bbox) const;
 
   const std::vector<LayerConfig>& getLayers() const { return _layers; }
 
@@ -339,10 +339,10 @@ class Requestor {
   mutable std::mutex _m;
 
   // per distinct geometry column
-  std::vector<std::vector<std::pair<ID_TYPE, ID_TYPE>>> _objects;
+  std::vector<std::vector<std::pair<GID_TYPE, ROW_TYPE>>> _objects;
   std::vector<std::vector<std::pair<util::geo::FPoint, ID_TYPE>>>
       _dynamicPoints;
-  std::vector<std::vector<std::pair<ID_TYPE, std::pair<size_t, size_t>>>>
+  std::vector<std::vector<std::pair<OID_TYPE, std::pair<size_t, size_t>>>>
       _clusterObjects;
   std::vector<size_t> _numObjects;
 
@@ -372,9 +372,9 @@ class Requestor {
   // mapping geomfield -> lid
   std::map<std::string, std::vector<size_t>> _geomFieldToLid;
 
-  std::vector<petrimaps::Grid<ID_TYPE, float, float>> _pgrid;
-  std::vector<petrimaps::Grid<ID_TYPE, float, float>> _lgrid;
-  std::vector<petrimaps::Grid<ID_TYPE, float, float>> _agrid;
+  std::vector<petrimaps::Grid<OID_TYPE, float, float>> _pgrid;
+  std::vector<petrimaps::Grid<OID_TYPE, float, float>> _lgrid;
+  std::vector<petrimaps::Grid<OID_TYPE, float, float>> _agrid;
   std::vector<petrimaps::Grid<util::geo::Point<uint8_t>, float, float>> _lpgrid;
 
   bool _ready = false;
