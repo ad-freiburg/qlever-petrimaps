@@ -97,9 +97,7 @@ class GeomCache {
  public:
   GeomCache() : _config(), _curRow(0), _maxMemory(-1) {}
   explicit GeomCache(const GeomCacheConfig& config, size_t maxMemory)
-      : _config(config),
-        _curRow(0),
-        _maxMemory(maxMemory) {}
+      : _config(config), _curRow(0), _maxMemory(maxMemory) {}
 
   GeomCache& operator=(GeomCache&& o) {
     _config = o._config;
@@ -131,7 +129,7 @@ class GeomCache {
   void parseIds(const char*, size_t size);
   void parseCount(const char*, size_t size);
 
-  std::pair<std::vector<std::pair<ID_TYPE, ID_TYPE>>, size_t> getRelObjects(
+  std::pair<std::vector<std::pair<GID_TYPE, ROW_TYPE>>, size_t> getRelObjects(
       const std::vector<IdMapping>& id) const;
 
   const GeomCacheConfig& getConfig() const { return _config; }
@@ -159,13 +157,13 @@ class GeomCache {
   util::geo::FBox getPointBBox(size_t id) const {
     return util::geo::getBoundingBox(_points[id]);
   }
-  util::geo::DBox getLineBBox(size_t id) const;
+  util::geo::DBox getLineBBox(LINEID_TYPE lineId) const;
 
   void serializeToDisk(const std::string& fname) const;
 
   void fromDisk(const std::string& fname, size_t blockSize = 1024 * 1024);
 
-  size_t getLine(ID_TYPE id) const { return _lines[id]; }
+  size_t getLine(LINEID_TYPE lineId) const { return _lines[lineId]; }
   bool setConfig(const GeomCacheConfig& cfg) {
     if (_config.fillQuery != cfg.fillQuery) {
       _config = cfg;
@@ -174,8 +172,8 @@ class GeomCache {
     return false;
   }
 
-  size_t getLineEnd(ID_TYPE id) const {
-    return id + 1 < _lines.size() ? _lines[id + 1] : _linePoints.size();
+  size_t getLineEnd(LINEID_TYPE lineId) const {
+    return lineId + 1 < _lines.size() ? _lines[lineId + 1] : _linePoints.size();
   }
 
   static std::string indexHashFromDisk(const std::string& fname);
@@ -216,8 +214,6 @@ class GeomCache {
 
   std::string queryFields(std::string query, size_t offset, size_t limit) const;
 
-  static util::geo::DLine createLineString(const std::string& a, size_t p);
-
   void addPolygon(const util::geo::Polygon<double>& p, size_t* i);
   void addMultiPoint(const util::geo::MultiPoint<double>& mp, size_t* i);
   void addMultiLineString(const util::geo::MultiLine<double>& ml, size_t* i);
@@ -226,9 +222,8 @@ class GeomCache {
 
   void insertLine(const util::geo::DLine& l, bool isArea, bool isInner = false);
 
-  static std::vector<size_t> getGeomStarts(const std::string& str, size_t a);
-
-  static util::geo::DPoint projD(const util::geo::DPoint& p, util::geo::CRSType sourceCRS) {
+  static util::geo::DPoint projD(const util::geo::DPoint& p,
+                                 util::geo::CRSType sourceCRS) {
     return util::geo::projectToWebMerc<double>(p, sourceCRS);
   }
 
