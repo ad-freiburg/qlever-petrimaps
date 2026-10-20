@@ -63,7 +63,7 @@ petrimaps::GeomCacheConfig cacheConfigFromDisk(const std::string& fname) {
     fillQuery = petrimaps::getFillQuery(canonized);
   }
 
-  return {canonized, petrimaps::getFillQuery(canonized)};
+  return {canonized, fillQuery};
 }
 
 // _____________________________________________________________________________
@@ -168,7 +168,8 @@ int main(int argc, char** argv) {
     Server serv(maxMemoryGB * 1000000000, cacheDir, cacheLifetime,
                 autoThreshold, geomCacheConfigs, accessToken);
 
-    LOG(INFO) << "Listening on port " << port;
+    LOG(INFO) << "Listening on port " << port
+              << " (open http://localhost:9090/example)";
     util::http::HttpServer(port, &serv, std::thread::hardware_concurrency())
         .run();
   } catch (const std::runtime_error& e) {

@@ -4,8 +4,7 @@
 
 let sessionId;
 let curGeojson;
-let curGeojsonId = -1;
-let curGeojsonLayer = "";
+let curGeojsonId = "";
 
 let currentTileConfig = null;
 
@@ -99,58 +98,57 @@ function openPopup(data) {
                 .replace(/\^\^.*$/, "")
                 .replace(/\"(.*)\"(@[a-z]+)?$/, "$1");
 
-                    popup_content_strings.push(
-                        "<tr>" + (i == 0 ? image_cell : "") +
-                        "<td>" + key.replace(/_/g, " ") + "</td>" +
-                        "<td>" + value + "</td></tr>");
-        })
-            let popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
-            popup_html += '<a class="export-link" href="' + getWfsExportUrl(data[0]) + '">Export via GeoJSON</a>';
-            if (curGeojson) curGeojson.remove();
-
-
-            L.popup({"maxWidth" : 600})
-                .setLatLng(data[0]["ll"])
-                .setContent(popup_html)
-                .openOn(map)
-                .on('remove', function() {
-                    curGeojson.remove();
-                    curGeojsonId = -1;
-                });
+            popup_content_strings.push(
+                "<tr>" + (i == 0 ? image_cell : "") +
+                "<td>" + key.replace(/_/g, " ") + "</td>" +
+                "<td>" + value + "</td></tr>");
+        });
+        let popup_html = "<table class=\"popup\">" + popup_content_strings.join("\n") + "</table>";
+        popup_html += '<a class="export-link" href="' + getWfsExportUrl(data[0]) + '">Export via GeoJSON</a>';
+        if (curGeojson) curGeojson.remove();
 
         curGeojson = getGeoJsonLayer(data[0].geom);
-        curGeojsonId = data[0].id;
-        curGeojsonLayer = data[0].geomfield;
+        curGeojsonId = data[0].featureId;
         curGeojson.addTo(map);
+
+        L.popup({"maxWidth" : 600})
+            .setLatLng(curGeojson.getBounds().getCenter())
+            .setContent(popup_html)
+            .openOn(map)
+            .on('remove', function() {
+                curGeojson.remove();
+                curGeojsonId = "";
+            });
     }
 }
+
 function isGeometryVariable(variable) {
     return variable == "?geometry" ||
            variable == "?geom" ||
            variable == "?wkt" ||
-           variable.endsWith("_geometry") ||
-           variable.endsWith("_geom") ||
-           variable.endsWith("_wkt"); 
+           variable.endsWith("geometry") ||
+           variable.endsWith("geom") ||
+           variable.endsWith("wkt");
 }
+
 function popupAttributePriority(variable) {
     if (variable == "?country") return 0;
     if (variable == "?countryLabel" || variable == "?countryName") return 1;
     if (variable == "?name" || variable == "?label" || variable == "?placelabel") return 2;
     return 10;
 }
+
 function getWfsExportUrl(feature) {
-    const params = new URLSearchParams({
+    let params = new URLSearchParams({
         service: "WFS",
         version: "2.0.0",
         request: "GetFeature",
-        typeNames: "session_" + sessionId,
-        geomfield: feature.geomfield,
-        gid: feature.id,
-        outputFormat: "application/json",
-        export: 1
+        resourceId: feature.featureId,
+        outputFormat: "application/json"
     });
     return "wfs?" + params.toString();
 }
+
 function wfsFeatureCollectionToPopupData(data) {
     if (!data || data.type !== "FeatureCollection" || !data.features || data.features.length == 0) {
         return [];
@@ -160,18 +158,13 @@ function wfsFeatureCollectionToPopupData(data) {
     const props = feature.properties || {};
 
     const attrs = Object.keys(props)
-        .filter(key => !["id", "gid", "featureID", "geomfield", "popup_lat", "popup_lng"].includes(key))
+        .filter(key => !["featureID"].includes(key))
         .filter(key => !isGeometryVariable(key))
         .map(key => [key, String(props[key])])
         .sort((a, b) => popupAttributePriority(a[0]) - popupAttributePriority(b[0]));
     return [{
-        id: props.id,
-        geomfield: props.geomfield,
+        featureId: props.featureID,
         attrs: attrs,
-        ll: {
-            lat: parseFloat(props.popup_lat),
-            lng: parseFloat(props.popup_lng)
-        },
         geom: feature.geometry
     }];
 }
@@ -194,6 +187,7 @@ function getGeoJsonLayer(geom) {
 
 function showError(err) {
     msg = err.toString();
+    console.error(err);
     document.getElementById("msg-info").style.display = "none";
     document.getElementById("load").style.display = "none";
     const heading = document.getElementById("msg-heading");
@@ -206,24 +200,52 @@ function showError(err) {
     clearInterval(loadStatusIntervalId);
 }
 
-function loadLayers(id, numObjects, autoThreshold, layers) {
+function loadLayers(sessionId, layers) {
 
-    let themes = {"custom" : {
-        name: "Layers",
-        overlays: [{name:"", type:"radio", layers: []}, {name:"", type:"checkbox", layers: []}]
-    }};
+    let groups = new Set();
 
     for (layer of layers) {
-        let prepedLayer = getLayer(id, layer, autoThreshold);
-        if (prepedLayer) {
-            prepedLayer.layer.on('load', _onLayerLoad);
-            if (layer["toggle"] == "checkbox") {
-                themes["custom"].overlays[1].layers.push(prepedLayer);
-            } else {
-                themes["custom"].overlays[0].layers.push(prepedLayer);
+        if (layer["group"]) groups.add(layer["group"]);
+    }
+
+    let themes = {};
+
+    if (groups.size) {
+        for (group of groups) {
+            themes[group] = {
+                name: group,
+                overlays: [{name:"", type:"radio", layers: []}, {name:"", type:"checkbox", layers: []}]
             }
         }
     }
+    themes["default"] = {
+        name: "Layers",
+        overlays: [{name:"", type:"radio", layers: []}, {name:"", type:"checkbox", layers: []}]
+    };
+
+    let haveLoading = false;
+
+    for (layer of layers) {
+        let theme = themes["default"];
+        if (layer["group"]) theme = themes[layer["group"]];
+
+        let prepedLayer = getLayer(sessionId, layer);
+        if (prepedLayer) {
+            prepedLayer.layer = trackTileStyle(prepedLayer.layer, layer);
+            prepedLayer.layer.on('load', clearLoading);
+            prepedLayer.layer.on('remove', clearLoading);
+            if (layer["toggle"] == "checkbox") {
+                prepedLayer.checked = layer["enabled"];
+                if (prepedLayer.checked) haveLoading = true;
+                theme.overlays[1].layers.push(prepedLayer);
+            } else {
+                theme.overlays[0].layers.push(prepedLayer);
+                haveLoading = true;
+            }
+        }
+    }
+
+    if (!haveLoading) clearLoading();
 
     const themeControl = new L.Control.ThemeLayerSwitcher(themes, {
         position: 'topleft',
@@ -231,80 +253,24 @@ function loadLayers(id, numObjects, autoThreshold, layers) {
     });
 
     map.addControl(themeControl);
-
-    if (themes["custom"].overlays[0].layers.length > 0 || themes["custom"].overlays[1].layers.length > 0) themeControl.applyTheme("custom");
-    else _onLayerLoad();
 }
 
-function getLayer(id, layer, autoThreshold) {
-    if (layer["style"] == "auto") {
-        const layerId = id + "-" + layer["geomfield"];
-        
-        const autoHeatmapRenderStyle = layer["numobjects"] > autoThreshold
-            ? "heatmap-" + layer["colorscheme"]
-            : "objects-" + layer["color"];
+function trackTileStyle(layer, params) {
+    layer.on("add", function() {
+                currentTileConfig = {layerId: params["id"], geomField: params["geomfield"]};
+            });
+    return layer;
+}
 
-        const autoHeatmapLayer = trackTileStyle(L.nonTiledLayer.wms('heatmap', {
-            minZoom: 0,
-            maxZoom: 15,
-            opacity: layer["numobjects"] > autoThreshold ? 0.8 : 0.9,
-            layers: layerId,
-            styles: [autoHeatmapRenderStyle],
-            format: 'image/png',
-            transparent: true,
-        }), layerId, autoHeatmapRenderStyle);
-
-        const autoObjectRenderStyle = "objects-" + layer["color"];
-
-        const autoObjectLayer = trackTileStyle(L.nonTiledLayer.wms('heatmap', {
-            minZoom: 16,
-            maxZoom: 19,
-            opacity: 0.9,
-            layers: layerId,
-            styles: [autoObjectRenderStyle],
-            format: 'image/png'
-        }), layerId, autoObjectRenderStyle);
-
-        return  { name: layer["name"], layer: L.layerGroup([autoHeatmapLayer, autoObjectLayer])};
-    } else if (layer["style"] == "raster") {
-        const layerId = id + "-" + layer["geomfield"];
-        const renderStyle = "raster-" + layer["rasterw"]
-                    + "x" + layer["rasterh"] + "-" + layer["colorscheme"];
-        return  { name: layer["name"], layer: trackTileStyle(L.nonTiledLayer.wms('heatmap', {
-            minZoom: 0,
-            maxZoom: 19,
-            opacity: 0.8,
-            layers: layerId,
-            styles: [renderStyle],
-            format: 'image/png',
-            transparent: true
-        }),
-        layerId,
-        renderStyle) };
-    } else if (layer["style"] == "heatmap") {
-        const layerId = id + "-" + layer["geomfield"];
-        const renderStyle = "heatmap-" + layer["colorscheme"];
-        return { name: layer["name"], layer: trackTileStyle(L.nonTiledLayer.wms('heatmap', {
-            minZoom: 0,
-            maxZoom: 19,
-            opacity: 0.8,
-            layers: layerId,
-            styles: [renderStyle],
-            format: 'image/png',
-            transparent: true
-        }), layerId, renderStyle) };
-    } else {
-        const layerId = id + "-" + layer["geomfield"];
-        const renderStyle = "objects-" + layer["color"];
-        return { name: layer["name"], layer: trackTileStyle(L.nonTiledLayer.wms('heatmap', {
-            minZoom: 0,
-            maxZoom: 19,
-            opacity: 0.9,
-            layers: layerId,
-            styles: [renderStyle],
-            format: 'image/png'
-        }), layerId, renderStyle) };
-    }
+function getLayer(sessionId, layer) {
+    return { name: layer["name"], layer: L.nonTiledLayer.wms('heatmap', {
+        minZoom: 0,
+        maxZoom: 19,
+        opacity: 0.9,
+        layers: sessionId + ":" + layer["geomfield"],
+        styles: [layer["id"]],
+        format: 'image/png'
+    })};
 
     return null;
 }
@@ -374,10 +340,8 @@ function fetchResults() {
             if (data["layers"].length == 0) {
                 showError("No layers specified in config");
                 clearInterval(loadStatusIntervalId);
-            } else if (data["layers"].length == 1 && data["layers"][0].style == "auto") {
-                loadSimpleMap(data["qid"], data["numobjects"], data["autothreshold"], data["layers"][0]);
             } else {
-                loadLayers(data["qid"], data["numobjects"], data["autothreshold"], data["layers"]);
+                loadLayers(data["qid"], data["layers"]);
             }
 
             let id = data["qid"];
@@ -385,22 +349,20 @@ function fetchResults() {
             map.on('click', function(e) {
                 const pos = L.Projection.SphericalMercator.project(e.latlng);
 
-                const w = map.getPixelBounds().max.x - map.getPixelBounds().min.x;
-                const h = map.getPixelBounds().max.y - map.getPixelBounds().min.y;
+                // padding based on zoom factor
+                const padding = 100 * Math.pow(2, 14 - map.getZoom());
 
-                const sw = L.Projection.SphericalMercator.project((map.getBounds().getSouthWest()));
-                const ne = L.Projection.SphericalMercator.project((map.getBounds().getNorthEast()));
-
-                const bounds = [sw.x, sw.y, ne.x, ne.y];
+                // simplifcation also based on zomm factor
+                // NOTE: simplification is not a standard WFS parameter, but
+                // the code below does not depend on it, it simply gets a bit faster
+                const simplification = 20 * Math.pow(2, 14 - map.getZoom());
+                const bounds = [pos.x - padding, pos.y - padding, pos.x + padding, pos.y + padding];
 
                 fetch('wfs?service=WFS&version=2.0.0&request=GetFeature'
-                    + '&id=' + id
-                    + '&x=' + pos.x
-                    + '&y=' + pos.y
-                    + '&rad=' + (100 * Math.pow(2, 14 - map.getZoom()))
-                    + '&width=' + w
-                    + '&height=' + h
+                    + '&typeNames=' + id + ":" + currentTileConfig.geomField
                     + '&bbox=' + bounds.join(',')
+                    + '&maxFeatures=1'
+                    + '&simplify=' + simplification
                     + '&srsName=EPSG:3857'
                     + '&outputFormat=application/json')
                     .then(response => {
@@ -412,8 +374,9 @@ function fetchResults() {
             });
 
             map.on('zoomend', function(e) {
-                if (curGeojsonId > -1) {
-                    fetch('geojson?gid=' + curGeojsonId + "&id=" + id + "&layer=" + curGeojsonLayer + "&rad=" + (100 * Math.pow(2, 14 - map.getZoom())))
+                if (curGeojsonId != "") {
+                    const simplification = 20 * Math.pow(2, 14 - map.getZoom());
+                    fetch('wfs?service=WFS&version=2.0.0&request=GetFeature&resourceId=' + curGeojsonId + "&simplify=" + simplification)
                         .then(response => response.json())
                         .then(function(data) {
                             curGeojson.remove();
@@ -425,116 +388,6 @@ function fetchResults() {
             });
         })
         .catch(error => showError(error));
-}
-
-function loadSimpleMap(id, numObjects, autoThreshold, layer) {
-    const heatmapStyles = ["spectralexp", "spectral", "RdYlGn", "RdYlGnexp", "RdYlBu","RdYlBuexp", "w2b", "b2w", "RdGy","RdGyexp","YlOrRd","YlOrRdexp","Blues","Bluesexp","Greens","Greensexp","Greys","Greysexp","Oranges","Orangesexp","Reds", "Redsexp"];
-    let heatmapLayers = [];
-
-    const layerId = id + "-" + layer["geomfield"];
-
-    for (const s of heatmapStyles) {
-        const renderStyle = "heatmap-" + s;
-        heatmapLayers.push({
-            name: s,
-            layer: trackTileStyle(L.nonTiledLayer.wms('heatmap', {
-                minZoom: 0,
-                maxZoom: 19,
-                opacity: 0.8,
-                layers: layerId,
-                styles: [renderStyle],
-                format: 'image/png',
-                transparent: true,
-            }), layerId, renderStyle)
-        });
-        heatmapLayers[heatmapLayers.length - 1].layer.on('load', _onLayerLoad);
-    }
-
-    const objectsStyle = "objects-" + layer["color"];
-    const objectsLayer = trackTileStyle(L.nonTiledLayer.wms('heatmap', {
-        minZoom: 0,
-        maxZoom: 19,
-        opacity: 0.9,
-        layers: layerId,
-        styles: [objectsStyle],
-        format: 'image/png'
-    }), layerId, objectsStyle);
-
-    const autoHeatmapRenderStyle = numObjects > autoThreshold 
-        ? "heatmap-spectralexp" 
-        : "objects-" + layer["color"];
-    const autoHeatmapLayer = trackTileStyle(L.nonTiledLayer.wms('heatmap', {
-        minZoom: 0,
-        maxZoom: 15,
-        opacity: numObjects > autoThreshold ? 0.8 : 0.9,
-        layers: layerId,
-        styles: [autoHeatmapRenderStyle],
-        format: 'image/png',
-        transparent: true,
-    }), layerId, autoHeatmapRenderStyle);
-
-    const autoObjectRenderStyle = "objects-" + layer["color"];
-    const autoObjectLayer = trackTileStyle(L.nonTiledLayer.wms('heatmap', {
-        minZoom: 16,
-        maxZoom: 19,
-        opacity: 0.9,
-        layers: layerId,
-        styles: [autoObjectRenderStyle],
-        format: 'image/png'
-    }), layerId, autoObjectRenderStyle);
-
-    const autoLayerGroup = L.layerGroup([autoHeatmapLayer, autoObjectLayer]);
-
-    objectsLayer.on('load', _onLayerLoad);
-    autoHeatmapLayer.on('load', _onLayerLoad);
-    autoObjectLayer.on('load', _onLayerLoad);
-
-    const themes = {
-        auto: {
-            name: "Auto",
-            overlays: [
-                {
-                    name: "Style",
-                    type: "radio",
-                    layers: [
-                        { name: "Default", layer: autoLayerGroup },
-                    ]
-                }
-            ]
-        },
-
-        heatmap: {
-            name: "Heatmap",
-            overlays: [
-                {
-                    name: "Style",
-                    type: "radio",
-                    layers: heatmapLayers
-                }
-            ]
-        },
-
-        objects: {
-            name: "Objects",
-            overlays: [
-                {
-                    name: "Layers",
-                    type: "checkbox",
-                    layers: [
-                        { name: "default", layer: objectsLayer },
-                    ]
-                }
-            ]
-        }
-    };
-
-    const themeControl = new L.Control.ThemeLayerSwitcher(themes, {
-        position: 'topleft',
-        defaultTheme: 'auto',
-    });
-
-    map.addControl(themeControl);
-    themeControl.applyTheme(mode);
 }
 
 function fetchLoadStatusInterval(interval) {
@@ -566,7 +419,7 @@ document.getElementById("msg").classList.add("show");
 fetchResults();
 fetchLoadStatusInterval(333);
 
-function _onLayerLoad(e) {
+function clearLoading(e) {
     clearInterval(loadStatusIntervalId);
     document.getElementById("msg").classList.remove("show");
 }
@@ -577,12 +430,10 @@ function getVisibleTileLayerId(layerId) {
 
 function buildTileExportUrls() {
     if (!sessionId || !currentTileConfig) return null;
-    
-    const visibleLayerId = getVisibleTileLayerId(currentTileConfig.layerId);
-    const layerId = encodeURIComponent(visibleLayerId);
+
     const style = encodeURIComponent(currentTileConfig.style);
     const wfsTypeName = encodeURIComponent("session_" + sessionId);
-    const geomField = encodeURIComponent(visibleLayerId.substring(sessionId.length + 1));
+    const layerId = currentTileConfig.layerId;
 
     const bounds = map.getBounds();
     const west = bounds.getWest();
@@ -592,17 +443,10 @@ function buildTileExportUrls() {
     const bbox = encodeURIComponent(`${west},${south},${east},${north}`);
 
     return {
-        tms: `${window.location.origin}/tms/${layerId}/${style}/{x}/{y}/{z}.png`,
-        wmts: `${window.location.origin}/wmts?service=WMTS&request=GetTile&version=1.0.0&layer=${layerId}&style=${style}&format=image/png&tilematrixset=WebMercatorQuad&tilematrix={z}&tilerow={y}&tilecol={x}`,
-        wfs: `${window.location.origin}/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=${wfsTypeName}&geomfield=${geomField}&bbox=${bbox}&srsName=EPSG:4326&outputFormat=application/json&count=100`
+        tms: `${window.location.origin}/tms/${sessionId}/${layerId}/{x}/{y}/{z}.png`,
+        wmts: `${window.location.origin}/wmts?service=WMTS&request=GetTile&version=1.0.0&layer=${sessionId}&style=${layerId}&format=image/png&tilematrixset=WebMercatorQuad&tilematrix={z}&tilerow={y}&tilecol={x}`,
+        wfs: `${window.location.origin}/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=${wfsTypeName}&layerid=${layerId}&bbox=${bbox}&srsName=EPSG:4326&outputFormat=application/json&maxFeatures=100`
     };
-}
-
-function trackTileStyle(layer, layerId, style) {
-    layer.on("add", function() {
-        currentTileConfig = {layerId: layerId, style: style};
-    });
-    return layer;
 }
 
 function showTileDialog(urls) {
@@ -621,7 +465,7 @@ function hideTileDialog() {
 document.getElementById("ex-geojson").onclick = function() {
     if (!sessionId) return;
     let a = document.createElement("a");
-    a.href = "export?id="+ sessionId;
+    a.href = getWfsExportUrl({geomfield: currentTileConfig.geomField});
     a.setAttribute("download", "export.json");
     a.click();
 }
