@@ -360,9 +360,10 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   if (lcfg.style == "objects") style = OBJECTS;
   if (lcfg.style == "raster") style = RASTER;
-  if (lcfg.style == "auto" && res < THRESHOLD &&
-      r->getNumObjects(lid) > _autoThreshold)
+  if (lcfg.style == "auto" &&
+      !(res > THRESHOLD && r->getNumObjects(lid) > _autoThreshold)) {
     style = OBJECTS;
+  }
 
   if (style == OBJECTS) {
     if (lcfg.color.size() == 6) {
