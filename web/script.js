@@ -11,7 +11,14 @@ let currentTileConfig = null;
 
 let urlParams = window.postParams;
 let qleverBackend = urlParams["backend"];
-let query = urlParams["query"];
+
+let requestConfig = {};
+if (urlParams["cfg"]) {
+    requestConfig = JSON.parse(urlParams["cfg"]);
+}
+
+let query = urlParams["query"] || requestConfig["query"];
+let exportQuery = requestConfig["exportQuery"] || query;
 let mode = urlParams["mode"];
 
 const heatmapStyles = ["spectralexp", "spectral", "RdYlGn", "RdYlGnexp", "RdYlBu","RdYlBuexp", "w2b", "b2w", "RdGy","RdGyexp","YlOrRd","YlOrRdexp","Blues","Bluesexp","Greens","Greensexp","Greys","Greysexp","Oranges","Orangesexp","Reds", "Redsexp"];
@@ -624,6 +631,52 @@ document.getElementById("ex-geojson").onclick = function() {
     a.href = "export?id="+ sessionId;
     a.setAttribute("download", "export.json");
     a.click();
+}
+
+document.getElementById("ex-osm").onclick = async function() {
+    const button = document.getElementById("ex-osm");
+
+    if (!qleverBackend || !query) {
+        alert("OSM export requires a Qlever backend and a query.");
+        return;
+    }
+
+    button.disabled = true;
+    button.textContent = "Exporting OSM...";
+
+    try {
+        const form = new URLSearchParams({
+            backend: qleverBackend,
+            cfg: JSON.stringify({query: exportQuery})
+        });
+
+        const response = await fetch("osm-export", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: form.toString()
+        });
+
+        if (!response.ok) {
+            throw new Error(await response.text());
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+
+        link.href = url;
+        link.download = "export.osm";
+        link.click();
+
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        alert("OSM export failed: " + error.message);
+    } finally {
+        button.disabled = false;
+        button.textContent = "Export as OSM";
+    }
 }
 
 document.getElementById("ex-tsv").onclick = function() {

@@ -21,6 +21,9 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <cstdlib>
+#include <fstream>
+#include <unistd.h>
 
 // clang-format off
 #include "3rdparty/heatmap.h"
@@ -2634,9 +2637,38 @@ util::http::Answer Server::handleOsmExportReq(
   const std::string query = config["query"].get<std::string>();
   const std::string remoteAddr = remoteAddress(sock, headerParams);
   
+  char tempPath[] = "/tmp/qlever-petrimaps-osm-XXXXXX";
+  const int tempFd = mkstemp(tempPath);
+
+  if (tempFd == -1) {
+    throw std::runtime_error("Could not create temporary OSM export file.");
+  }
+
+  close(tempFd);
+
+  try {
+    exportQleverTsvToOsmXmlFile(
+        backend, query, tempPath, remoteAddr);
+  } catch (...) {
+    unlink(tempPath);
+    throw;
+  }
+
+  std::ifstream input(tempPath, std::ios::binary);
+
+  if (!input) {
+    unlink(tempPath);
+    throw std::runtime_error(
+        "Could not reopen completed OSM export file.");
+  }
+
+  // The open stream keeps the file contents available. Remove its directory
+  // entry now so the temporary file is also cleaned up on later failures.
+  unlink(tempPath);
+
   util::http::Answer answer("200 OK", "");
   answer.params["Content-Encoding"] = "identity";
-  answer.params["Content-Type"] =
+  answer.params["Content-Type"] = 
       "application/vnd.openstreetmap.data+xml; charset=utf-8";
   answer.params["Content-Disposition"] =
       "attachment; filename=\"export.osm\"";
@@ -2654,10 +2686,25 @@ util::http::Answer Server::handleOsmExportReq(
   if (!output) {
     throw std::runtime_error("Failed to write OSM export response header.");
   }
-    try {
-    exportQleverTsvToOsmXml(backend, query, output, remoteAddr);
-  } catch (const std::exception& e) {
-    LOG(ERROR) << "OSM export failed after response started: " << e.what();
+
+  char buffer[64 * 1024];
+
+  while (input.read(buffer, sizeof(buffer))) {
+    output.write(buffer, input.gcount());
+  }
+
+  if (input.gcount() > 0) {
+    output.write(buffer, input.gcount());
+  }
+
+  if (!input.eof()) {
+    throw std::runtime_error(
+        "Failed while reading completed OSM export file.");
+  }
+
+  if (!output) {
+    throw std::runtime_error(
+        "Failed while sending completed OSM export file.");
   }
 
   answer.raw = true;

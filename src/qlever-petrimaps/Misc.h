@@ -8,11 +8,13 @@
 
 #include <exception>
 #include <functional>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 #include <unordered_map>
 
@@ -93,6 +95,9 @@ class OsmPrimitiveBuilder {
     int64_t _nextNodeId = -1;
     int64_t _nextWayId = -1000000001;
     int64_t _nextRelationId = -2000000001;
+
+    std::map<std::pair<std::string, std::string>, int64_t>
+        _generatedNodeIdsByCoordinate;
 };
 
 class OsmXmlStreamWriter {
@@ -140,6 +145,7 @@ class OsmResultReader {
   private:
     void finishCell();
     void finishRow();
+    void validateHeader() const;
     void startObject(const std::string& osmId, const std::string& wkt);
     void mergeRowIntoCurrentObject();
 
@@ -152,6 +158,8 @@ class OsmResultReader {
 
     OsmObject _current;
     bool _hasCurrent = false;
+    std::string _lastFinishedId;
+    bool _headerValidated = false;
 };
 
 class OsmTsvToXmlExporter {
