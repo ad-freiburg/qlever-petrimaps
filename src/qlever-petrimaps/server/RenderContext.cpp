@@ -32,14 +32,18 @@ using petrimaps::RenderContext;
 
 // _____________________________________________________________________________
 RenderContext::RenderContext(int w, int h, double orx, double ory, double mercW,
-                             double mercH, MapStyle style, size_t numThreads)
+                             double mercH, MapStyle style, ObjectStyle ostyle,
+                             size_t numThreads)
     : _points(numThreads),
       _areaFillPoints(numThreads),
+      _linePoints(numThreads),
       _weights(numThreads),
       _areaFillWeights(numThreads),
+      _lineWeights(numThreads),
       _rasterDims(numThreads),
       _image(w * h * 4),
       _style(style),
+      _ostyle(ostyle),
       _w(w),
       _h(h),
       _orx(orx),
@@ -50,6 +54,7 @@ RenderContext::RenderContext(int w, int h, double orx, double ory, double mercW,
     _rasterDims[i].resize(w * h, {1, 1});
     _weights[i].resize(w * h, 0);
     _areaFillWeights[i].resize(w * h, 0);
+    _lineWeights[i].resize(w * h, 0);
   }
 }
 
@@ -96,8 +101,46 @@ void RenderContext::writeInteriorObjects(heatmap_t* hm) {
 }
 
 // _____________________________________________________________________________
+void RenderContext::drawLinePoint(size_t tid, int px, int py, double weight,
+                                  double rasterW, double rasterH) {
+  drawLinePoint(tid, px, py, weight, rasterW, rasterH,
+                (_ostyle.lineWidth - 1) / 2.0);
+}
+
+// _____________________________________________________________________________
+void RenderContext::drawLinePoint(size_t tid, int px, int py, double weight,
+                                  double, double, double r) {
+  if (r < 0) return;
+  if (_style == OBJECTS) {
+    if (px >= 0 && py >= 0 && px < _w && py < _h) {
+      if (abs(ceil(r) - r) > 0.1) {
+        if (px + 1 < _w && py + 1 < _h &&
+            _lineWeights[tid][_w * (py + 1) + px + 1] == 0) {
+          _linePoints[tid].push_back(_w * (py + 1) + px + 1);
+          _lineWeights[tid][_w * (py + 1) + px + 1] = 1;
+        }
+        if (py + 1 < _h && _lineWeights[tid][_w * (py + 1) + px] == 0) {
+          _linePoints[tid].push_back(_w * (py + 1) + px);
+          _lineWeights[tid][_w * (py + 1) + px] = 1;
+        }
+      }
+      if (_lineWeights[tid][_w * py + px] == 0) {
+        _linePoints[tid].push_back(_w * py + px);
+        _lineWeights[tid][_w * py + px] = 1;
+      }
+    }
+  } else {
+    if (px >= 0 && py >= 0 && px < _w && py < _h) {
+      if (_lineWeights[tid][_w * py + px] == 0)
+        _linePoints[tid].push_back(_w * py + px);
+      _lineWeights[tid][_w * py + px] += weight;
+    }
+  }
+}
+
+// _____________________________________________________________________________
 void RenderContext::drawPoint(size_t tid, int px, int py, double weight,
-                              double rasterW, double rasterH, int r) {
+                              double rasterW, double rasterH) {
   if (_style == RASTER) {
     if (px >= 0 && py >= 0 && px < _w && py < _h) {
       _rasterDims[tid][_w * py + px] = {rasterW, rasterH};
@@ -112,14 +155,10 @@ void RenderContext::drawPoint(size_t tid, int px, int py, double weight,
       }
     }
   } else if (_style == OBJECTS) {
-    for (int x = px - r; x <= px + r; x++) {
-      for (int y = py - r; y <= py + r; y++) {
-        if (x >= 0 && y >= 0 && x < _w && y < _h) {
-          if (_weights[tid][_w * y + x] == 0)
-            _points[tid].push_back(_w * y + x);
-          _weights[tid][_w * y + x] += weight;
-        }
-      }
+    if (px >= 0 && py >= 0 && px < _w && py < _h) {
+      if (_weights[tid][_w * py + px] == 0)
+        _points[tid].push_back(_w * py + px);
+      _weights[tid][_w * py + px] = 1;
     }
   } else {
     if (px >= 0 && py >= 0 && px < _w && py < _h) {
@@ -153,9 +192,12 @@ void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
   }
 
   if (border) {
-    const auto& denseline = util::geo::densify(pxPoly.getOuter(), .5);
+    const auto& denseline = util::geo::sparseify(
+        util::geo::densify(pxPoly.getOuter(),
+                           std::max(0.5, (_ostyle.lineWidth * 1.0) / 4.0)),
+        (_ostyle.lineWidth * 1.0) / 10.0);
     for (const auto& p : denseline) {
-      drawPoint(tid, p.getX(), p.getY(), val, 1, 1, 0);
+      drawLinePoint(tid, p.getX(), p.getY(), val, 1, 1);
     }
   }
 
@@ -169,8 +211,8 @@ void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
   minX = std::max(minX, 0);
   maxX = std::min(maxX, static_cast<int>(_w) - 1);
 
-  auto fillPoints = fill(pxPoly, 1,
-                                util::geo::IBox({minX, minY}, {maxX, maxY}));
+  auto fillPoints =
+      fill(pxPoly, 1, util::geo::IBox({minX, minY}, {maxX, maxY}));
 
   for (const auto& o : fillPoints) {
     // negative fill value for inners to punch them out
@@ -186,7 +228,7 @@ void RenderContext::drawLine(size_t tid, const util::geo::DLine& line,
 
   for (const auto& p : denseline) {
     auto pix = mercToPx(p, _orx, _ory, _mercW, _mercH, _w, _h);
-    drawPoint(tid, pix.getX(), pix.getY(), val, 1, 1, 0);
+    drawLinePoint(tid, pix.getX(), pix.getY(), val, 1, 1);
   }
 }
 
@@ -257,15 +299,29 @@ void RenderContext::writeHeatmap(heatmap_t* hm) {
 
     for (auto stamp : stamps) heatmap_stamp_free(stamp.second);
   } else if (_style == OBJECTS) {
-    auto stamp = heatmap_stamp_gen(1);
-    for (size_t i = 0; i < NUM_THREADS; i++) {
-      for (const auto& p : _points[i]) {
-        size_t y = p / _w;
-        size_t x = p - (y * _w);
-        heatmap_add_weighted_point_with_stamp(hm, x, y, 1, stamp);
+    if ((_ostyle.lineWidth - 1.0) / 2.0 >= 0) {
+      int r = (_ostyle.lineWidth - 1.0) / 2.0;
+
+      auto stamp = heatmap_stamp_gen(r);
+      for (size_t i = 0; i < NUM_THREADS; i++) {
+        for (const auto& p : _linePoints[i]) {
+          size_t y = p / _w;
+          size_t x = p - (y * _w);
+          heatmap_add_weighted_point_with_stamp(hm, x, y, 1, stamp);
+        }
+      }
+      heatmap_stamp_free(stamp);
+
+      // points
+      stamp = heatmap_stamp_gen(_ostyle.pointRadius);
+      for (size_t i = 0; i < NUM_THREADS; i++) {
+        for (const auto& p : _points[i]) {
+          size_t y = p / _w;
+          size_t x = p - (y * _w);
+          heatmap_add_weighted_point_with_stamp(hm, x, y, 1, stamp);
+        }
       }
     }
-    heatmap_stamp_free(stamp);
   } else {
     // HEATMAP
     for (size_t i = 0; i < NUM_THREADS; i++) {
@@ -274,6 +330,15 @@ void RenderContext::writeHeatmap(heatmap_t* hm) {
         size_t x = p - (y * _w);
         if (_weights[i][p] > 0)
           heatmap_add_weighted_point(hm, x, y, _weights[i][p]);
+      }
+    }
+
+    for (size_t i = 0; i < NUM_THREADS; i++) {
+      for (const auto& p : _linePoints[i]) {
+        size_t y = p / _w;
+        size_t x = p - (y * _w);
+        if (_lineWeights[i][p] > 0)
+          heatmap_add_weighted_point(hm, x, y, _lineWeights[i][p]);
       }
     }
 

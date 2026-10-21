@@ -6,29 +6,105 @@
 #include <curl/curl.h>
 #include <stdint.h>
 
+#include <atomic>
 #include <exception>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <ostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
-#include <unordered_map>
 
+#include "util/JobQueue.h"
 #include "util/Misc.h"
+#include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
 #ifndef PETRIMAPS_MISC_H_
 #define PETRIMAPS_MISC_H_
 
-#define ID_TYPE uint32_t
+#define RAW_ID_TYPE uint32_t
 #define QLEVER_ID_TYPE size_t
 
+// This is basically a ROW_ID_TYPE (current uint32_t) with a tag that can be
+// checked during compile time. Because of all IDs were previously simply
+// distinguished by their parameter name, it was extremely easy to confuse them
+template <typename Tag>
+struct TYPED_ID {
+  RAW_ID_TYPE _val;
+
+  TYPED_ID() : _val{0} {}
+
+  // NO implicit instantation from RAW_ID_TYPE ore size_t, always spell it out
+  explicit TYPED_ID(const RAW_ID_TYPE val) : _val{val} {}
+  explicit TYPED_ID(const size_t val)
+      : _val{static_cast<RAW_ID_TYPE>(val)} {}
+
+  operator RAW_ID_TYPE() const { return _val; }
+
+  RAW_ID_TYPE val() const { return _val; }
+
+  // NO conversion from any other ID type to another
+  template <typename Other>
+  TYPED_ID(const TYPED_ID<Other>&) = delete;
+};
+
+struct ID_TAG;
+struct GID_TAG;
+struct LINEID_TAG;
+struct OID_TAG;
+struct ROW_TAG;
+
+// generic ID type, used during cache load
+typedef TYPED_ID<ID_TAG> ID_TYPE;
+
+// geometry ID in the cache, point if < I_OFFSET, else line/polygon
+typedef TYPED_ID<GID_TAG> GID_TYPE;
+
+// index into the cache's line vector, always GID_TYPE - I_OFFSET
+typedef TYPED_ID<LINEID_TAG> LINEID_TYPE;
+
+// index into the object list of a geometry column
+typedef TYPED_ID<OID_TAG> OID_TYPE;
+
+// a row in the SPARQL result
+typedef TYPED_ID<ROW_TAG> ROW_TYPE;
+
+namespace std {
+// hash required for unordered_map
+template <typename Tag>
+struct hash<TYPED_ID<Tag>> {
+  std::size_t operator()(const TYPED_ID<Tag>& id) const noexcept {
+    return std::hash<RAW_ID_TYPE>{}(id.val());
+  }
+};
+
+// To make std::numeric_limits<ID_TYPE>::max()` work
+template <typename Tag>
+struct numeric_limits<TYPED_ID<Tag>> {
+  static constexpr bool is_specialized = true;
+  static constexpr bool is_integer = true;
+  static constexpr bool is_signed = false;
+
+  static constexpr TYPED_ID<Tag> min() {
+    return TYPED_ID<Tag>{std::numeric_limits<RAW_ID_TYPE>::min()};
+  }
+  static constexpr TYPED_ID<Tag> max() {
+    return TYPED_ID<Tag>{std::numeric_limits<RAW_ID_TYPE>::max()};
+  }
+  static constexpr TYPED_ID<Tag> lowest() { return min(); }
+};
+}  // namespace std
+
 // half of the ID space for points, half for the rest
-const static ID_TYPE I_OFFSET = 2147483648;
+const static RAW_ID_TYPE I_OFFSET = 2147483648;
 const static size_t MAXROWS = 18446744073709551615u;
 
 // major coordinates will fit into 2^15, as coordinates go from
@@ -37,6 +113,10 @@ const static int16_t M_COORD_GRANULARITY = 12230;
 const static int16_t M_COORD_OFFSET = 16384;
 
 const static std::string CURL_USER_AGENT = "petrimaps";
+
+const static size_t MIN_BLOCK_SIZE = 1024 * 1024;
+
+const static size_t MAX_QUEUED_BLOCKS = 8;
 
 typedef std::unordered_map<std::string, std::string> HeaderParams;
 
@@ -181,10 +261,43 @@ struct IdMapping {
   ID_TYPE id;
 };
 
+// IdMapping is written to and read from the cache files as raw bytes, so the
+// ID types must not grow a vtable or stop being memcpy-able
+static_assert(sizeof(ID_TYPE) == sizeof(RAW_ID_TYPE),
+              "an ID must be exactly as big as its raw value");
+static_assert(std::is_trivially_copyable<ID_TYPE>::value,
+              "an ID must be trivially copyable, it is serialized as raw bytes");
+static_assert(std::is_standard_layout<IdMapping>::value,
+              "IdMapping must be standard layout, it is serialized as raw bytes");
+
 union ID {
   uint64_t val;
   uint8_t bytes[8];
 };
+
+// The datatype of a QLever ID is stored in its top four bits.
+inline uint8_t idDatatype(uint64_t id) {
+  return (id & (uint64_t(15) << 60)) >> 60;
+}
+
+// Default datatype value for a point if it can't be determined from the backend
+const static uint8_t DEFAULT_GEOPOINT_DATATYPE = 9;
+
+// How a backend encodes the two coordinates of a point, see
+// https://github.com/ad-freiburg/qlever/pull/3412
+enum class GeoPointEncoding { LatitudeAndLongitude, ZOrder };
+
+// Default point encoding if it can't be determined from the backend
+const static GeoPointEncoding DEFAULT_GEOPOINT_ENCODING =
+    GeoPointEncoding::LatitudeAndLongitude;
+
+// Storage format of geo points in backend
+struct GeoPointFormat {
+  uint8_t datatype = DEFAULT_GEOPOINT_DATATYPE;
+  GeoPointEncoding encoding = DEFAULT_GEOPOINT_ENCODING;
+};
+
+util::geo::FPoint decodeGeoPoint(uint64_t valueBits, GeoPointEncoding encoding);
 
 inline bool operator<(const IdMapping& lh, const IdMapping& rh) {
   if (lh.qid < rh.qid) return true;
@@ -215,6 +328,69 @@ void performCurlRequest(const std::string& url, const std::string& postFields,
                         const std::string& xRealIP,
                         const std::function<void(const char*, size_t)>& parse,
                         const std::string* raw);
+
+// Simple parse thread which collects chunks of size MIN_BLOCK_SIZE on a queue
+// and parses them in the order received
+class CurlParseThread {
+ public:
+  explicit CurlParseThread(
+      const std::function<void(const char*, size_t)>& parse)
+      : _parse(parse),
+        _queue(MAX_QUEUED_BLOCKS),
+        _thread(&CurlParseThread::run, this) {
+    _curBuf.reserve(MIN_BLOCK_SIZE);
+  }
+
+  ~CurlParseThread() { finalize(); }
+
+  CurlParseThread(const CurlParseThread&) = delete;
+  CurlParseThread& operator=(const CurlParseThread&) = delete;
+
+  bool push(const char* c, size_t n) {
+    _curBuf.append(c, n);
+    if (_curBuf.size() >= MIN_BLOCK_SIZE) flush();
+    return !_failed;
+  }
+
+  void finalize() {
+    if (_finalized) return;
+    _finalized = true;
+    flush();
+    _queue.add({});  // the DONE element
+    if (_thread.joinable()) _thread.join();
+  }
+
+  std::exception_ptr exception() const { return _exception; }
+
+ private:
+  void flush() {
+    if (_curBuf.empty()) return;
+    _queue.add(std::move(_curBuf));
+    _curBuf.clear();
+    _curBuf.reserve(MIN_BLOCK_SIZE);
+  }
+
+  void run() {
+    std::string block;
+    while (!(block = _queue.get()).empty()) {
+      if (_failed) continue;  // unspin
+      try {
+        _parse(block.data(), block.size());
+      } catch (...) {
+        _exception = std::current_exception();
+        _failed = true;
+      }
+    }
+  }
+
+  const std::function<void(const char*, size_t)>& _parse;
+  std::string _curBuf;
+  util::JobQueue<std::string> _queue;
+  std::exception_ptr _exception;
+  std::atomic<bool> _failed{false};
+  bool _finalized = false;
+  std::thread _thread;
+};
 
 class OutOfMemoryError : public std::exception {
  public:
@@ -271,8 +447,7 @@ inline std::string httpRequest(const std::string& url,
   }
   struct curl_slist* headers = 0;
   if (xRealIP.size()) {
-    headers = curl_slist_append(headers,
-                                ("X-Real-IP: " + xRealIP).c_str());
+    headers = curl_slist_append(headers, ("X-Real-IP: " + xRealIP).c_str());
   }
   if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeStringCb);
@@ -334,6 +509,7 @@ struct RequestReader {
   std::map<size_t, std::pair<double, double>> requestRasterMeta(
       const std::string& query, const std::string& remoteAddr);
   std::string requestIndexHash(const std::string& configHash);
+  GeoPointFormat requestGeoPointFormat();
   void requestRows(const std::string& qurl, const std::string& remoteAddr);
   void requestRows(const std::string& query,
                    const std::function<void(const char*, size_t)>& parse,
@@ -350,7 +526,7 @@ struct RequestReader {
   size_t _curCol = 0;
   size_t _curRow = 0;
 
-  std::string _dangling, _raw, _curVal;
+  std::string _dangling, _raw;
   size_t _curDatasetId = 0;
   double _curFieldWidth = 0;
   double _curFieldHeight = 0;
@@ -358,13 +534,12 @@ struct RequestReader {
 
   ParseState _state = IN_HEADER;
 
-  std::vector<std::vector<std::pair<std::string, std::string>>> rows;
-  std::vector<std::pair<std::string, std::string>> curCols;
+  std::vector<std::vector<std::pair<std::string, std::string>>> _rows;
+  std::vector<std::pair<std::string, std::string>> _curCols;
 
   uint8_t _curByte = 0;
   size_t _curIdCol = 0;
   ID _curId;
-  size_t _received = 0;
   std::vector<std::vector<IdMapping>> _ids;
   std::vector<std::vector<double>> _vals;
   std::vector<std::vector<size_t>> _rasterMetas;

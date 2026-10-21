@@ -3,11 +3,17 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <curl/curl.h>
+#include <fcntl.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #include <stdlib.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <cerrno>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -92,28 +98,33 @@ void GeomCache::parse(const char *c, size_t size) {
             if (crsType != util::geo::CRSType::UNSUPPORTED) {
               if (wktType == util::geo::WKTType::COLLECTION) {
                 _curUniqueGeom++;
-                const auto &coll =
-                    util::geo::collectionFromWKTProj<double>(s, 0, &projD, crsType);
+                const auto &coll = util::geo::collectionFromWKTProj<double>(
+                    s, 0, &projD, crsType);
 
                 for (const auto &g : coll) {
                   if (g.getType() == 0) addMultiPoint({g.getPoint()}, &i);
                   if (g.getType() == 1) addLineString(g.getLine(), &i);
                   if (g.getType() == 2) addPolygon(g.getPolygon(), &i);
-                  if (g.getType() == 3) addMultiLineString(g.getMultiLine(), &i);
-                  if (g.getType() == 4) addMultiPolygon(g.getMultiPolygon(), &i);
+                  if (g.getType() == 3)
+                    addMultiLineString(g.getMultiLine(), &i);
+                  if (g.getType() == 4)
+                    addMultiPolygon(g.getMultiPolygon(), &i);
                   if (g.getType() == 6) addMultiPoint(g.getMultiPoint(), &i);
                 }
               } else if (wktType == util::geo::WKTType::MULTIPOINT) {
                 _curUniqueGeom++;
-                const auto &mp = multiPointFromWKTProj<double>(s, 0, &projD, crsType);
+                const auto &mp =
+                    multiPointFromWKTProj<double>(s, 0, &projD, crsType);
                 addMultiPoint(mp, &i);
               } else if (wktType == util::geo::WKTType::POINT) {
                 _curUniqueGeom++;
-                const auto &mp = multiPointFromWKTProj<double>(s, 0, &projD, crsType);
+                const auto &mp =
+                    multiPointFromWKTProj<double>(s, 0, &projD, crsType);
                 addMultiPoint(mp, &i);
               } else if (wktType == util::geo::WKTType::MULTILINESTRING) {
                 _curUniqueGeom++;
-                const auto &ml = multiLineFromWKTProj<double>(s, 0, &projD, crsType);
+                const auto &ml =
+                    multiLineFromWKTProj<double>(s, 0, &projD, crsType);
                 addMultiLineString(ml, &i);
               } else if (wktType == util::geo::WKTType::LINESTRING) {
                 _curUniqueGeom++;
@@ -121,18 +132,21 @@ void GeomCache::parse(const char *c, size_t size) {
                 addLineString(l, &i);
               } else if (wktType == util::geo::WKTType::MULTIPOLYGON) {
                 _curUniqueGeom++;
-                const auto &mp = multiPolygonFromWKTProj<double>(s, 0, &projD, crsType);
+                const auto &mp =
+                    multiPolygonFromWKTProj<double>(s, 0, &projD, crsType);
                 addMultiPolygon(mp, &i);
               } else if (wktType == util::geo::WKTType::POLYGON) {
                 _curUniqueGeom++;
-                const auto &poly = polygonFromWKTProj<double>(s, 0, &projD, crsType);
+                const auto &poly =
+                    polygonFromWKTProj<double>(s, 0, &projD, crsType);
                 addPolygon(poly, &i);
               }
             }
 
             // dummy element to keep sync
             if (i == 0) {
-              IdMapping idm{0, std::numeric_limits<ID_TYPE>::max()};
+              IdMapping idm{0,
+                            ID_TYPE{std::numeric_limits<RAW_ID_TYPE>::max()}};
               _lastQidToId = idm;
               _qidToIdF.write(reinterpret_cast<const char *>(&idm),
                               sizeof(IdMapping));
@@ -357,7 +371,8 @@ void GeomCache::request() {
   _linePoints.clear();
   _qidToId.clear();
 
-  _lastQidToId = {-1, -1};
+  _lastQidToId = {std::numeric_limits<QLEVER_ID_TYPE>::max(),
+                  ID_TYPE{std::numeric_limits<RAW_ID_TYPE>::max()}};
 
   _raw.clear();
   _raw.reserve(1000);
@@ -544,7 +559,7 @@ void GeomCache::addMultiPoint(const util::geo::MultiPoint<double> &mp,
       ss << "Maximum number of points (" << I_OFFSET << ") exceeded.";
       throw std::runtime_error(ss.str());
     }
-    IdMapping idm{*i == 0 ? 0 : 1, _pointsFSize - 1};
+    IdMapping idm{*i == 0 ? 0 : 1, ID_TYPE{_pointsFSize - 1}};
     _lastQidToId = idm;
     _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
     _qidToIdFSize++;
@@ -562,14 +577,15 @@ void GeomCache::addMultiPolygon(const util::geo::MultiPolygon<double> &mp,
       _linesFSize++;
       insertLine(poly.getOuter(), true);
 
-      if (_linesFSize - 1 >= std::numeric_limits<ID_TYPE>::max() - I_OFFSET) {
+      if (_linesFSize - 1 >=
+          std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
         std::stringstream ss;
         ss << "Maximum number of non-point objects ("
-           << std::numeric_limits<ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+           << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET << ") exceeded.";
         throw std::runtime_error(ss.str());
       }
 
-      IdMapping idm{*i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
+      IdMapping idm{*i == 0 ? 0 : 1, ID_TYPE{I_OFFSET + _linesFSize - 1}};
       _lastQidToId = idm;
       _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
       _qidToIdFSize++;
@@ -583,14 +599,16 @@ void GeomCache::addMultiPolygon(const util::geo::MultiPolygon<double> &mp,
         _linesFSize++;
         insertLine(line, true, true);
 
-        if (_linesFSize - 1 >= std::numeric_limits<ID_TYPE>::max() - I_OFFSET) {
+        if (_linesFSize - 1 >=
+            std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
           std::stringstream ss;
           ss << "Maximum number of non-point objects ("
-             << std::numeric_limits<ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+             << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET
+             << ") exceeded.";
           throw std::runtime_error(ss.str());
         }
 
-        IdMapping idm{*i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
+        IdMapping idm{*i == 0 ? 0 : 1, ID_TYPE{I_OFFSET + _linesFSize - 1}};
         _lastQidToId = idm;
         _qidToIdF.write(reinterpret_cast<const char *>(&idm),
                         sizeof(IdMapping));
@@ -609,14 +627,14 @@ void GeomCache::addLineString(const util::geo::Line<double> &line, size_t *i) {
     _linesFSize++;
     insertLine(line, false);
 
-    if (_linesFSize - 1 >= std::numeric_limits<ID_TYPE>::max() - I_OFFSET) {
+    if (_linesFSize - 1 >= std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
       std::stringstream ss;
       ss << "Maximum number of non-point objects ("
-         << std::numeric_limits<ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+         << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET << ") exceeded.";
       throw std::runtime_error(ss.str());
     }
 
-    IdMapping idm{*i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
+    IdMapping idm{*i == 0 ? 0 : 1, ID_TYPE{I_OFFSET + _linesFSize - 1}};
     _lastQidToId = idm;
     _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
     _qidToIdFSize++;
@@ -634,14 +652,16 @@ void GeomCache::addMultiLineString(const util::geo::MultiLine<double> &ml,
       _linesFSize++;
       insertLine(line, false);
 
-      if (_linesFSize - 1 >= std::numeric_limits<ID_TYPE>::max() - I_OFFSET) {
+      if (_linesFSize - 1 >=
+          std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
         std::stringstream ss;
         ss << "Maximum number of non-point objects ("
-           << std::numeric_limits<ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+           << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET
+           << ") exceeded.";
         throw std::runtime_error(ss.str());
       }
 
-      IdMapping idm{*i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
+      IdMapping idm{*i == 0 ? 0 : 1, ID_TYPE{I_OFFSET + _linesFSize - 1}};
       _lastQidToId = idm;
       _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
       _qidToIdFSize++;
@@ -658,14 +678,14 @@ void GeomCache::addPolygon(const util::geo::Polygon<double> &poly, size_t *i) {
     _linesFSize++;
     insertLine(poly.getOuter(), true);
 
-    if (_linesFSize - 1 >= std::numeric_limits<ID_TYPE>::max() - I_OFFSET) {
+    if (_linesFSize - 1 >= std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
       std::stringstream ss;
       ss << "Maximum number of non-point objects ("
-         << std::numeric_limits<ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+         << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET << ") exceeded.";
       throw std::runtime_error(ss.str());
     }
 
-    IdMapping idm{*i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
+    IdMapping idm{*i == 0 ? 0 : 1, ID_TYPE{I_OFFSET + _linesFSize - 1}};
     _lastQidToId = idm;
     _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
     _qidToIdFSize++;
@@ -679,14 +699,16 @@ void GeomCache::addPolygon(const util::geo::Polygon<double> &poly, size_t *i) {
       _linesFSize++;
       insertLine(inner, true, true);
 
-      if (_linesFSize - 1 >= std::numeric_limits<ID_TYPE>::max() - I_OFFSET) {
+      if (_linesFSize - 1 >=
+          std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
         std::stringstream ss;
         ss << "Maximum number of non-point objects ("
-           << std::numeric_limits<ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+           << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET
+           << ") exceeded.";
         throw std::runtime_error(ss.str());
       }
 
-      IdMapping idm{*i == 0 ? 0 : 1, I_OFFSET + _linesFSize - 1};
+      IdMapping idm{*i == 0 ? 0 : 1, ID_TYPE{I_OFFSET + _linesFSize - 1}};
       _lastQidToId = idm;
       _qidToIdF.write(reinterpret_cast<const char *>(&idm), sizeof(IdMapping));
       _qidToIdFSize++;
@@ -696,10 +718,10 @@ void GeomCache::addPolygon(const util::geo::Polygon<double> &poly, size_t *i) {
 }
 
 // _____________________________________________________________________________
-std::pair<std::vector<std::pair<ID_TYPE, ID_TYPE>>, size_t>
+std::pair<std::vector<std::pair<GID_TYPE, ROW_TYPE>>, size_t>
 GeomCache::getRelObjects(const std::vector<IdMapping> &ids) const {
   // (geom id, result row)
-  std::vector<std::pair<ID_TYPE, ID_TYPE>> ret;
+  std::vector<std::pair<GID_TYPE, ROW_TYPE>> ret;
 
   // in most cases, the return size will be exactly the size of the ids set
   ret.reserve(ids.size());
@@ -716,7 +738,8 @@ GeomCache::getRelObjects(const std::vector<IdMapping> &ids) const {
 
       while (j < _qidToId.size() && ids[i].qid == _qidToId[j].qid) {
         if (ret.size() == 0 || ret.back().second != ids[i].id) numObjects++;
-        ret.push_back({_qidToId[j].id, ids[i].id});
+        ret.push_back(
+            {GID_TYPE{_qidToId[j].id.val()}, ROW_TYPE{ids[i].id.val()}});
         j++;
       }
 
@@ -867,9 +890,9 @@ void GeomCache::insertLine(const util::geo::DLine &lR, bool isArea,
 }
 
 // _____________________________________________________________________________
-util::geo::DBox GeomCache::getLineBBox(size_t lid) const {
+util::geo::DBox GeomCache::getLineBBox(LINEID_TYPE lineId) const {
   util::geo::DBox ret;
-  size_t start = getLine(lid);
+  size_t start = getLine(lineId);
 
   bool s = false;
 
@@ -965,8 +988,10 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
   std::streampos posLines;
   std::streampos posQidToId;
 
-  // get total num points
+  // determines the sizes of the four blocks
+
   // points
+  if (!f) throw std::runtime_error("Corrupted cache file");
   f.read(reinterpret_cast<char *>(&numPoints), sizeof(size_t));
 
   checkMem(sizeof(util::geo::FPoint) * numPoints, _maxMemory);
@@ -1005,40 +1030,73 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
   _totalSize = numPoints + numLinePoints + numLines + numQidToId;
   _curRow = 0;
 
-  // read data from files, directly into the vector, in blocks of blockSize
-  auto readBlocks = [&](char *data, size_t num, size_t elemSize) {
-    for (size_t i = 0; i < num; i += blockSize) {
-      size_t n = std::min(blockSize, num - i);
-      f.read(data + i * elemSize, elemSize * n);
-      if (!f) throw std::runtime_error("Corrupted cache file");
-      _curRow += n;
-    }
+  f.close();
+
+  struct Block {
+    unsigned char *data;
+    size_t off;
+    size_t size;
+    size_t elemSize;
   };
 
-  // points
-  f.seekg(posPoints);
-  if (!f) throw std::runtime_error("Corrupted cache file");
-  readBlocks(reinterpret_cast<char *>(_points.data()), numPoints,
-             sizeof(util::geo::FPoint));
+  Block sections[4];
 
-  // linePoints
-  f.seekg(posLinePoints);
-  if (!f) throw std::runtime_error("Corrupted cache file");
-  readBlocks(reinterpret_cast<char *>(_linePoints.data()), numLinePoints,
-             sizeof(util::geo::Point<int16_t>));
+  sections[0].data = reinterpret_cast<unsigned char *>(_points.data());
+  sections[0].off = posPoints;
+  sections[0].size = numPoints;
+  sections[0].elemSize = sizeof(util::geo::FPoint);
 
-  // lines
-  f.seekg(posLines);
-  if (!f) throw std::runtime_error("Corrupted cache file");
-  readBlocks(reinterpret_cast<char *>(_lines.data()), numLines, sizeof(size_t));
+  sections[1].data = reinterpret_cast<unsigned char *>(_linePoints.data());
+  sections[1].off = posLinePoints;
+  sections[1].size = numLinePoints;
+  sections[1].elemSize = sizeof(util::geo::Point<int16_t>);
 
-  // qidToId
-  f.seekg(posQidToId);
-  if (!f) throw std::runtime_error("Corrupted cache file");
-  readBlocks(reinterpret_cast<char *>(_qidToId.data()), numQidToId,
-             sizeof(IdMapping));
+  sections[2].data = reinterpret_cast<unsigned char *>(_lines.data());
+  sections[2].off = posLines;
+  sections[2].size = numLines;
+  sections[2].elemSize = sizeof(size_t);
 
-  f.close();
+  sections[3].data = reinterpret_cast<unsigned char *>(_qidToId.data());
+  sections[3].off = posQidToId;
+  sections[3].size = numQidToId;
+  sections[3].elemSize = sizeof(IdMapping);
+
+  std::vector<Block> blocks;
+
+  // split the parsing into blocks of blockSize
+  for (const auto &sec : sections) {
+    for (size_t i = 0; i < sec.size; i += blockSize) {
+      size_t n = std::min(blockSize, sec.size - i);
+      blocks.push_back({sec.data + i * sec.elemSize,
+                        sec.off + static_cast<off_t>(i * sec.elemSize),
+                        n * sec.elemSize, sec.elemSize});
+    }
+  }
+
+  const int fd = open(fname.c_str(), O_RDONLY);
+  if (fd < 0) throw std::runtime_error("Could not open cache file " + fname);
+
+  std::atomic<bool> failed(false);
+
+#pragma omp parallel for schedule(dynamic)
+  for (size_t i = 0; i < blocks.size(); i++) {
+    if (failed) continue;  // unspin if we are in faiulre mode
+
+    auto block = blocks[i];
+
+    ssize_t n = util::preadAll(fd, block.data, block.size, block.off);
+    if (n != static_cast<ssize_t>(block.size)) {
+      failed = true;
+      continue;
+    }
+
+    // track how many elements we have already read for the status bar
+    _curRow += block.size / block.elemSize;
+  }
+
+  close(fd);
+
+  if (failed) throw std::runtime_error("Corrupted cache file");
 }
 
 // _____________________________________________________________________________
@@ -1046,7 +1104,7 @@ void GeomCache::serializeToDisk(const std::string &fname) const {
   std::ofstream f;
   f.open(fname, std::ios::binary);
 
-  std::string h = _indexHash;
+  std::string h = _indexHash.substr(0, 99);
   h.insert(h.end(), 99 - h.size(), ' ');
 
   // null byte is 100
@@ -1100,6 +1158,13 @@ std::string GeomCache::requestIndexHash() {
 }
 
 // _____________________________________________________________________________
+petrimaps::GeoPointFormat GeomCache::requestGeoPointFormat() {
+  auto r = RequestReader(getConfig().backend, _maxMemory, 0, 0, 0);
+
+  return r.requestGeoPointFormat();
+}
+
+// _____________________________________________________________________________
 std::pair<double, double> GeomCache::getRasterMeta(size_t did) const {
   auto i = _rasterMeta.find(did);
   if (i != _rasterMeta.end()) return i->second;
@@ -1123,6 +1188,15 @@ std::string GeomCache::load(const std::string &cacheDir) {
               << ") and remote index hash (" << indexHash << ") dont match.";
     _ready = false;
   }
+
+  // Only ask for this when the cache is built or rebuilt, not for every query.
+  _geoPointFormat = requestGeoPointFormat();
+  LOG(INFO) << "Datatype of a point is "
+            << static_cast<int>(_geoPointFormat.datatype)
+            << ", its coordinates are encoded "
+            << (_geoPointFormat.encoding == GeoPointEncoding::ZOrder
+                    ? "in Z-order"
+                    : "as latitude and longitude");
 
   if (cacheDir.size()) {
     std::string backend = getConfig().backend;

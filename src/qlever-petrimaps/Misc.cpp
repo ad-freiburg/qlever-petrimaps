@@ -8,7 +8,9 @@
 #include <stdint.h>
 #include <sys/socket.h>
 
+#include <cmath>
 #include <cstring>
+#include <exception>
 #include <fstream>
 #include <iomanip>
 #include <map>
@@ -27,8 +29,32 @@ using util::LogLevel::ERROR;
 using util::LogLevel::INFO;
 using util::LogLevel::WARN;
 
+// Probe coordinate used to obtain the point encoding from the backend,
+// deliberately not round number and far from the equator and prime meridian, so
+// that the two encodings yield results that are nowhere near each other.
+#define PROBE_LON 7.835
+#define PROBE_LAT 47.999
+
+#define STR_(x) #x
+#define STR(x) STR_(x)
+
 // change on each index-breaking change to the code base
 const static std::string INDEX_HASH_PREFIX = "_6_";
+
+// max quantized point coordinate (`GeoPoint::maxCoordinateEncoded` in QLever)
+const static uint64_t MAX_QUANTIZED_COORD = (uint64_t(1) << 30) - 1;
+
+// _____________________________________________________________________________
+static uint64_t everySecondBit(uint64_t bits) {
+  // Returns number constructed from every second bit of the input
+  bits &= 0x5555555555555555ull;
+  bits = (bits | (bits >> 1)) & 0x3333333333333333ull;
+  bits = (bits | (bits >> 2)) & 0x0F0F0F0F0F0F0F0Full;
+  bits = (bits | (bits >> 4)) & 0x00FF00FF00FF00FFull;
+  bits = (bits | (bits >> 8)) & 0x0000FFFF0000FFFFull;
+  bits = (bits | (bits >> 16)) & 0x00000000FFFFFFFFull;
+  return bits & MAX_QUANTIZED_COORD;
+}
 
 // _____________________________________________________________________________
 void petrimaps::performCurlRequest(
@@ -45,13 +71,8 @@ void petrimaps::performCurlRequest(
   char errbuf[CURL_ERROR_SIZE];
   errbuf[0] = 0;
 
-  // this is a context that holds to things: a std::function for parsing, and
-  // an exception_ptr for storing any exception encountered during parsing (for
-  // later rethrow)
-  struct CallbackContext {
-    const std::function<void(const char*, size_t)>& parse;
-    std::exception_ptr exception;
-  } cbContext{parse, nullptr};
+  // separate parsing thread to be able to continue receiving while parsing
+  CurlParseThread parseThread(parse);
 
   petrimapsCurlSetup(curl);
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -65,12 +86,8 @@ void petrimaps::performCurlRequest(
   size_t (*cb)(void* contents, size_t size, size_t nmemb, void* userp) =
       [](void* contents, size_t size, size_t nmemb, void* userp) -> size_t {
     size_t realsize = size * nmemb;
-    auto* c = static_cast<CallbackContext*>(userp);
-    try {
-      c->parse(static_cast<const char*>(contents), realsize);
-    } catch (...) {
-      // store exception, then return with an error (aborts curl request)
-      c->exception = std::current_exception();
+    auto* t = static_cast<CurlParseThread*>(userp);
+    if (!t->push(static_cast<const char*>(contents), realsize)) {
       return CURLE_WRITE_ERROR;
     }
     return realsize;
@@ -78,7 +95,7 @@ void petrimaps::performCurlRequest(
 
   // any newly read block will be given to the parse() method of the handed cb
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, cb);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &cbContext);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &parseThread);
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
 
   struct curl_slist* headers = 0;
@@ -86,13 +103,14 @@ void petrimaps::performCurlRequest(
     headers = curl_slist_append(headers, ("Accept: " + acceptHeader).c_str());
   }
   if (xRealIP.size()) {
-    headers = curl_slist_append(headers,
-                                ("X-Real-IP: " + xRealIP).c_str());
+    headers = curl_slist_append(headers, ("X-Real-IP: " + xRealIP).c_str());
   }
 
   if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
   CURLcode res = curl_easy_perform(curl);
+
+  parseThread.finalize();
 
   long httpCode = 0;
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
@@ -100,15 +118,8 @@ void petrimaps::performCurlRequest(
   if (headers) curl_slist_free_all(headers);
   curl_easy_cleanup(curl);
 
-  if (httpCode != 200) {
-    std::stringstream ss;
-    ss << "QLever backend returned status code " << httpCode;
-    if (raw) ss << "\n" << *raw;
-    throw std::runtime_error(ss.str());
-  }
-
-  // rethrow any exception encountered during write callback
-  if (cbContext.exception) std::rethrow_exception(cbContext.exception);
+  // rethrow any exception encountered while parsing
+  if (parseThread.exception()) std::rethrow_exception(parseThread.exception());
 
   if (res != CURLE_OK) {
     std::stringstream ss;
@@ -120,6 +131,13 @@ void petrimaps::performCurlRequest(
       LOG(ERROR) << "[CURL] " << curl_easy_strerror(res);
       ss << curl_easy_strerror(res);
     }
+    throw std::runtime_error(ss.str());
+  }
+
+  if (httpCode != 200) {
+    std::stringstream ss;
+    ss << "QLever backend returned status code " << httpCode;
+    if (raw) ss << "\n" << *raw;
     throw std::runtime_error(ss.str());
   }
 }
@@ -215,7 +233,7 @@ void RequestReader::parseRasterMeta(const char* c, size_t size) {
     _curIdCol = _curIdCol % 3;
 
     if (_curByte == 0) {
-      uint8_t type = (_curId.val & (uint64_t(15) << 60)) >> 60;
+      uint8_t type = idDatatype(_curId.val);
 
       if (_curIdCol == 0) {
         // raster dataset it
@@ -273,11 +291,11 @@ void RequestReader::parseIds(const char* c, size_t size) {
     if (_curByte == 0) {
       if (_curIdCol < _geomFields) {
         // geometry ID
-        _ids[_curIdCol].push_back({_curId.val, _ids[_curIdCol].size()});
+        _ids[_curIdCol].push_back({QLEVER_ID_TYPE{_curId.val}, ID_TYPE{_ids[_curIdCol].size()}});
       } else if (_curIdCol < _valFields + _geomFields) {
         // value
 
-        uint8_t type = (_curId.val & (uint64_t(15) << 60)) >> 60;
+        uint8_t type = idDatatype(_curId.val);
         if (type == 3) {
           // 3 = double in qlever
           uint64_t rawBits = (_curId.val << 4);
@@ -328,12 +346,12 @@ void RequestReader::parse(const char* c, size_t size) {
         }
       case IN_ROW:
         if (*c == '\t' || *c == '\n') {
-          curCols.push_back({_colNames[_curCol], _dangling});
+          _curCols.push_back({_colNames[_curCol], _dangling});
 
           if (*c == '\n') {
             _curRow++;
-            rows.push_back(curCols);
-            curCols = {};
+            _rows.push_back(_curCols);
+            _curCols = {};
             _curCol = 0;
           } else {
             _curCol++;
@@ -1338,8 +1356,7 @@ std::string petrimaps::canonizeURL(const std::string& inURL,
 
   struct curl_slist* headers = 0;
   if (remoteAddr.size()) {
-    headers =
-        curl_slist_append(headers, ("X-Real-IP: " + remoteAddr).c_str());
+    headers = curl_slist_append(headers, ("X-Real-IP: " + remoteAddr).c_str());
   }
 
   if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -1419,4 +1436,70 @@ std::string RequestReader::requestIndexHash(const std::string& configHash) {
   }
 
   return INDEX_HASH_PREFIX + "|" + configHash + "|" + response;
+}
+
+// _____________________________________________________________________________
+petrimaps::GeoPointFormat RequestReader::requestGeoPointFormat() {
+  // Probe query to determine the point format from a known coordinate.
+  const static std::string query =
+      "PREFIX geo: <http://www.opengis.net/ont/geosparql#> "
+      "SELECT ?point WHERE { BIND(\"POINT(" STR(PROBE_LON) " " STR(
+          PROBE_LAT) ")\"^^geo:wktLiteral AS ?point) }";
+
+  std::string response;
+
+  try {
+    performCurlRequest(
+        _backendUrl, queryFields(query), "application/octet-stream", "",
+        [&response](const char* c, size_t n) { response.append(c, n); },
+        nullptr);
+  } catch (const std::exception& e) {
+    LOG(WARN) << "[GEOMCACHE] Could not obtain the format of a point: "
+              << e.what();
+    return {};
+  }
+
+  // The answer is a single ID in the byte order it was stored in
+  if (response.size() != sizeof(ID)) {
+    LOG(WARN)
+        << "[GEOMCACHE] Unexpected answer of size " << response.size()
+        << " when asking for the format of a point, expected single ID of size "
+        << sizeof(ID);
+    return {};
+  }
+
+  ID id;
+  std::memcpy(id.bytes, response.data(), sizeof(id.bytes));
+
+  GeoPointFormat format;
+  format.datatype = idDatatype(id.val);
+
+  uint64_t valueBits = id.val & ((uint64_t(1) << 60) - 1);
+  for (auto encoding :
+       {GeoPointEncoding::ZOrder, GeoPointEncoding::LatitudeAndLongitude}) {
+    auto point = decodeGeoPoint(valueBits, encoding);
+    if (fabs(point.getX() - PROBE_LON) < 0.001 &&
+        fabs(point.getY() - PROBE_LAT) < 0.001) {
+      format.encoding = encoding;
+      return format;
+    }
+  }
+
+  LOG(WARN) << "[GEOMCACHE] Could determine point encoding, assuming lat/lon";
+  return format;
+}
+
+// _____________________________________________________________________________
+util::geo::FPoint petrimaps::decodeGeoPoint(uint64_t valueBits,
+                                            GeoPointEncoding encoding) {
+  uint64_t lat, lon;
+  if (encoding == GeoPointEncoding::ZOrder) {
+    lat = everySecondBit(valueBits >> 1);
+    lon = everySecondBit(valueBits);
+  } else {
+    lat = (valueBits >> 30) & MAX_QUANTIZED_COORD;
+    lon = valueBits & MAX_QUANTIZED_COORD;
+  }
+  return {(static_cast<double>(lon) / MAX_QUANTIZED_COORD) * 2 * 180 - 180,
+          (static_cast<double>(lat) / MAX_QUANTIZED_COORD) * 2 * 90 - 90};
 }
