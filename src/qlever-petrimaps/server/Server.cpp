@@ -9,6 +9,9 @@
 #include <cctype>
 #include <chrono>
 #include <codecvt>
+#include <cerrno>
+#include <ostream>
+#include <streambuf>
 #include <csignal>
 #include <locale>
 #include <memory>
@@ -18,6 +21,9 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <cstdlib>
+#include <fstream>
+#include <unistd.h>
 
 // clang-format off
 #include "3rdparty/heatmap.h"
@@ -38,6 +44,7 @@
 #include "qlever-petrimaps/build.h"
 #include "qlever-petrimaps/example.h"
 #include "qlever-petrimaps/index.h"
+#include "qlever-petrimaps/Misc.h"
 #include "qlever-petrimaps/server/RenderContext.h"
 #include "qlever-petrimaps/server/Requestor.h"
 #include "qlever-petrimaps/server/Server.h"
@@ -72,6 +79,47 @@ using util::geo::webMercToLatLng;
 
 const static double THRESHOLD = 200;
 static std::atomic<size_t> _curRow;
+namespace {
+class SocketStreamBuf : public std::streambuf {
+  public:
+    explicit SocketStreamBuf(int socket) : _socket(socket) {}
+
+  protected:
+    std::streamsize xsputn(const char* data, std::streamsize size) override {
+      size_t written = 0;
+      const size_t wanted = static_cast<size_t>(size);
+
+      while (written < wanted) {
+        const int64_t result =
+            send(_socket, data + written, wanted - written, MSG_NOSIGNAL);
+
+        if (result < 0) {
+          if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR) {
+            continue;
+          }
+
+          return static_cast<std::streamsize>(written);
+        }
+
+        written += static_cast<size_t>(result);
+      }
+
+      return size;
+    }
+
+    int_type overflow(int_type character) override {
+      if (character == traits_type::eof()) {
+        return traits_type::not_eof(character);
+      }
+
+      const char value = traits_type::to_char_type(character);
+      return xsputn(&value, 1) == 1 ? character : traits_type::eof();
+    }
+
+    private:
+      int _socket;
+};
+}
 
 // _____________________________________________________________________________
 static void sendRaw(int sock, const std::string& buff) {
@@ -167,6 +215,14 @@ util::http::Answer Server::handle(const util::http::Req& req, int con) const {
       a = handleClearSessReq(params, req.params, con);
     } else if (cmd == "/clearsessions") {
       a = handleClearSessReq(params, req.params, con);
+    } else if (cmd == "/osm-export") {
+      if (req.cmd != "POST") {
+      throw std::invalid_argument("OSM export requires POST.");
+      }
+
+      LOG(INFO) << "OSM export request from "
+                << remoteAddress(con, req.params);
+      a = handleOsmExportReq(params, req.params, con);
     } else if (cmd == "/loadstatus") {
       a = handleLoadStatusReq(params, req.params, con);
     } else if (cmd == "/build.js") {
@@ -2235,6 +2291,112 @@ void Server::clearOldSessions() const {
       clearSession(id);
     }
   }
+}
+
+// _____________________________________________________________________________
+util::http::Answer Server::handleOsmExportReq(
+    const Params& pars, const HeaderParams& headerParams, int sock) const {
+  if (pars.count("backend") == 0 || pars.find("backend")->second.empty()) {
+    throw std::invalid_argument("No backend specified for OSM export.");
+  }
+
+  if (pars.count("cfg") == 0 || pars.find("cfg")->second.empty()) {
+    throw std::invalid_argument("No request config specified for OSM export.");
+  }
+
+  std::string accessToken;
+  if (headerParams.count("Authorization") != 0) {
+    accessToken = headerParams.find("Authorization")->second;
+  }
+
+  if (accessToken != _accessToken) {
+    throw std::invalid_argument("Invalid access token");
+  }
+
+  const auto config = nlohmann::json::parse(pars.find("cfg")->second);
+
+  if (!config.is_object() || !config.contains("query") ||
+      !config["query"].is_string()) {
+    throw std::invalid_argument(
+        "OSM export config must contain a string query field.");
+  }
+
+  const std::string& backend = pars.find("backend")->second;
+  const std::string query = config["query"].get<std::string>();
+  const std::string remoteAddr = remoteAddress(sock, headerParams);
+  
+  char tempPath[] = "/tmp/qlever-petrimaps-osm-XXXXXX";
+  const int tempFd = mkstemp(tempPath);
+
+  if (tempFd == -1) {
+    throw std::runtime_error("Could not create temporary OSM export file.");
+  }
+
+  close(tempFd);
+
+  try {
+    exportQleverTsvToOsmXmlFile(
+        backend, query, tempPath, remoteAddr);
+  } catch (...) {
+    unlink(tempPath);
+    throw;
+  }
+
+  std::ifstream input(tempPath, std::ios::binary);
+
+  if (!input) {
+    unlink(tempPath);
+    throw std::runtime_error(
+        "Could not reopen completed OSM export file.");
+  }
+
+  // The open stream keeps the file contents available. Remove its directory
+  // entry now so the temporary file is also cleaned up on later failures.
+  unlink(tempPath);
+
+  util::http::Answer answer("200 OK", "");
+  answer.params["Content-Encoding"] = "identity";
+  answer.params["Content-Type"] = 
+      "application/vnd.openstreetmap.data+xml; charset=utf-8";
+  answer.params["Content-Disposition"] =
+      "attachment; filename=\"export.osm\"";
+  answer.params["Server"] = "qlever-petrimaps";
+
+  SocketStreamBuf socketBuffer(sock);
+  std::ostream output(&socketBuffer);
+
+  output << "HTTP/1.1 " << answer.status << "\r\n";
+  for (const auto& header : answer.params) {
+    output << header.first << ": " << header.second << "\r\n";
+  }
+  output << "\r\n";
+
+  if (!output) {
+    throw std::runtime_error("Failed to write OSM export response header.");
+  }
+
+  char buffer[64 * 1024];
+
+  while (input.read(buffer, sizeof(buffer))) {
+    output.write(buffer, input.gcount());
+  }
+
+  if (input.gcount() > 0) {
+    output.write(buffer, input.gcount());
+  }
+
+  if (!input.eof()) {
+    throw std::runtime_error(
+        "Failed while reading completed OSM export file.");
+  }
+
+  if (!output) {
+    throw std::runtime_error(
+        "Failed while sending completed OSM export file.");
+  }
+
+  answer.raw = true;
+  return answer;
 }
 
 // _____________________________________________________________________________
