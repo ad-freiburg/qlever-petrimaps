@@ -438,7 +438,12 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   checkMem(sizeof(unsigned char) * w * h * 4 +
                sizeof(unsigned char) * w * h * 4 * NUM_THREADS * 2,
            _maxMemory);
-  RenderContext rcontext(w, h, orx, ory, mercW, mercH, style, lcfg.objectStyle,
+  // Draw points twice as large on the three highest zoom levels (17 and above,
+  // where a pixel covers less than 1.2 m at the equator).
+  ObjectStyle ostyle = lcfg.objectStyle;
+  if (res < 1.5) ostyle.pointRadius *= 2;
+
+  RenderContext rcontext(w, h, orx, ory, mercW, mercH, style, ostyle,
                          NUM_THREADS);
 
   // POINTS
