@@ -1981,13 +1981,20 @@ util::http::Answer Server::handleQueryReq(const Params& pars,
 
   if (pars.count("cfg") != 0 && !pars.find("cfg")->second.empty()) {
     rcfg = getRequestorCfgFromJSON(pars.find("cfg")->second);
-  } else if (pars.count("query") != 0 && !pars.find("query")->second.empty()) {
-    rcfg =
-        getDefaultRequestorCfg(backendCfg.backend, pars.find("query")->second);
+  }
+
+  // The `query` parameter takes precedence over a query in `cfg`, and a config
+  // without layers (the QLever UI sends `cfg={}`) gets the default layers.
+  if (pars.count("query") != 0 && !pars.find("query")->second.empty()) {
+    rcfg.query = pars.find("query")->second;
   }
 
   if (rcfg.query.size() == 0)
     throw std::invalid_argument("No query specified.");
+
+  if (rcfg.layers.empty()) {
+    rcfg = getDefaultRequestorCfg(backendCfg.backend, rcfg.query);
+  }
 
   LOG(INFO) << "[SERVER] Queried backend is " << backendCfg.backend;
   LOG(INFO) << "[SERVER] Query is:\n" << rcfg.query;
