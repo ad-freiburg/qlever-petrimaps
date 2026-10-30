@@ -263,6 +263,10 @@ void GeomCache::parseIds(const char *c, size_t size) {
                   << " points), " << _geometryDuplicates << " duplicates)";
       }
 
+      // The qlever ID to assign to the geometry of this row (and to all its
+      // parts, see below).
+      QLEVER_ID_TYPE qid = _curId.val;
+
       if (_curIdRow < _qidToId.size() && _qidToId[_curIdRow].qid == 0) {
         // if we have two consecutive and equivalent QLever ids, the geometry
         // was returned multiple times in the fill query. This can happen if the
@@ -274,11 +278,10 @@ void GeomCache::parseIds(const char *c, size_t size) {
           LOG(DEBUG) << "Found duplicate internal qlever ID " << _curId.val
                      << " for row " << _curRow
                      << ", ignoring this geometry duplicate!";
-          _qidToId[_curIdRow].qid = -1;
+          qid = -1;
           _geometryDuplicates++;
-        } else {
-          _qidToId[_curIdRow].qid = _curId.val;
         }
+        _qidToId[_curIdRow].qid = qid;
         _lastQid = _curId.val;
         if (_curId.val > _maxQid) _maxQid = _curId.val;
       } else {
@@ -289,10 +292,10 @@ void GeomCache::parseIds(const char *c, size_t size) {
       // MULTIPOLYGON, MULTIPOINT), they appear consecutively in
       // _qidToId; continuation geometries are marked by a
       // preliminary qlever ID of 1, while the first geometry always has a
-      // preliminary id of 0
-      while (_curIdRow + 1 < _qidToId.size() - 1 &&
+      // preliminary id of 0 (the parts of a duplicate get the dummy value too)
+      while (_curIdRow + 1 < _qidToId.size() &&
              _qidToId[_curIdRow + 1].qid == 1) {
-        _qidToId[++_curIdRow].qid = _curId.val;
+        _qidToId[++_curIdRow].qid = qid;
       }
 
       _curIdRow++;
