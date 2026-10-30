@@ -133,13 +133,14 @@ static bool printWKTFeature(std::stringstream& ss, const std::string& wkt,
 Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime,
                size_t autoThreshold,
                std::map<std::string, GeomCacheConfig> cacheConfigs,
-               const std::string& accessToken)
+               const std::string& accessToken, bool lazy)
     : _maxMemory(maxMemory),
       _cacheDir(cacheDir),
       _cacheLifetime(cacheLifetime),
       _autoThreshold(autoThreshold),
       _cacheConfigs(cacheConfigs),
-      _accessToken(accessToken) {
+      _accessToken(accessToken),
+      _lazy(lazy) {
   std::thread t(&Server::clearOldSessions, this);
   t.detach();
 }
@@ -2325,7 +2326,7 @@ void Server::createCache(const GeomCacheConfig& cfg) const {
                   << cfg.fillQuery;
       }
     } else {
-      cache = std::shared_ptr<GeomCache>(new GeomCache(cfg, _maxMemory));
+      cache = std::shared_ptr<GeomCache>(new GeomCache(cfg, _maxMemory, _lazy));
       _caches[cfg.backend] = cache;
     }
   }

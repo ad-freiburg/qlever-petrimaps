@@ -28,7 +28,7 @@ class Server : public util::http::Handler {
   explicit Server(size_t maxMemory, const std::string& cacheDir,
                   int cacheLifetime, size_t autoThreshold,
                   std::map<std::string, GeomCacheConfig> cacheConfigs,
-                  const std::string& accessToken);
+                  const std::string& accessToken, bool lazy);
 
   virtual util::http::Answer handle(const util::http::Req& request,
                                     int connection) const;
@@ -119,6 +119,10 @@ class Server : public util::http::Handler {
 
   mutable std::map<std::string, GeomCacheConfig> _cacheConfigs;
   std::string _accessToken;
+
+  // Fetch the geometries per query instead of caching them per backend, see
+  // `GeomCache::isLazy`.
+  bool _lazy;
 };
 }  // namespace petrimaps
 

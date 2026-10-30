@@ -96,8 +96,23 @@ inline bool operator!=(const GeomCacheConfig& l, const GeomCacheConfig& r) {
 class GeomCache {
  public:
   GeomCache() : _config(), _curRow(0), _maxMemory(-1) {}
-  explicit GeomCache(const GeomCacheConfig& config, size_t maxMemory)
-      : _config(config), _curRow(0), _maxMemory(maxMemory) {}
+  explicit GeomCache(const GeomCacheConfig& config, size_t maxMemory,
+                     bool lazy = false)
+      : _config(config), _curRow(0), _maxMemory(maxMemory), _lazy(lazy) {}
+
+  // A cache for the geometries of a single query, with the settings of the
+  // backend cache (URL, point format, raster meta data, index hash) but an own
+  // fill query, see `fill` and `Requestor::lazyFillQuery`.
+  GeomCache(const GeomCache& backendCache, const std::string& fillQuery)
+      : _config(backendCache._config),
+        _curRow(0),
+        _maxMemory(backendCache._maxMemory),
+        _rasterMeta(backendCache._rasterMeta),
+        _indexHash(backendCache._indexHash),
+        _geoPointFormat(backendCache._geoPointFormat),
+        _lazy(true) {
+    _config.fillQuery = fillQuery;
+  }
 
   GeomCache& operator=(GeomCache&& o) {
     _config = o._config;
@@ -117,6 +132,14 @@ class GeomCache {
   }
 
   std::string load(const std::string& cacheFile);
+
+  // Fetch the geometries of the fill query from the backend (no disk cache
+  // involved), used for the per-query caches in lazy mode.
+  void fill();
+
+  // In lazy mode, the backend cache stays empty and each query gets a cache of
+  // its own with only the non-point geometries of its result.
+  bool isLazy() const { return _lazy; }
 
   void request();
   size_t requestSize();
@@ -266,6 +289,8 @@ class GeomCache {
   std::string _indexHash;
 
   GeoPointFormat _geoPointFormat;
+
+  bool _lazy = false;
 };
 }  // namespace petrimaps
 

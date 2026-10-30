@@ -359,7 +359,8 @@ void GeomCache::request() {
   _totalSize = requestSize();
   _geometryDuplicates = 0;
 
-  if (_totalSize == 0) {
+  // In lazy mode, a result without non-point geometries is the normal case.
+  if (_totalSize == 0 && !_lazy) {
     LOG(WARN)
         << "Could not determine number of rows, or number of rows was 0 (this "
            "may happen if your dataset only contains folded points)";
@@ -445,28 +446,28 @@ void GeomCache::request() {
   checkMem(sizeof(util::geo::FPoint) * _pointsFSize, _maxMemory);
   _points.resize(_pointsFSize);
   _pointsF.seekg(0);
-  _pointsF.read(reinterpret_cast<char *>(&_points[0]),
+  _pointsF.read(reinterpret_cast<char *>(_points.data()),
                 sizeof(util::geo::FPoint) * _pointsFSize);
   _pointsF.close();
 
   checkMem(sizeof(util::geo::Point<int16_t>) * _linePointsFSize, _maxMemory);
   _linePoints.resize(_linePointsFSize);
   _linePointsF.seekg(0);
-  _linePointsF.read(reinterpret_cast<char *>(&_linePoints[0]),
+  _linePointsF.read(reinterpret_cast<char *>(_linePoints.data()),
                     sizeof(util::geo::Point<int16_t>) * _linePointsFSize);
   _linePointsF.close();
 
   checkMem(sizeof(size_t) * _linesFSize, _maxMemory);
   _lines.resize(_linesFSize);
   _linesF.seekg(0);
-  _linesF.read(reinterpret_cast<char *>(&_lines[0]),
+  _linesF.read(reinterpret_cast<char *>(_lines.data()),
                sizeof(size_t) * _linesFSize);
   _linesF.close();
 
   checkMem(sizeof(IdMapping) * _qidToIdFSize, _maxMemory);
   _qidToId.resize(_qidToIdFSize);
   _qidToIdF.seekg(0);
-  _qidToIdF.read(reinterpret_cast<char *>(&_qidToId[0]),
+  _qidToIdF.read(reinterpret_cast<char *>(_qidToId.data()),
                  sizeof(IdMapping) * _qidToIdFSize);
   _qidToIdF.close();
 
@@ -526,11 +527,14 @@ std::string GeomCache::queryFields(std::string query, size_t offset,
                                    size_t limit) const {
   std::stringstream ss;
 
-  if (util::toLower(query).find("limit") == std::string::npos) {
+  // A custom fill query may bring its own LIMIT and OFFSET. The fill query of
+  // a lazy cache contains the user's query (which may have a LIMIT of its own
+  // in the subquery), so it always gets the outer pagination.
+  if (_lazy || util::toLower(query).find("limit") == std::string::npos) {
     query += " LIMIT " + std::to_string(limit);
   }
 
-  if (util::toLower(query).find("offset") == std::string::npos) {
+  if (_lazy || util::toLower(query).find("offset") == std::string::npos) {
     query += " OFFSET " + std::to_string(offset);
   }
 
@@ -1198,7 +1202,13 @@ std::string GeomCache::load(const std::string &cacheDir) {
                     ? "in Z-order"
                     : "as latitude and longitude");
 
-  if (cacheDir.size()) {
+  if (_lazy) {
+    // The backend cache stays empty, the geometries of each query are fetched
+    // by the `Requestor` into a cache of its own (see `fill`).
+    _indexHash = requestIndexHash();
+    LOG(INFO) << "Index hash is '" << _indexHash
+              << "', lazy mode (no geometries are cached per backend)";
+  } else if (cacheDir.size()) {
     std::string backend = getConfig().backend;
     util::replaceAll(backend, "/", "#");
     std::string cacheFile = cacheDir + "/" + backend;
@@ -1244,4 +1254,15 @@ std::string GeomCache::load(const std::string &cacheDir) {
   _loadStatusStage = Finished;
 
   return _indexHash;
+}
+
+// _____________________________________________________________________________
+void GeomCache::fill() {
+  std::lock_guard<std::mutex> guard(_m);
+
+  request();
+  requestIds();
+
+  _ready = true;
+  _loadStatusStage = Finished;
 }

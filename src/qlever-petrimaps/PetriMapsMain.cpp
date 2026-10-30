@@ -28,13 +28,16 @@ void printHelp(int, char** argv) {
       (sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE) * 0.9) / 1000000000;
 
   std::cout << "Usage: " << argv[0]
-            << " [-p <port>] [-m <maxmemory>] [-c <cachedir>] [--help] [-h]"
+            << " [-p <port>] [-m <maxmemory>] [-c <cachedir>] [-l] [--help] "
+               "[-h]"
             << "\n";
   std::cout
       << "\nAllowed arguments:\n    -p <port>    Port for server to listen to "
          "(default: 9090)"
       << "\n    -m <memory>  Max memory in GB (default: " << maxMemoryGB << ")"
       << "\n    -c <dir>     cache dir (default: none)"
+      << "\n    -l           lazy mode: fetch only the geometries of each "
+         "query, no backend-wide geometry cache (default: off)"
       << "\n    -x <token>   access token (default: none)"
       << "\n    -t <minutes> request cache lifetime (default: 360)"
       << "\n    -a <numobjects> threshold for auto layer selection (default: "
@@ -85,6 +88,7 @@ int main(int argc, char** argv) {
   double maxMemoryGB =
       (sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE) * 0.9) / 1000000000;
   std::string cacheDir;
+  bool lazy = false;
 
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
@@ -109,6 +113,8 @@ int main(int argc, char** argv) {
         exit(1);
       }
       cacheDir = argv[i];
+    } else if (cur == "-l") {
+      lazy = true;
     } else if (cur == "-t") {
       if (++i >= argc) {
         LOG(ERROR) << "Missing argument for cache lifetime (-t).";
@@ -163,10 +169,15 @@ int main(int argc, char** argv) {
     if (accessToken.size() == 0)
       LOG(WARN) << "No access token (-x) specified, this is a security risk.";
 
+    if (lazy && cacheDir.size())
+      LOG(WARN) << "Lazy mode (-l), the cache dir (-c) is only used for the "
+                   "backend configs, no geometries are written to it.";
+
     LOG(INFO) << "Starting server...";
     LOG(INFO) << "Max memory is " << maxMemoryGB << " GB...";
+    if (lazy) LOG(INFO) << "Lazy mode, geometries are fetched per query...";
     Server serv(maxMemoryGB * 1000000000, cacheDir, cacheLifetime,
-                autoThreshold, geomCacheConfigs, accessToken);
+                autoThreshold, geomCacheConfigs, accessToken, lazy);
 
     LOG(INFO) << "Listening on port " << port
               << " (open http://localhost:9090/example)";

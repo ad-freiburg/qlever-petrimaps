@@ -85,3 +85,7 @@ If a query still runs out of memory, you can clear all existing caches by reques
 ## Disk Cache
 
 If `-c` specifies a serialization cache directory, the complete geometries downloaded from a QLever backend will be serialized to disk and re-used on later startups. This significantly speeds up the loading times.
+
+## Lazy Mode
+
+By default, all non-point geometries of a backend are fetched once and kept in memory (and in the disk cache), which is infeasible for backends with billions of geometries. With `-l`, no backend-wide geometry cache is built. Instead, each query fetches only the distinct non-point geometries of its own result, which live as long as the query session (see `-t`). Points are never fetched, they are decoded from the query result directly, so a query that returns only points costs nothing extra. Lazy mode is meant for backends whose queries return few non-point geometries; a query with tens of millions of lines or polygons fetches all of them anew.
