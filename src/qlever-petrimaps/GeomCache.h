@@ -98,7 +98,10 @@ class GeomCache {
   GeomCache() : _config(), _curRow(0), _maxMemory(-1) {}
   explicit GeomCache(const GeomCacheConfig& config, size_t maxMemory,
                      bool lazy = false)
-      : _config(config), _curRow(0), _maxMemory(maxMemory), _lazy(lazy) {}
+      : _config(config), _curRow(0), _maxMemory(maxMemory), _lazy(lazy) {
+    // A lazy backend cache never fills, there is nothing to report progress on.
+    if (_lazy) _loadStatusStage = Finished;
+  }
 
   // A cache for the geometries of a single query, with the settings of the
   // backend cache (URL, point format, raster meta data, index hash) but an own
@@ -112,6 +115,7 @@ class GeomCache {
         _geoPointFormat(backendCache._geoPointFormat),
         _lazy(true) {
     _config.fillQuery = fillQuery;
+    _loadStatusStage = Finished;
   }
 
   GeomCache& operator=(GeomCache&& o) {
