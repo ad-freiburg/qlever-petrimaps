@@ -66,6 +66,15 @@ void Requestor::request(const std::string& remoteAddr) {
     LOG(INFO) << "[REQUESTOR] Prepped query: " << prepedGeomQuery;
 
     reader.requestIds(prepedGeomQuery, remoteAddr);
+
+    // In lazy mode, the backend cache is empty. Fetch the non-point geometries
+    // of this query into a cache of its own and use that from now on.
+    if (_cache->isLazy()) {
+      auto queryCache = std::make_shared<GeomCache>(
+          *_cache, lazyFillQuery(_rcfg.query, _geomColumns));
+      queryCache->fill();
+      _cache = queryCache;
+    }
   }
 
   // join with geoms from GeomCache
@@ -584,6 +593,34 @@ std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
   if (_sortColumn.size()) query += " INTERNAL SORT BY " + _sortColumn;
   query += " OFFSET " + std::to_string(row) + " LIMIT 1";
   return query;
+}
+
+// _____________________________________________________________________________
+std::string Requestor::lazyFillQuery(
+    const std::string& query, const std::vector<std::string>& geomColumns) {
+  // Split the query into its PREFIX declarations and the SELECT body, the
+  // former must stay at the top, the latter becomes a subquery.
+  std::regex expr("select[^{]*(\\*|[\\?$][A-Z0-9_\\-+]*)+[^{]*\\s*\\{",
+                  std::regex_constants::icase);
+  std::smatch match;
+  size_t bodyPos = std::regex_search(query, match, expr) ? match.position() : 0;
+  std::string prefixes = query.substr(0, bodyPos);
+  std::string body = query.substr(bodyPos);
+
+  // One subquery per geometry column, each projecting that column to
+  // `?geometry`, combined by UNION.
+  std::string subqueries;
+  for (const auto& col : geomColumns) {
+    if (subqueries.size()) subqueries += " UNION ";
+    subqueries +=
+        "{ SELECT (" + col + " AS ?geometry) WHERE { " + body + " } }";
+  }
+
+  // Only the distinct non-point geometries, in the order of their IDs, so that
+  // the two passes of `GeomCache::fill` (WKT strings, then IDs) see the same
+  // order.
+  return prefixes + "SELECT DISTINCT ?geometry WHERE { " + subqueries +
+         " FILTER(!ql:isGeoPoint(?geometry)) } INTERNAL SORT BY ?geometry";
 }
 
 // _____________________________________________________________________________

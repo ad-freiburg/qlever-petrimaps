@@ -133,13 +133,14 @@ static bool printWKTFeature(std::stringstream& ss, const std::string& wkt,
 Server::Server(size_t maxMemory, const std::string& cacheDir, int cacheLifetime,
                size_t autoThreshold,
                std::map<std::string, GeomCacheConfig> cacheConfigs,
-               const std::string& accessToken)
+               const std::string& accessToken, bool lazy)
     : _maxMemory(maxMemory),
       _cacheDir(cacheDir),
       _cacheLifetime(cacheLifetime),
       _autoThreshold(autoThreshold),
       _cacheConfigs(cacheConfigs),
-      _accessToken(accessToken) {
+      _accessToken(accessToken),
+      _lazy(lazy) {
   std::thread t(&Server::clearOldSessions, this);
   t.detach();
 }
@@ -437,7 +438,12 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   checkMem(sizeof(unsigned char) * w * h * 4 +
                sizeof(unsigned char) * w * h * 4 * NUM_THREADS * 2,
            _maxMemory);
-  RenderContext rcontext(w, h, orx, ory, mercW, mercH, style, lcfg.objectStyle,
+  // Draw points twice as large on the three highest zoom levels (17 and above,
+  // where a pixel covers less than 1.2 m at the equator).
+  ObjectStyle ostyle = lcfg.objectStyle;
+  if (res < 1.5) ostyle.pointRadius *= 2;
+
+  RenderContext rcontext(w, h, orx, ory, mercW, mercH, style, ostyle,
                          NUM_THREADS);
 
   // POINTS
@@ -1980,13 +1986,20 @@ util::http::Answer Server::handleQueryReq(const Params& pars,
 
   if (pars.count("cfg") != 0 && !pars.find("cfg")->second.empty()) {
     rcfg = getRequestorCfgFromJSON(pars.find("cfg")->second);
-  } else if (pars.count("query") != 0 && !pars.find("query")->second.empty()) {
-    rcfg =
-        getDefaultRequestorCfg(backendCfg.backend, pars.find("query")->second);
+  }
+
+  // The `query` parameter takes precedence over a query in `cfg`, and a config
+  // without layers (the QLever UI sends `cfg={}`) gets the default layers.
+  if (pars.count("query") != 0 && !pars.find("query")->second.empty()) {
+    rcfg.query = pars.find("query")->second;
   }
 
   if (rcfg.query.size() == 0)
     throw std::invalid_argument("No query specified.");
+
+  if (rcfg.layers.empty()) {
+    rcfg = getDefaultRequestorCfg(backendCfg.backend, rcfg.query);
+  }
 
   LOG(INFO) << "[SERVER] Queried backend is " << backendCfg.backend;
   LOG(INFO) << "[SERVER] Query is:\n" << rcfg.query;
@@ -2325,7 +2338,7 @@ void Server::createCache(const GeomCacheConfig& cfg) const {
                   << cfg.fillQuery;
       }
     } else {
-      cache = std::shared_ptr<GeomCache>(new GeomCache(cfg, _maxMemory));
+      cache = std::shared_ptr<GeomCache>(new GeomCache(cfg, _maxMemory, _lazy));
       _caches[cfg.backend] = cache;
     }
   }
