@@ -70,6 +70,7 @@
         <button type="button" class="active" onclick="showTab(0)">Various layers</button>
         <button type="button" onclick="showTab(1)">Object styles</button>
         <button type="button" onclick="showTab(2)">Checkboxes</button>
+        <button type="button" onclick="showTab(3)">OSM export test</button>
       </div>
 
       <textarea class="config" id="config1" name="cfg">
@@ -552,6 +553,33 @@
         "colorscheme" : "YlOrRdexp",
         "style" : "heatmap",
         "toggle" : "checkbox"
+    }
+  ]
+}
+</textarea>
+
+      <textarea class="config" id="config4" name="cfg" hidden disabled>
+{
+  "query": "PREFIX geo: <http://www.opengis.net/ont/geosparql#>\n\nSELECT ?osm_id ?hasgeometry WHERE {\n  VALUES ?osm_id {\n    <https://www.openhistoricalmap.org/relation/2692425>\n  }\n\n  ?osm_id geo:hasGeometry/geo:asWKT ?hasgeometry .\n}",
+
+  "exportQuery": "PREFIX geo: <http://www.opengis.net/ont/geosparql#>\nPREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>\n\nSELECT ?osm_id ?a ?b ?hasgeometry WHERE {\n  VALUES ?osm_id {\n    <https://www.openhistoricalmap.org/relation/2692425>\n  }\n\n  ?osm_id geo:hasGeometry/geo:asWKT ?hasgeometry .\n  ?osm_id ?a ?b .\n\n  FILTER(STRSTARTS(STR(?a), STR(osmkey:)) && ?a != osmkey:type)\n}\nORDER BY ?osm_id",
+
+  "relationGraphExportQuery": "SELECT ?relation_id WHERE { VALUES ?relation_id { 2692425 } }",
+
+  "relationGraphSourceDataset": "ohm",
+
+  "relationGraphResolutionLimits": {
+    "max_objects": 500000,
+    "max_ids_per_request": 1000
+  },
+
+  "layers": [
+    {
+      "id": "1",
+      "name": "German Empire (1890-1918, OHM)",
+      "geomfield": "?hasgeometry",
+      "color": "FF0000",
+      "style": "objects"
     }
   ]
 }

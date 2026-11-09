@@ -13,6 +13,7 @@
 #include <map>
 #include <memory>
 #include <ostream>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -165,7 +166,80 @@ struct OsmPrimitiveStore {
   std::vector<OsmNode> nodes;
   std::vector<OsmWay> ways;
   std::vector<OsmRelation> relations;
+
+  bool insertNode(const OsmNode& node);
+  bool insertWay(const OsmWay& way);
+  bool insertRelation(const OsmRelation& relation);
 };
+
+struct OsmUnresolvedReferences {
+  std::set<int64_t> nodeIds;
+  std::set<int64_t> wayIds;
+  std::set<int64_t> relationIds;
+
+  bool empty() const {
+    return nodeIds.empty() && wayIds.empty() && relationIds.empty();
+  }
+};
+
+struct OsmQleverResolutionLimits {
+  size_t maxRounds = 64;
+  size_t maxObjects = 100000;
+  size_t maxRelationDepth = 16;
+  size_t maxIdsPerRequest = 5000;
+};
+
+enum class OsmSourceDataset {
+  Osm,
+  Ohm
+};
+
+OsmUnresolvedReferences findUnresolvedOsmReferences(
+    const OsmPrimitiveStore& store);
+
+std::string buildQleverWayBatchQuery(
+    const std::set<int64_t>& wayIds,
+    OsmSourceDataset source = OsmSourceDataset::Osm);
+
+void fetchQleverWaysIntoStore(
+    const std::string& backendUrl,
+    const std::set<int64_t>& wayIds,
+    OsmPrimitiveStore* store,
+    const std::string& remoteAddr = "",
+    size_t maxIdsPerRequest = 5000,
+    OsmSourceDataset source = OsmSourceDataset::Osm);
+
+std::string buildQleverNodeBatchQuery(
+    const std::set<int64_t>& nodeIds,
+    OsmSourceDataset source = OsmSourceDataset::Osm);
+
+void fetchQleverNodesIntoStore(
+    const std::string& backendUrl,
+    const std::set<int64_t>& nodeIds,
+    OsmPrimitiveStore* store,
+    const std::string& remoteAddr = "",
+    size_t maxIdsPerRequest = 5000,
+    OsmSourceDataset source = OsmSourceDataset::Osm);
+
+std::string buildQleverRelationBatchQuery(
+    const std::set<int64_t>& relationIds,
+    OsmSourceDataset source = OsmSourceDataset::Osm);
+
+void fetchQleverRelationsIntoStore(
+    const std::string& backendUrl,
+    const std::set<int64_t>& relationIds,
+    OsmPrimitiveStore* store,
+    const std::string& remoteAddr = "",
+    size_t maxIdsPerRequest = 5000,
+    OsmSourceDataset source = OsmSourceDataset::Osm);
+
+void resolveQleverOsmReferencesIntoStore(
+    const std::string& backendUrl,
+    OsmPrimitiveStore* store,
+    const std::string& remoteAddr = "",
+    const OsmQleverResolutionLimits& limits =
+        OsmQleverResolutionLimits(),
+    OsmSourceDataset source = OsmSourceDataset::Osm);
 
 class OsmPrimitiveBuilder {
   public:
@@ -213,6 +287,32 @@ void writeOsmXml(const OsmPrimitiveStore& store, std::ostream& out);
 
 void writeOsmXmlFile(const OsmPrimitiveStore& store,
                      const std::string& fileName);
+
+class TsvStreamReader {
+  public:
+    using HeaderCallback =
+        std::function<void(const std::vector<std::string>&)>;
+    using RowCallback =
+        std::function<void(const std::vector<std::string>&)>;
+
+    TsvStreamReader(HeaderCallback onHeader, RowCallback onRow);
+
+    void parse(const char* data, size_t size);
+    void finish();
+
+  private:
+    void finishCell();
+    void finishRow();
+
+    HeaderCallback _onHeader;
+    RowCallback _onRow;
+    ParseState _state = IN_HEADER;
+    std::vector<std::string> _header;
+    std::vector<std::string> _currentRow;
+    std::string _dangling;
+    bool _headerFinished = false;
+};
+
 class OsmResultReader {
   public:
     using ObjectCallback = std::function<void(const OsmObject&)>;
@@ -223,23 +323,140 @@ class OsmResultReader {
     void finish();
 
   private:
-    void finishCell();
-    void finishRow();
     void validateHeader() const;
     void startObject(const std::string& osmId, const std::string& wkt);
-    void mergeRowIntoCurrentObject();
+    void mergeRowIntoCurrentObject(
+        const std::vector<std::string>& row);
 
     ObjectCallback _cb;
-    ParseState _state = IN_HEADER;
+    TsvStreamReader _tsvReader;
     std::vector<std::string> _colNames;
-    std::vector<std::string> _curRow;
-    std::string _dangling;
-    size_t _curCol = 0;
 
     OsmObject _current;
     bool _hasCurrent = false;
     std::string _lastFinishedId;
-    bool _headerValidated = false;
+};
+
+class OsmRelationResultReader {
+  public:
+    using RelationCallback = std::function<void(const OsmRelation&)>;
+
+    explicit OsmRelationResultReader(RelationCallback cb);
+
+    void parse(const char* data, size_t size);
+    void finish();
+
+  private:
+    void validateHeader() const;
+    void startRelation(int64_t relationId);
+    void mergeRowIntoCurrentRelation(
+        const std::vector<std::string>& row);
+    void emitCurrentRelation();
+
+    RelationCallback _cb;
+    TsvStreamReader _tsvReader;
+    std::vector<std::string> _colNames;
+
+    OsmRelation _current;
+    std::map<std::string, std::set<std::string>> _currentTagValues;
+    std::vector<std::pair<uint64_t, OsmRelationMember>> _currentMembers;
+    bool _hasCurrent = false;
+    int64_t _lastFinishedId = 0;
+    bool _hasFinishedRelation = false;
+};
+
+class OsmWayResultReader {
+  public:
+    using WayCallback = std::function<void(const OsmWay&)>;
+
+    explicit OsmWayResultReader(WayCallback cb);
+
+    void parse(const char* data, size_t size);
+    void finish();
+
+  private:
+    void validateHeader() const;
+    void startWay(int64_t wayId);
+    void mergeRowIntoCurrentWay(const std::vector<std::string>& row);
+    void emitCurrentWay();
+
+    WayCallback _cb;
+    TsvStreamReader _tsvReader;
+    std::vector<std::string> _colNames;
+
+    OsmWay _current;
+    std::map<std::string, std::set<std::string>> _currentTagValues;
+    std::vector<std::pair<uint64_t, int64_t>> _currentNodeRefs;
+    bool _hasCurrent = false;
+    int64_t _lastFinishedId = 0;
+    bool _hasFinishedWay = false;
+};
+
+class OsmWayTsvCollector {
+  public:
+    explicit OsmWayTsvCollector(OsmPrimitiveStore* store);
+
+    void parse(const char* data, size_t size);
+    void finish();
+
+  private:
+    OsmPrimitiveStore* _store;
+    OsmWayResultReader _reader;
+    bool _finished = false;
+};
+
+class OsmRelationTsvCollector{
+  public:
+    explicit OsmRelationTsvCollector(OsmPrimitiveStore* store);
+
+    void parse(const char* data, size_t size);
+    void finish();
+
+  private:
+    OsmPrimitiveStore* _store;
+    OsmRelationResultReader _reader;
+    bool _finished = false;
+};
+
+class OsmNodeResultReader {
+  public:
+    using NodeCallback = std::function<void(const OsmNode&)>;
+
+    explicit OsmNodeResultReader(NodeCallback cb);
+
+    void parse(const char* data, size_t size);
+    void finish();
+
+  private:
+    void validateHeader();
+    void startNode(int64_t nodeId);
+    void mergeRowIntoCurrentNode(const std::vector<std::string>& row);
+    void emitCurrentNode();
+
+    NodeCallback _cb;
+    TsvStreamReader _tsvReader;
+    std::vector<std::string> _colNames;
+
+    OsmNode _current;
+    std::map<std::string, std::set<std::string>> _currentTagValues;
+    bool _hasCurrent = false;
+    bool _hasCoordinates = false;
+    bool _usesWktCoordinates = false;
+    int64_t _lastFinishedId = 0;
+    bool _hasFinishedNode = false;
+};
+
+class OsmNodeTsvCollector {
+  public:
+    explicit OsmNodeTsvCollector(OsmPrimitiveStore* store);
+
+    void parse(const char* data, size_t size);
+    void finish();
+
+  private:
+    OsmPrimitiveStore* _store;
+    OsmNodeResultReader _reader;
+    bool _finished = false;
 };
 
 class OsmTsvToXmlExporter {
@@ -559,6 +776,38 @@ void exportQleverTsvToOsmXmlFile(const std::string& backendUrl,
                                  const std::string& query,
                                  const std::string& fileName,
                                  const std::string& remoteAddr = "");
+
+void exportQleverRelationTsvToOsmXml(const std::string& backendUrl,
+                                     const std::string& query,
+                                     std::ostream& out,
+                                     const std::string& remoteAddr = "");
+
+std::set<int64_t> readRootRelationIdsFromQleverQuery(
+    const std::string& backendUrl,
+    const std::string& query,
+    const std::string& remoteAddr = "");
+
+void exportQleverRelationGraphToOsmXml(
+    const std::string& backendUrl,
+    const std::set<int64_t>& rootRelationIds,
+    std::ostream& out,
+    const std::string& remoteAddr = "",
+    const OsmQleverResolutionLimits& limits =
+        OsmQleverResolutionLimits(),
+    OsmSourceDataset source = OsmSourceDataset::Osm);
+
+void exportQleverRelationGraphToOsmXmlFile(
+    const std::string& backendUrl,
+    const std::set<int64_t>& rootRelationIds,
+    const std::string& fileName,
+    const std::string& remoteAddr = "",
+    const OsmQleverResolutionLimits& limits =
+        OsmQleverResolutionLimits(),
+    OsmSourceDataset source = OsmSourceDataset::Osm);
+
+void exportQleverRelationTsvToOsmXmlFile(
+    const std::string& backendUrl, const std::string& query,
+    const std::string& fileName, const std::string& remoteAddr = "");
 
 }  // namespace petrimaps
 

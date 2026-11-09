@@ -75,7 +75,7 @@ class Server : public util::http::Handler {
                                          const HeaderParams& headers,
                                          int sock) const;
 
-  void createCache(const GeomCacheConfig& cfg) const
+  void createCache(const GeomCacheConfig& cfg) const;
   std::string loadCache(const GeomCacheConfig& cfg) const;
 
   void clearSession(const std::string& id) const;

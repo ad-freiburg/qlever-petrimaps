@@ -820,7 +820,8 @@ h1, #msg-heading {
     font-size: 80%;
 }
 
-#tile-modal {
+#tile-modal,
+#osm-modal {
     position: fixed;
     inset: 0;
     display: none;
@@ -830,7 +831,8 @@ h1, #msg-heading {
     z-index: 2000;
 }
 
-#tile-card {
+#tile-card,
+#osm-card {
     width: min(760px, 92vw);
     background: #fff;
     border-radius: 16px;
@@ -894,4 +896,59 @@ h1, #msg-heading {
 #tile-actions {
     display: flex;
     gap: 12px;
+}
+
+#osm-mode-list {
+    display: grid;
+    gap: 12px;
+    margin: 18px 0;
+}
+
+.osm-mode-card {
+    display: flex;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid #d7d7d7;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.osm-mode-card:has(input:checked) {
+    border-color: #4d7cb8;
+    background: #f2f7ff;
+}
+
+.osm-mode-card.is-disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.osm-mode-copy {
+    display: grid;
+    gap: 5px;
+}
+
+.osm-mode-title {
+    font-weight: 700;
+}
+
+.osm-mode-desc,
+#osm-preserve-unavailable {
+    color: #666;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+#osm-preserve-unavailable {
+    margin: -4px 0 16px;
+}
+
+#osm-actions {
+    display: flex;
+    gap: 12px;
+}
+
+#osm-actions button {
+    padding: 6px 12px;
+    font-size: 15px;
 }

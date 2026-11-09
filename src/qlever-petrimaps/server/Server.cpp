@@ -2321,6 +2321,90 @@ util::http::Answer Server::handleOsmExportReq(
         "OSM export config must contain a string query field.");
   }
 
+  std::string inputFormat = "geometry-tsv";
+
+  if (config.contains("input_format")) {
+    if (!config["input_format"].is_string()) {
+      throw std::invalid_argument(
+          "OSM export input_format must be a string.");
+      }
+
+      inputFormat = config["input_format"].get<std::string>();
+  }
+
+  if (inputFormat != "geometry-tsv" &&
+      inputFormat != "relation-tsv" &&
+      inputFormat != "relation-graph") {
+    throw std::invalid_argument(
+        "Unsupported OSM export input_format: " + inputFormat);
+  }
+
+  petrimaps::OsmSourceDataset sourceDataset =
+      petrimaps::OsmSourceDataset::Osm;
+
+  if (config.contains("source_dataset")) {
+    if (inputFormat != "relation-graph") {
+      throw std::invalid_argument(
+          "source_dataset is only supported for relation-graph export.");
+    }
+
+    if (!config["source_dataset"].is_string()) {
+      throw std::invalid_argument(
+          "source_dataset must be either 'osm' or 'ohm'.");
+    }
+
+    const auto sourceName = config["source_dataset"].get<std::string>();
+
+    if (sourceName == "ohm") {
+      sourceDataset = petrimaps::OsmSourceDataset::Ohm;
+    } else if (sourceName != "osm") {
+      throw std::invalid_argument(
+          "source_dataset must be either 'osm' or 'ohm'.");
+    }
+  }
+
+  OsmQleverResolutionLimits limits;
+
+  if (config.contains("resolution_limits")) {
+      if (inputFormat != "relation-graph") {
+        throw std::invalid_argument(
+          "resolution_limits is only supported for relation-graph export.");
+      }
+
+      const auto& requestedLimits = config["resolution_limits"];
+
+      if (!requestedLimits.is_object()) {
+        throw std::invalid_argument(
+          "resolution_limits must be an object.");
+      }
+
+      if (requestedLimits.contains("max_objects")) {
+        const auto& value = requestedLimits["max_objects"];
+
+        if (!value.is_number_unsigned() ||
+            value.get<size_t>() == 0 ||
+            value.get<size_t>() > 1000000) {
+          throw std::invalid_argument(
+              "max_objects must be an integer between 1 and 1000000.");
+        }
+
+        limits.maxObjects = value.get<size_t>();
+      }
+
+      if (requestedLimits.contains("max_ids_per_request")) {
+        const auto& value = requestedLimits["max_ids_per_request"];
+
+        if (!value.is_number_unsigned() ||
+            value.get<size_t>() == 0 ||
+            value.get<size_t>() > 10000) {
+          throw std::invalid_argument(
+              "max_ids_per_request must be an integer between 1 and 10000.");
+        }
+
+        limits.maxIdsPerRequest = value.get<size_t>();
+      }
+  }
+
   const std::string& backend = pars.find("backend")->second;
   const std::string query = config["query"].get<std::string>();
   const std::string remoteAddr = remoteAddress(sock, headerParams);
@@ -2335,8 +2419,22 @@ util::http::Answer Server::handleOsmExportReq(
   close(tempFd);
 
   try {
-    exportQleverTsvToOsmXmlFile(
+    if (inputFormat == "geometry-tsv") {
+      exportQleverTsvToOsmXmlFile(
         backend, query, tempPath, remoteAddr);
+    } else if (inputFormat == "relation-tsv") {
+      exportQleverRelationTsvToOsmXmlFile(
+          backend, query, tempPath, remoteAddr);
+    }
+     else {
+      const auto rootRelationIds =
+      readRootRelationIdsFromQleverQuery(
+          backend, query, remoteAddr);
+
+      exportQleverRelationGraphToOsmXmlFile(
+          backend, rootRelationIds, tempPath, remoteAddr, limits,
+          sourceDataset);
+    }
   } catch (...) {
     unlink(tempPath);
     throw;
