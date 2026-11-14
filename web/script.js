@@ -10,7 +10,39 @@ let currentTileConfig = null;
 
 let urlParams = window.postParams;
 let qleverBackend = urlParams["backend"];
-let query = urlParams["query"];
+
+let requestConfig = {};
+if (urlParams["cfg"]) {
+    requestConfig = JSON.parse(urlParams["cfg"]);
+}
+
+let query = urlParams["query"] || requestConfig["query"];
+let exportQuery = requestConfig["exportQuery"] || query;
+let sourcePrimitivesExportQuery =
+    requestConfig["sourcePrimitivesExportQuery"] || "";
+let sourcePrimitivesResolutionLimits =
+    requestConfig["sourcePrimitivesResolutionLimits"] || null;
+let sourcePrimitivesSourceDataset =
+    requestConfig["sourcePrimitivesSourceDataset"] || "osm";
+
+let relationGraphExportQuery =
+    requestConfig["relationGraphExportQuery"] || "";
+let relationGraphResolutionLimits =
+    requestConfig["relationGraphResolutionLimits"] || null;
+let relationGraphSourceDataset =
+    requestConfig["relationGraphSourceDataset"] || "osm";
+
+let preserveExportQuery =
+    sourcePrimitivesExportQuery || relationGraphExportQuery;
+let preserveResolutionLimits = sourcePrimitivesExportQuery
+    ? sourcePrimitivesResolutionLimits
+    : relationGraphResolutionLimits;
+let preserveSourceDataset = sourcePrimitivesExportQuery
+    ? sourcePrimitivesSourceDataset
+    : relationGraphSourceDataset;
+let preserveInputFormat = sourcePrimitivesExportQuery
+    ? "source-primitives"
+    : "relation-graph";
 let mode = urlParams["mode"];
 
 const heatmapStyles = ["spectralexp", "spectral", "RdYlGn", "RdYlGnexp", "RdYlBu","RdYlBuexp", "w2b", "b2w", "RdGy","RdGyexp","YlOrRd","YlOrRdexp","Blues","Bluesexp","Greens","Greensexp","Greys","Greysexp","Oranges","Orangesexp","Reds", "Redsexp"];
@@ -469,6 +501,124 @@ document.getElementById("ex-geojson").onclick = function() {
     a.setAttribute("download", "export.json");
     a.click();
 }
+
+function showOsmDialog() {
+    document.getElementById("tile-modal").style.display = "none";
+    const fastMode = document.getElementById("osm-fast-mode");
+    const preserveMode = document.getElementById("osm-preserve-mode");
+    const fastCard = document.getElementById("osm-fast-card");
+    const preserveCard = document.getElementById("osm-preserve-card");
+
+    const fastAvailable = Boolean(qleverBackend && exportQuery);
+    const preserveAvailable =
+        Boolean(qleverBackend && preserveExportQuery);
+
+    fastMode.disabled = !fastAvailable;
+    preserveMode.disabled = !preserveAvailable;
+
+    fastCard.classList.toggle("is-disabled", !fastAvailable);
+    preserveCard.classList.toggle("is-disabled", !preserveAvailable);
+
+    document.getElementById("osm-preserve-unavailable").hidden =
+        preserveAvailable;
+
+    if (fastAvailable) {
+        fastMode.checked = true;
+    } else if (preserveAvailable) {
+        preserveMode.checked = true;
+    } else {
+        alert("OSM export requires a QLever backend and an export query.");
+        return;
+    }
+
+    document.getElementById("osm-modal").style.display = "flex";
+}
+
+function hideOsmDialog() {
+    document.getElementById("osm-modal").style.display = "none";
+}
+
+function selectedOsmExportConfig() {
+    const selectedMode = document.querySelector(
+        'input[name="osm-export-mode"]:checked'
+    ).value;
+
+    if (selectedMode === "fast") {
+        return {
+            input_format: "geometry-tsv",
+            query: exportQuery
+        };
+    }
+
+    const config = {
+        input_format: preserveInputFormat,
+        query: preserveExportQuery,
+        source_dataset: preserveSourceDataset
+    };
+
+    if (preserveResolutionLimits) {
+        config.resolution_limits = preserveResolutionLimits;
+    }
+
+    return config;
+}
+
+async function downloadOsmExport(config) {
+    const downloadButton = document.getElementById("osm-download");
+    const cancelButton = document.getElementById("osm-cancel");
+
+    downloadButton.disabled = true;
+    cancelButton.disabled = true;
+    downloadButton.textContent = "Exporting OSM...";
+
+    try {
+        const form = new URLSearchParams({
+            backend: qleverBackend,
+            cfg: JSON.stringify(config)
+        });
+
+        const response = await fetch("osm-export", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: form.toString()
+        });
+
+        if (!response.ok) {
+            throw new Error(await response.text());
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+
+        link.href = url;
+        link.download = "export.osm";
+        link.click();
+
+        URL.revokeObjectURL(url);
+        hideOsmDialog();
+    } catch (error) {
+        alert("OSM export failed: " + error.message);
+    } finally {
+        downloadButton.disabled = false;
+        cancelButton.disabled = false;
+        downloadButton.textContent = "Download .osm";
+    }
+}
+
+document.getElementById("ex-osm").onclick = function() {
+    showOsmDialog();
+};
+
+document.getElementById("osm-cancel").onclick = function() {
+    hideOsmDialog();
+};
+
+document.getElementById("osm-download").onclick = function() {
+    downloadOsmExport(selectedOsmExportConfig());
+};
 
 document.getElementById("ex-tsv").onclick = function() {
     let a = document.createElement("a");
