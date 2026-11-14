@@ -385,6 +385,142 @@ std::string getRequiredCell(
   throw std::runtime_error("Missing required column: " + wantedColumn);
 }
 
+std::string getOptionalCell(const std::vector<std::string>& columns,
+                            const std::vector<std::string>& row,
+                            const std::string& wantedColumn) {
+  for (size_t i = 0; i < columns.size() && i < row.size(); i++) {
+    if (normalizeSparqlResultColumn(columns[i]) == wantedColumn) {
+      return row[i];
+    }
+  }
+
+  return "";
+}
+
+uint64_t parsePositiveMetadataInteger(const std::string& raw,
+                                      const std::string& fieldName) {
+  std::string value = raw;
+
+  if (fieldName == "changeset") {
+    if (value.size() >= 2 && value.front() == '<' &&
+        value.back() == '>') {
+      value = value.substr(1, value.size() - 2);
+    }
+
+    const std::vector<std::string> changesetIriPrefixes = {
+        "http://www.openstreetmap.org/changeset/",
+        "https://www.openstreetmap.org/changeset/",
+        "http://www.openhistoricalmap.org/changeset/",
+        "https://www.openhistoricalmap.org/changeset/"};
+
+    for (const auto& prefix : changesetIriPrefixes) {
+      if (value.rfind(prefix, 0) == 0) {
+        value = value.substr(prefix.size());
+        break;
+      }
+    }
+  }
+
+  if (value.empty() ||
+      value.find_first_not_of("0123456789") != std::string::npos) {
+    throw std::runtime_error(
+        "Invalid metadata " + fieldName + ": " + raw);
+  }
+
+  try {
+    const auto result = std::stoull(value);
+
+    if (result == 0) {
+      throw std::runtime_error(
+          "Metadata " + fieldName + " must be positive: " + raw);
+    }
+
+    return result;
+  } catch (const std::invalid_argument&) {
+    throw std::runtime_error(
+        "Invalid metadata " + fieldName + ": " + raw);
+  } catch (const std::out_of_range&) {
+    throw std::runtime_error(
+        "Metadata " + fieldName + " is out of range: " + raw);
+  }
+}
+
+std::string normalizeOsmTimestamp(const std::string& raw) {
+  std::string value = normalizeSparqlLiteralValue(raw);
+
+  if (value.size() != 19 || value[4] != '-' || value[7] != '-' ||
+      value[10] != 'T' || value[13] != ':' || value[16] != ':') {
+    return value;
+  }
+
+  for (size_t i = 0; i < value.size(); ++i) {
+    if (i == 4 || i == 7 || i == 10 || i == 13 || i == 16) {
+      continue;
+    }
+
+    if (value[i] < '0' || value[i] > '9') {
+      return value;
+    }
+  }
+
+  return value + "Z";
+}
+
+void mergeMetadataFromRow(
+    OsmMetadata* metadata,
+    const std::vector<std::string>& columns,
+    const std::vector<std::string>& row,
+    const std::string& objectDescription) {
+  const auto mergeInteger =
+      [&](const std::string& column, bool* hasValue, uint64_t* target) {
+        const auto raw = getOptionalCell(columns, row, column);
+
+        if (raw.empty()) {
+          return;
+        }
+
+        const auto value = parsePositiveMetadataInteger(raw, column);
+
+        if (*hasValue && *target != value) {
+          throw std::runtime_error(
+              "Conflicting metadata " + column + " for " +
+              objectDescription);
+        }
+
+        *hasValue = true;
+        *target = value;
+      };
+  const auto mergeString =
+      [&](const std::string& column, bool* hasValue, std::string* target) {
+        const auto raw = getOptionalCell(columns, row, column);
+
+        if (raw.empty()) {
+          return;
+        }
+
+        const auto value =
+            column == "timestamp"
+                ? normalizeOsmTimestamp(raw)
+                : normalizeSparqlLiteralValue(raw);
+
+        if (*hasValue && *target != value) {
+          throw std::runtime_error(
+                "Conflicting metadata " + column + " for " +
+                objectDescription);
+        }
+
+        *hasValue = true;
+        *target = value;
+      };
+
+  mergeInteger("version", &metadata->hasVersion, &metadata->version);
+  mergeString("timestamp", &metadata->hasTimestamp, &metadata->timestamp);
+  mergeInteger("changeset", &metadata->hasChangeset,
+               &metadata->changeset);
+  mergeInteger("uid", &metadata->hasUid, &metadata->uid);
+  mergeString("user", &metadata->hasUser, &metadata->user);
+}
+
 std::string getRequiredCell(const std::vector<std::string>& columns,
                             const std::vector<std::string>& row,
                             const std::string& wantedColumn) {
@@ -407,6 +543,30 @@ std::string intToXmlAttr(int64_t value) {
   return std::to_string(value);
 }
 
+void appendMetadataXmlAttributes(
+    const OsmMetadata& metadata,
+    std::map<std::string, std::string>* attributes) {
+  if (metadata.hasVersion) {
+    (*attributes)["version"] = std::to_string(metadata.version);
+  }
+
+  if (metadata.hasTimestamp) {
+    (*attributes)["timestamp"] = metadata.timestamp;
+  }
+
+  if (metadata.hasChangeset) {
+    (*attributes)["changeset"] = std::to_string(metadata.changeset);
+  }
+
+  if (metadata.hasUid) {
+    (*attributes)["uid"] = std::to_string(metadata.uid);
+  }
+
+  if (metadata.hasUser) {
+    (*attributes)["user"] = metadata.user;
+  }
+}
+
 using GeneratedNodeIds =
     std::map<std::pair<std::string, std::string>, int64_t>;
 
@@ -425,7 +585,7 @@ int64_t addGeneratedNode(
 
   const int64_t id = (*nextNodeId)--;
   generatedNodeIdsByCoordinate->emplace(coordinateKey, id);
-  store->insertNode({id, point.getX(), point.getY(), {}});
+  store->insertNode({id, point.getX(), point.getY(), {}, {}});
   return id;
 }
 
@@ -745,9 +905,11 @@ bool OsmPrimitiveStore::insertNode(const OsmNode& node) {
     return true;
   }
 
-  if (existing->lon == node.lon && existing->lat == node.lat &&
-    existing->tags == node.tags) {
-  return false;
+  if (existing->lon == node.lon &&
+      existing->lat == node.lat &&
+      existing->tags == node.tags &&
+      existing->metadata == node.metadata) {
+    return false;
   }
 
   throw std::runtime_error("Conflicting node definition for OSM ID: " +
@@ -765,7 +927,8 @@ bool OsmPrimitiveStore::insertWay(const OsmWay& way) {
   }
 
   if (existing->nodeRefs == way.nodeRefs &&
-    existing->tags == way.tags) {
+      existing->tags == way.tags &&
+      existing->metadata == way.metadata) {
     return false;
   }
 
@@ -796,7 +959,9 @@ bool OsmPrimitiveStore::insertRelation(const OsmRelation& relation) {
                           left.role == right.role;
                  });
 
-  if (sameMembers && existing->tags == relation.tags) {
+  if (sameMembers &&
+      existing->tags == relation.tags &&
+      existing->metadata == relation.metadata) {
     return false;
   }
 
@@ -934,8 +1099,11 @@ std::string buildQleverWayBatchQuery(
         << "<https://www.openstreetmap.org/wiki/Key:>\n\n";
   query << "PREFIX ql: "
         << "<http://qlever.cs.uni-freiburg.de/builtin-functions/>\n\n";
+  query << "PREFIX osmmeta: "
+        << "<https://www.openstreetmap.org/meta/>\n";
 
   query << "SELECT ?way_id ?record_kind ?tag_key ?tag_value "
+        << "?version ?timestamp ?changeset ?uid ?user "
         << "?node_ref ?node_sequence WHERE {\n";
 
   for (const auto wayId : wayIds) {
@@ -970,6 +1138,11 @@ std::string buildQleverWayBatchQuery(
   query << "      \"https://www.openstreetmap.org/wiki/Key:\"))\n";
   query << "    BIND(\"tag\" AS ?record_kind)\n";
   query << "  }\n";
+  query << "  OPTIONAL { ?way osmmeta:version ?version . }\n";
+  query << "  OPTIONAL { ?way osmmeta:timestamp ?timestamp . }\n";
+  query << "  OPTIONAL { ?way osmmeta:changeset ?changeset . }\n";
+  query << "  OPTIONAL { ?way osmmeta:uid ?uid . }\n";
+  query << "  OPTIONAL { ?way osmmeta:user ?user . }\n";
   query << "}\n";
   query << "ORDER BY ?way_id\n";
 
@@ -1043,8 +1216,11 @@ std::string buildQleverNodeBatchQuery(
         << "<http://qlever.cs.uni-freiburg.de/builtin-functions/>\n\n";
   query << "PREFIX geo: "
         << "<http://www.opengis.net/ont/geosparql#>\n\n";
+  query << "PREFIX osmmeta: "
+        << "<https://www.openstreetmap.org/meta/>\n";
 
   query << "SELECT ?node_id ?record_kind ?tag_key ?tag_value ?wkt "
+        << "?version ?timestamp ?changeset ?uid ?user "
         << "WHERE {\n";
 
   for (const auto nodeId : nodeIds) {
@@ -1093,7 +1269,11 @@ std::string buildQleverNodeBatchQuery(
     query << "  }\n";
     needsUnion = true;
   }
-
+  query << "  OPTIONAL { ?node osmmeta:version ?version . }\n";
+  query << "  OPTIONAL { ?node osmmeta:timestamp ?timestamp . }\n";
+  query << "  OPTIONAL { ?node osmmeta:changeset ?changeset . }\n";
+  query << "  OPTIONAL { ?node osmmeta:uid ?uid . }\n";
+  query << "  OPTIONAL { ?node osmmeta:user ?user . }\n";
   query << "}\n";
   query << "ORDER BY ?node_id\n";
 
@@ -1171,9 +1351,12 @@ std::string buildQleverRelationBatchQuery(
         << "<http://qlever.cs.uni-freiburg.de/builtin-functions/>\n\n";
   query << "PREFIX rdf: "
         << "<http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n\n";
+  query << "PREFIX osmmeta: "
+        << "<https://www.openstreetmap.org/meta/>\n";
 
   query << "SELECT ?relation_id ?record_kind ?tag_key ?tag_value "
         << "?member_type ?member_ref ?member_role ?member_sequence "
+        << "?version ?timestamp ?changeset ?uid ?user "
         << "WHERE {\n";
 
   for (const auto relationId : relationIds) {
@@ -1212,6 +1395,11 @@ std::string buildQleverRelationBatchQuery(
   query << "      \"https://www.openstreetmap.org/wiki/Key:\"))\n";
   query << "    BIND(\"tag\" AS ?record_kind)\n";
   query << "  }\n";
+  query << "  OPTIONAL { ?relation osmmeta:version ?version . }\n";
+  query << "  OPTIONAL { ?relation osmmeta:timestamp ?timestamp . }\n";
+  query << "  OPTIONAL { ?relation osmmeta:changeset ?changeset . }\n";
+  query << "  OPTIONAL { ?relation osmmeta:uid ?uid . }\n";
+  query << "  OPTIONAL { ?relation osmmeta:user ?user . }\n";
   query << "}\n";
   query << "ORDER BY ?relation_id\n";
 
@@ -1976,6 +2164,10 @@ void OsmWayResultReader::mergeRowIntoCurrentWay(
     startWay(wayId);
   }
 
+  mergeMetadataFromRow(
+      &_current.metadata, _colNames, row,
+      "way ID " + std::to_string(wayId));
+
   const auto recordKind = normalizeSparqlLiteralValue(
       getRequiredCell(_colNames, row, "record_kind"));
 
@@ -2167,6 +2359,10 @@ void OsmNodeResultReader::mergeRowIntoCurrentNode(
     startNode(nodeId);
   }
 
+  mergeMetadataFromRow(
+      &_current.metadata, _colNames, row,
+      "node ID " + std::to_string(nodeId));
+
   const auto recordKind = normalizeSparqlLiteralValue(
       getRequiredCell(_colNames, row, "record_kind"));
 
@@ -2336,6 +2532,10 @@ void OsmRelationResultReader::mergeRowIntoCurrentRelation(
   if (!_hasCurrent || _current.id != relationId) {
     startRelation(relationId);
   }
+
+  mergeMetadataFromRow(
+      &_current.metadata, _colNames, row,
+      "relation ID " + std::to_string(relationId));
 
   const auto recordKind = normalizeSparqlLiteralValue(
       getRequiredCell(_colNames, row, "record_kind"));
@@ -2561,7 +2761,7 @@ void OsmPrimitiveBuilder::append(const OsmObject& object,
   if (wktType == util::geo::WKTType::POINT) {
     const auto point = util::geo::pointFromWKT<double>(wktStart, nullptr);
     store->insertNode(
-        {_nextNodeId--, point.getX(), point.getY(), tags});
+        {_nextNodeId--, point.getX(), point.getY(), tags, {}});
   } else if (wktType == util::geo::WKTType::MULTIPOINT) {
     const auto multiPoint =
         util::geo::multiPointFromWKT<double>(wktStart, nullptr);
@@ -2629,11 +2829,15 @@ OsmXmlStreamWriter::OsmXmlStreamWriter(std::ostream& out)
 OsmXmlStreamWriter::~OsmXmlStreamWriter() = default;
 
 void OsmXmlStreamWriter::writeNode(const OsmNode& node) {
-  _xml->openTag("node", {
+  std::map<std::string, std::string> attributes = {
       {"id", intToXmlAttr(node.id)},
       {"lat", doubleToXmlAttr(node.lat)},
       {"lon", doubleToXmlAttr(node.lon)},
-  });
+  };
+
+  appendMetadataXmlAttributes(node.metadata, &attributes);
+
+  _xml->openTag("node", attributes);
 
   for (const auto& tag : sortedTags(node.tags)) {
     _xml->openTag("tag", {{"k", tag.first}, {"v", tag.second}});
@@ -2644,7 +2848,13 @@ void OsmXmlStreamWriter::writeNode(const OsmNode& node) {
 }
 
 void OsmXmlStreamWriter::writeWay(const OsmWay& way) {
-  _xml->openTag("way", {{"id", intToXmlAttr(way.id)}});
+  std::map<std::string, std::string> attributes = {
+      {"id", intToXmlAttr(way.id)},
+  };
+
+  appendMetadataXmlAttributes(way.metadata, &attributes);
+
+  _xml->openTag("way", attributes);
 
   for (const auto& nodeRef : way.nodeRefs) {
     _xml->openTag("nd", {{"ref", intToXmlAttr(nodeRef)}});
@@ -2660,7 +2870,13 @@ void OsmXmlStreamWriter::writeWay(const OsmWay& way) {
 }
 
 void OsmXmlStreamWriter::writeRelation(const OsmRelation& relation) {
-  _xml->openTag("relation", {{"id", intToXmlAttr(relation.id)}});
+  std::map<std::string, std::string> attributes = {
+      {"id", intToXmlAttr(relation.id)},
+  };
+
+  appendMetadataXmlAttributes(relation.metadata, &attributes);
+
+  _xml->openTag("relation", attributes);
 
   for (const auto& member : relation.members) {
     _xml->openTag("member",
@@ -2734,73 +2950,157 @@ void exportQleverTsvToOsmXml(const std::string& backendUrl,
   exporter.finish();
 }
 
-std::set<int64_t> readRootRelationIdsFromQleverQuery(
-    const std::string& backendUrl,
-    const std::string& query,
-    const std::string& remoteAddr) {
-  std::set<int64_t> relationIds;
-  std::vector<std::string> columns;
+OsmSourcePrimitiveRoots parseSourcePrimitiveRootsFromTsv(
+    const std::string& tsv,
+    OsmSourceRootQueryFormat format) {
+  OsmSourcePrimitiveRoots roots;
+
+  size_t primitiveTypeColumn = 0;
+  size_t primitiveIdColumn = 0;
   size_t relationIdColumn = 0;
   bool hasHeader = false;
 
   TsvStreamReader reader(
-      [&columns, &relationIdColumn, &hasHeader](
-          const std::vector<std::string>& header) {
-        columns = header;
+      [&primitiveTypeColumn, &primitiveIdColumn, &relationIdColumn,
+       &hasHeader, format](const std::vector<std::string>& header) {
+        if (format == OsmSourceRootQueryFormat::LegacyRelationIds) {
+          for (size_t i = 0; i < header.size(); ++i) {
+            if (normalizeSparqlResultColumn(header[i]) == "relation_id") {
+              relationIdColumn = i;
+              hasHeader = true;
+              return;
+            }
+          }
 
-        for (size_t i = 0; i < columns.size(); ++i) {
-          if (normalizeSparqlResultColumn(columns[i]) == "relation_id") {
-            relationIdColumn = i;
-            hasHeader = true;
-            return;
+          throw std::runtime_error(
+              "Relation-graph query result has no relation_id column.");
+        }
+
+        bool hasPrimitiveType = false;
+        bool hasPrimitiveId = false;
+
+        for (size_t i = 0; i < header.size(); ++i) {
+          const auto column = normalizeSparqlResultColumn(header[i]);
+
+          if (column == "primitive_type") {
+            primitiveTypeColumn = i;
+            hasPrimitiveType = true;
+          } else if (column == "primitive_id") {
+            primitiveIdColumn = i;
+            hasPrimitiveId = true;
           }
         }
 
-        throw std::runtime_error(
-            "Relation-graph query result has no relation_id column.");
-      },
-      [&relationIds, &relationIdColumn, &hasHeader](
-          const std::vector<std::string>& row) {
-        if (!hasHeader || relationIdColumn >= row.size()) {
+        if (!hasPrimitiveType || !hasPrimitiveId) {
           throw std::runtime_error(
-              "Relation-graph TSV row has no relation_id value.");
+              "Source-primitives query result requires primitive_type "
+              "and primitive_id column.");
         }
 
-        const auto relationId =
-            parseOsmId(row[relationIdColumn], "relation_id");
+        hasHeader = true;
+       },
+       [&roots, &primitiveTypeColumn, &primitiveIdColumn, &relationIdColumn,
+        &hasHeader, format](const std::vector<std::string>& row) {
+          if (!hasHeader) {
+            throw std::runtime_error(
+                "Source-primitives TSV row was received before its header.");
+          }
 
-        if (relationId <= 0) {
-          throw std::runtime_error(
-              "Relation-graph query returned a non-positive relation ID.");
-        }
+          if (format == OsmSourceRootQueryFormat::LegacyRelationIds) {
+            if (relationIdColumn >= row.size()) {
+              throw std::runtime_error(
+                  "Relation-graph TSV row has no relation_id value.");
+            }
 
-        relationIds.insert(relationId);
-      });
+            const auto relationId =
+                parseOsmId(row[relationIdColumn], "relation_id");
 
-  RequestReader requestReader(backendUrl, 0, 0, 0, 0);
+            if (relationId <= 0) {
+              throw std::runtime_error(
+                  "Relation-graph query returned a non-positive relation ID.");
+            }
 
-  LOG(INFO) << "[OSM EXPORT] Fetching root relation IDs";
+            roots.relationIds.insert(relationId);
+            return;
+          }
 
-  requestReader.requestRows(
-      query,
-      [&reader](const char* data, size_t size) {
-        reader.parse(data, size);
-      },
-      remoteAddr);
+          if (primitiveTypeColumn >= row.size() ||
+              primitiveIdColumn >= row.size()) {
+                throw std::runtime_error(
+                    "Source-primitives TSV row has no primitive_type or "
+                    "primitive_id value.");
+              }
+
+              const auto primitiveType =
+                  normalizeSparqlLiteralValue(row[primitiveTypeColumn]);
+              const auto primitiveId =
+                  parseOsmId(row[primitiveIdColumn], "primitive_id");
+
+              if (primitiveId <= 0) {
+                throw std::runtime_error(
+                    "Source-primitives query returned a non-positive primitive ID.");
+              }
+
+              if (primitiveType == "node") {
+                roots.nodeIds.insert(primitiveId);
+              } else if (primitiveType == "way") {
+                roots.wayIds.insert(primitiveId);
+              } else if (primitiveType == "relation") {
+                roots.relationIds.insert(primitiveId);
+              } else {
+                throw std::runtime_error(
+                    "Source-primitives query returned unsupported primitive type: " +
+                    primitiveType);
+              }
+        });
+  reader.parse(tsv.data(), tsv.size());
 
   reader.finish();
 
-  LOG(INFO) << "[OSM EXPORT] Found "
-          << relationIds.size()
-          << " root relation IDs";
-
-
-  if (relationIds.empty()) {
+  if (!hasHeader) {
     throw std::runtime_error(
-        "Relation-graph query returned no relation IDs.");
+        "Source-primitives query result has no TSV header.");
   }
 
-  return relationIds;
+  if (roots.empty()) {
+    throw std::runtime_error(
+        "Source-primitives query returned no root primitives.");
+  }
+
+  LOG(INFO) << "[OSM EXPORT] Found "
+            << roots.nodeIds.size() << " node roots, "
+            << roots.wayIds.size() << " way roots, "
+            << roots.relationIds.size() << " relation roots";
+
+  return roots;
+}
+
+OsmSourcePrimitiveRoots readSourcePrimitiveRootsFromQleverQuery(
+    const std::string& backendUrl,
+    const std::string& query,
+    OsmSourceRootQueryFormat format,
+    const std::string& remoteAddr) {
+  std::string tsv;
+
+  RequestReader requestReader(backendUrl, 0, 0, 0, 0);
+
+  LOG(INFO) << "[OSM EXPORT] Fetching source primitive roots";
+
+  requestReader.requestRows(
+      query,
+      [&tsv](const char* data, size_t size) {
+        tsv.append(data, size);
+      },
+      remoteAddr);
+
+  const auto roots = parseSourcePrimitiveRootsFromTsv(tsv, format);
+
+  LOG(INFO) << "[OSM EXPORT] Found "
+            << roots.nodeIds.size() << " node roots, "
+            << roots.wayIds.size() << " way roots, "
+            << roots.relationIds.size() << " relation roots";
+
+  return roots;
 }
 
 // _____________________________________________________________________________
@@ -2840,29 +3140,61 @@ void exportQleverRelationTsvToOsmXml(
   writeOsmXml(store, out);
 }
 
-void exportQleverRelationGraphToOsmXml(
+void exportQleverSourcePrimitivesToOsmXml(
     const std::string& backendUrl,
-    const std::set<int64_t>& rootRelationIds,
+    const OsmSourcePrimitiveRoots& roots,
     std::ostream& out,
     const std::string& remoteAddr,
     const OsmQleverResolutionLimits& limits,
     OsmSourceDataset source) {
-  if (rootRelationIds.empty()) {
+  if (roots.empty()) {
     throw std::invalid_argument(
-        "Relation-graph export requires at least one root relatoin ID.");
+        "Source-primitives export requires at least one root primitive.");
   }
 
   OsmPrimitiveStore store;
 
-  fetchQleverRelationsIntoStore(
-      backendUrl,
-      rootRelationIds,
-      &store,
-      remoteAddr,
-      limits.maxIdsPerRequest,
-      source);
+  fetchQleverNodesIntoStore(
+      backendUrl, roots.nodeIds, &store, remoteAddr,
+      limits.maxIdsPerRequest, source);
 
-  for (const auto rootId : rootRelationIds) {
+  fetchQleverWaysIntoStore(
+      backendUrl, roots.wayIds, &store, remoteAddr,
+      limits.maxIdsPerRequest, source);
+
+  fetchQleverRelationsIntoStore(
+      backendUrl, roots.relationIds, &store, remoteAddr,
+      limits.maxIdsPerRequest, source);
+
+  for (const auto rootId : roots.nodeIds) {
+    const auto found = std::find_if(
+        store.nodes.begin(), store.nodes.end(),
+        [rootId](const OsmNode& node) {
+          return node.id == rootId;
+        });
+
+    if (found == store.nodes.end()) {
+      throw std::runtime_error(
+          "QLever did not return requested root node ID: " +
+          std::to_string(rootId));
+    }
+  }
+
+  for (const auto rootId : roots.wayIds) {
+    const auto found = std::find_if(
+        store.ways.begin(), store.ways.end(),
+        [rootId](const OsmWay& way) {
+          return way.id == rootId;
+        });
+
+    if (found == store.ways.end()) {
+      throw std::runtime_error(
+          "QLever did not return requested root way ID: " +
+          std::to_string(rootId));
+    }
+  }
+
+  for (const auto rootId : roots.relationIds) {
     const auto found = std::find_if(
         store.relations.begin(), store.relations.end(),
         [rootId](const OsmRelation& relation) {
@@ -2871,7 +3203,7 @@ void exportQleverRelationGraphToOsmXml(
 
     if (found == store.relations.end()) {
       throw std::runtime_error(
-          "Qlever did not return requested root relation ID: " +
+          "QLever did not return requested root relation ID: " +
           std::to_string(rootId));
     }
   }
@@ -2883,8 +3215,10 @@ void exportQleverRelationGraphToOsmXml(
 }
 
 void exportQleverRelationTsvToOsmXmlFile(
-    const std::string& backendUrl, const std::string& query,
-    const std::string& fileName, const std::string& remoteAddr) {
+    const std::string& backendUrl,
+    const std::string& query,
+    const std::string& fileName,
+    const std::string& remoteAddr) {
   std::ofstream out(fileName);
 
   if (!out) {
@@ -2892,7 +3226,8 @@ void exportQleverRelationTsvToOsmXmlFile(
         "Could not open relation OSM export file: " + fileName);
   }
 
-  exportQleverRelationTsvToOsmXml(backendUrl, query, out, remoteAddr);
+  exportQleverRelationTsvToOsmXml(
+      backendUrl, query, out, remoteAddr);
 
   if (!out) {
     throw std::runtime_error(
@@ -2900,9 +3235,9 @@ void exportQleverRelationTsvToOsmXmlFile(
   }
 }
 
-void exportQleverRelationGraphToOsmXmlFile(
+void exportQleverSourcePrimitivesToOsmXmlFile(
     const std::string& backendUrl,
-    const std::set<int64_t>& rootRelationIds,
+    const OsmSourcePrimitiveRoots& roots,
     const std::string& fileName,
     const std::string& remoteAddr,
     const OsmQleverResolutionLimits& limits,
@@ -2911,15 +3246,15 @@ void exportQleverRelationGraphToOsmXmlFile(
 
   if (!out) {
     throw std::runtime_error(
-        "Could not open relation-graph OSM export file: " + fileName);
+        "Could not open source-primitives OSM export file: " + fileName);
   }
 
-  exportQleverRelationGraphToOsmXml(
-      backendUrl, rootRelationIds, out, remoteAddr, limits, source);
+  exportQleverSourcePrimitivesToOsmXml(
+      backendUrl, roots, out, remoteAddr, limits, source);
 
   if (!out) {
     throw std::runtime_error(
-        "Failed to write relation-graph OSM export file: " + fileName);
+        "Failed to write source-primitives OSM export file: " + fileName);
   }
 }
 

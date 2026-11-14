@@ -108,10 +108,10 @@
             <input id="osm-preserve-mode" type="radio"
                    name="osm-export-mode" value="preserve">
             <span class="osm-mode-copy">
-              <span class="osm-mode-title">Preserve relation graph</span>
+              <span class="osm-mode-title">Preserve source primitives</span>
               <span class="osm-mode-desc">
-                Resolves source relations, nested relations, member roles such as
-                outer and inner, source IDs, and OSM tags. This can take longer
+                Preserves source node, way, and relation IDs, tags, way-node order,
+                relation member, roles, and nested relations. This can take longer
                 and download a much larger file.
               </span>
             </span>
@@ -120,7 +120,7 @@
 
         <div id="osm-preserve-unavailable" hidden>
           Preserve mode is unavailable because this page does not provide a
-          relation-root query.
+          source-root query.
         </div>
 
         <div id="osm-actions">

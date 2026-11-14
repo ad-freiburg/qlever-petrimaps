@@ -2334,18 +2334,23 @@ util::http::Answer Server::handleOsmExportReq(
 
   if (inputFormat != "geometry-tsv" &&
       inputFormat != "relation-tsv" &&
-      inputFormat != "relation-graph") {
+      inputFormat != "relation-graph" &&
+      inputFormat != "source-primitives") {
     throw std::invalid_argument(
         "Unsupported OSM export input_format: " + inputFormat);
   }
+
+  const bool isSourcePreservingFormat =
+      inputFormat == "relation-graph" ||
+      inputFormat == "source-primitives";
 
   petrimaps::OsmSourceDataset sourceDataset =
       petrimaps::OsmSourceDataset::Osm;
 
   if (config.contains("source_dataset")) {
-    if (inputFormat != "relation-graph") {
+    if (!isSourcePreservingFormat) {
       throw std::invalid_argument(
-          "source_dataset is only supported for relation-graph export.");
+          "source_dataset is only supported for source-preserving export.");
     }
 
     if (!config["source_dataset"].is_string()) {
@@ -2366,43 +2371,42 @@ util::http::Answer Server::handleOsmExportReq(
   OsmQleverResolutionLimits limits;
 
   if (config.contains("resolution_limits")) {
-      if (inputFormat != "relation-graph") {
+    if (!isSourcePreservingFormat) {
+      throw std::invalid_argument(
+          "resolution_limits is only supported for source-preserving export.");
+    }
+    const auto& requestedLimits = config["resolution_limits"];
+
+    if (!requestedLimits.is_object()) {
+      throw std::invalid_argument(
+        "resolution_limits must be an object.");
+    }
+
+    if (requestedLimits.contains("max_objects")) {
+      const auto& value = requestedLimits["max_objects"];
+
+      if (!value.is_number_unsigned() ||
+          value.get<size_t>() == 0 ||
+          value.get<size_t>() > 1000000) {
         throw std::invalid_argument(
-          "resolution_limits is only supported for relation-graph export.");
+            "max_objects must be an integer between 1 and 1000000.");
       }
 
-      const auto& requestedLimits = config["resolution_limits"];
+      limits.maxObjects = value.get<size_t>();
+    }
 
-      if (!requestedLimits.is_object()) {
+    if (requestedLimits.contains("max_ids_per_request")) {
+      const auto& value = requestedLimits["max_ids_per_request"];
+
+      if (!value.is_number_unsigned() ||
+          value.get<size_t>() == 0 ||
+          value.get<size_t>() > 10000) {
         throw std::invalid_argument(
-          "resolution_limits must be an object.");
+            "max_ids_per_request must be an integer between 1 and 10000.");
       }
 
-      if (requestedLimits.contains("max_objects")) {
-        const auto& value = requestedLimits["max_objects"];
-
-        if (!value.is_number_unsigned() ||
-            value.get<size_t>() == 0 ||
-            value.get<size_t>() > 1000000) {
-          throw std::invalid_argument(
-              "max_objects must be an integer between 1 and 1000000.");
-        }
-
-        limits.maxObjects = value.get<size_t>();
-      }
-
-      if (requestedLimits.contains("max_ids_per_request")) {
-        const auto& value = requestedLimits["max_ids_per_request"];
-
-        if (!value.is_number_unsigned() ||
-            value.get<size_t>() == 0 ||
-            value.get<size_t>() > 10000) {
-          throw std::invalid_argument(
-              "max_ids_per_request must be an integer between 1 and 10000.");
-        }
-
-        limits.maxIdsPerRequest = value.get<size_t>();
-      }
+      limits.maxIdsPerRequest = value.get<size_t>();
+    }
   }
 
   const std::string& backend = pars.find("backend")->second;
@@ -2427,13 +2431,16 @@ util::http::Answer Server::handleOsmExportReq(
           backend, query, tempPath, remoteAddr);
     }
      else {
-      const auto rootRelationIds =
-      readRootRelationIdsFromQleverQuery(
-          backend, query, remoteAddr);
+      const auto rootFormat =
+           inputFormat == "source-primitives"
+               ? OsmSourceRootQueryFormat::TypedPrimitives
+               : OsmSourceRootQueryFormat::LegacyRelationIds;
 
-      exportQleverRelationGraphToOsmXmlFile(
-          backend, rootRelationIds, tempPath, remoteAddr, limits,
-          sourceDataset);
+      const auto roots = readSourcePrimitiveRootsFromQleverQuery(
+            backend, query, rootFormat, remoteAddr);
+
+      exportQleverSourcePrimitivesToOsmXmlFile(
+            backend, roots, tempPath, remoteAddr, limits, sourceDataset);
     }
   } catch (...) {
     unlink(tempPath);

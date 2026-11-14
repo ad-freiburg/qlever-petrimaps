@@ -1,6 +1,16 @@
 file(GLOB_RECURSE QLEVER_PETRIMAPS_SRC *.cpp)
 find_package(PNG REQUIRED)
 
+find_path(LIBOSMIUM_INCLUDE_DIR
+	NAMES osmium/io/any_output.hpp
+)
+
+if (NOT LIBOSMIUM_INCLUDE_DIR)
+	message(FATAL_ERROR
+		"libosmium headers were not found. "
+		"Install libosmium, for example: brew install libosmium"
+	)
+endif()
 
 set(qlever_petrimaps_main PetriMapsMain.cpp)
 
@@ -9,6 +19,7 @@ list(REMOVE_ITEM QLEVER_PETRIMAPS_SRC ${qlever_petrimaps_main})
 include_directories(
 	${QLEVER_PETRIMAPS_INCLUDE_DIR}
 	${PNG_INCLUDE_DIRS}_
+	${LIBOSMIUM_INCLUDE_DIR}
 )
 
 add_executable(qlever-petrimaps ${qlever_petrimaps_main})

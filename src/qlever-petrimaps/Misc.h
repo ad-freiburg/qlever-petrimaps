@@ -137,17 +137,63 @@ struct OsmObject {
   std::string wkt;
 };
 
+struct OsmMetadata {
+  bool hasVersion;
+  uint64_t version;
+
+  bool hasTimestamp;
+  std::string timestamp;
+
+  bool hasChangeset;
+  uint64_t changeset;
+
+  bool hasUid;
+  uint64_t uid;
+
+  bool hasUser;
+  std::string user;
+
+  OsmMetadata()
+      : hasVersion(false),
+        version(0),
+        hasTimestamp(false),
+        hasChangeset(false),
+        changeset(0),
+        hasUid(false),
+        uid(0),
+        hasUser(false) {}
+
+  bool operator==(const OsmMetadata& other) const {
+    return hasVersion == other.hasVersion &&
+           (!hasVersion || version == other.version) &&
+           hasTimestamp == other.hasTimestamp &&
+           (!hasTimestamp || timestamp == other.timestamp) &&
+           hasChangeset == other.hasChangeset &&
+           (!hasChangeset || changeset == other.changeset) &&
+           hasUid == other.hasUid &&
+           (!hasUid || uid == other.uid) &&
+           hasUser == other.hasUser &&
+           (!hasUser || user == other.user);
+  }
+
+  bool operator!=(const OsmMetadata& other) const {
+    return !(*this == other);
+  }
+};
+
 struct OsmNode {
   int64_t id;
   double lon;
   double lat;
   std::unordered_map<std::string, std::string> tags;
+  OsmMetadata metadata;
 };
 
 struct OsmWay {
   int64_t id;
   std::vector<int64_t> nodeRefs;
   std::unordered_map<std::string, std::string> tags;
+  OsmMetadata metadata;
 };
 
 struct OsmRelationMember {
@@ -160,6 +206,7 @@ struct OsmRelation {
   int64_t id;
   std::vector<OsmRelationMember> members;
   std::unordered_map<std::string, std::string> tags;
+  OsmMetadata metadata;
 };
 
 struct OsmPrimitiveStore {
@@ -192,6 +239,16 @@ struct OsmQleverResolutionLimits {
 enum class OsmSourceDataset {
   Osm,
   Ohm
+};
+
+struct OsmSourcePrimitiveRoots {
+  std::set<int64_t> nodeIds;
+  std::set<int64_t> wayIds;
+  std::set<int64_t> relationIds;
+
+  bool empty() const {
+    return nodeIds.empty() && wayIds.empty() && relationIds.empty();
+  }
 };
 
 OsmUnresolvedReferences findUnresolvedOsmReferences(
@@ -782,23 +839,33 @@ void exportQleverRelationTsvToOsmXml(const std::string& backendUrl,
                                      std::ostream& out,
                                      const std::string& remoteAddr = "");
 
-std::set<int64_t> readRootRelationIdsFromQleverQuery(
+enum class OsmSourceRootQueryFormat {
+  TypedPrimitives,
+  LegacyRelationIds
+};
+
+OsmSourcePrimitiveRoots parseSourcePrimitiveRootsFromTsv(
+    const std::string& tsv,
+    OsmSourceRootQueryFormat format);
+
+OsmSourcePrimitiveRoots readSourcePrimitiveRootsFromQleverQuery(
     const std::string& backendUrl,
     const std::string& query,
+    OsmSourceRootQueryFormat format,
     const std::string& remoteAddr = "");
 
-void exportQleverRelationGraphToOsmXml(
+void exportQleverSourcePrimitivesToOsmXml(
     const std::string& backendUrl,
-    const std::set<int64_t>& rootRelationIds,
+    const OsmSourcePrimitiveRoots& roots,
     std::ostream& out,
     const std::string& remoteAddr = "",
     const OsmQleverResolutionLimits& limits =
         OsmQleverResolutionLimits(),
     OsmSourceDataset source = OsmSourceDataset::Osm);
 
-void exportQleverRelationGraphToOsmXmlFile(
+void exportQleverSourcePrimitivesToOsmXmlFile(
     const std::string& backendUrl,
-    const std::set<int64_t>& rootRelationIds,
+    const OsmSourcePrimitiveRoots& roots,
     const std::string& fileName,
     const std::string& remoteAddr = "",
     const OsmQleverResolutionLimits& limits =

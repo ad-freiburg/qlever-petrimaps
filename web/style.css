@@ -768,6 +768,7 @@ h1, #msg-heading {
 
 #ex button,
 #tile-actions button,
+#osm-actions button,
 .tile-copy {
     padding: 6px 12px;
     margin-bottom: 0;
@@ -840,13 +841,15 @@ h1, #msg-heading {
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
 }
 
-#tile-title {
+#tile-title,
+#osm-title {
     font-size: 24px;
     font-weight: 700;
     margin-bottom: 8px;
 }
 
-#tile-subtitle {
+#tile-subtitle,
+#osm-subtitle {
     font-size: 14px;
     color: #666;
     margin-bottom: 16px;
@@ -946,9 +949,4 @@ h1, #msg-heading {
 #osm-actions {
     display: flex;
     gap: 12px;
-}
-
-#osm-actions button {
-    padding: 6px 12px;
-    font-size: 15px;
 }

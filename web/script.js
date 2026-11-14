@@ -18,12 +18,31 @@ if (urlParams["cfg"]) {
 
 let query = urlParams["query"] || requestConfig["query"];
 let exportQuery = requestConfig["exportQuery"] || query;
+let sourcePrimitivesExportQuery =
+    requestConfig["sourcePrimitivesExportQuery"] || "";
+let sourcePrimitivesResolutionLimits =
+    requestConfig["sourcePrimitivesResolutionLimits"] || null;
+let sourcePrimitivesSourceDataset =
+    requestConfig["sourcePrimitivesSourceDataset"] || "osm";
+
 let relationGraphExportQuery =
     requestConfig["relationGraphExportQuery"] || "";
 let relationGraphResolutionLimits =
     requestConfig["relationGraphResolutionLimits"] || null;
 let relationGraphSourceDataset =
     requestConfig["relationGraphSourceDataset"] || "osm";
+
+let preserveExportQuery =
+    sourcePrimitivesExportQuery || relationGraphExportQuery;
+let preserveResolutionLimits = sourcePrimitivesExportQuery
+    ? sourcePrimitivesResolutionLimits
+    : relationGraphResolutionLimits;
+let preserveSourceDataset = sourcePrimitivesExportQuery
+    ? sourcePrimitivesSourceDataset
+    : relationGraphSourceDataset;
+let preserveInputFormat = sourcePrimitivesExportQuery
+    ? "source-primitives"
+    : "relation-graph";
 let mode = urlParams["mode"];
 
 const heatmapStyles = ["spectralexp", "spectral", "RdYlGn", "RdYlGnexp", "RdYlBu","RdYlBuexp", "w2b", "b2w", "RdGy","RdGyexp","YlOrRd","YlOrRdexp","Blues","Bluesexp","Greens","Greensexp","Greys","Greysexp","Oranges","Orangesexp","Reds", "Redsexp"];
@@ -492,7 +511,7 @@ function showOsmDialog() {
 
     const fastAvailable = Boolean(qleverBackend && exportQuery);
     const preserveAvailable =
-        Boolean(qleverBackend && relationGraphExportQuery);
+        Boolean(qleverBackend && preserveExportQuery);
 
     fastMode.disabled = !fastAvailable;
     preserveMode.disabled = !preserveAvailable;
@@ -532,13 +551,13 @@ function selectedOsmExportConfig() {
     }
 
     const config = {
-        input_format: "relation-graph",
-        query: relationGraphExportQuery,
-        source_dataset: relationGraphSourceDataset
+        input_format: preserveInputFormat,
+        query: preserveExportQuery,
+        source_dataset: preserveSourceDataset
     };
 
-    if (relationGraphResolutionLimits) {
-        config.resolution_limits = relationGraphResolutionLimits;
+    if (preserveResolutionLimits) {
+        config.resolution_limits = preserveResolutionLimits;
     }
 
     return config;

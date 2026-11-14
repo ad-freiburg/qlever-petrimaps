@@ -564,11 +564,11 @@
 
   "exportQuery": "PREFIX geo: <http://www.opengis.net/ont/geosparql#>\nPREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>\n\nSELECT ?osm_id ?a ?b ?hasgeometry WHERE {\n  VALUES ?osm_id {\n    <https://www.openhistoricalmap.org/relation/2692425>\n  }\n\n  ?osm_id geo:hasGeometry/geo:asWKT ?hasgeometry .\n  ?osm_id ?a ?b .\n\n  FILTER(STRSTARTS(STR(?a), STR(osmkey:)) && ?a != osmkey:type)\n}\nORDER BY ?osm_id",
 
-  "relationGraphExportQuery": "SELECT ?relation_id WHERE { VALUES ?relation_id { 2692425 } }",
+  "sourcePrimitivesExportQuery": "SELECT ?primitive_type ?primitive_id WHERE { VALUES (?primitive_type ?primitive_id) { (\"relation\" 2692425) } }",
 
-  "relationGraphSourceDataset": "ohm",
+  "sourcePrimitivesSourceDataset": "ohm",
 
-  "relationGraphResolutionLimits": {
+  "sourcePrimitivesResolutionLimits": {
     "max_objects": 500000,
     "max_ids_per_request": 1000
   },
