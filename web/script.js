@@ -18,6 +18,8 @@ if (urlParams["cfg"]) {
 
 let query = urlParams["query"] || requestConfig["query"];
 let exportQuery = requestConfig["exportQuery"] || query;
+let fixedSourceTsvExportQuery =
+    requestConfig["fixedSourceTsvExportQuery"] || "";
 let sourcePrimitivesExportQuery =
     requestConfig["sourcePrimitivesExportQuery"] || "";
 let sourcePrimitivesResolutionLimits =
@@ -34,12 +36,15 @@ let relationGraphSourceDataset =
 
 let preserveExportQuery =
     sourcePrimitivesExportQuery || relationGraphExportQuery;
+
 let preserveResolutionLimits = sourcePrimitivesExportQuery
     ? sourcePrimitivesResolutionLimits
     : relationGraphResolutionLimits;
+
 let preserveSourceDataset = sourcePrimitivesExportQuery
     ? sourcePrimitivesSourceDataset
     : relationGraphSourceDataset;
+
 let preserveInputFormat = sourcePrimitivesExportQuery
     ? "source-primitives"
     : "relation-graph";
@@ -502,12 +507,30 @@ document.getElementById("ex-geojson").onclick = function() {
     a.click();
 }
 
+function updateOsmDownloadButtonState() {
+    const selectedMode = document.querySelector(
+        'input[name="osm-export-mode"]:checked'
+    ).value;
+
+    document.getElementById("osm-download-pbf").disabled =
+        selectedMode !== "fixed";
+}
+
 function showOsmDialog() {
     document.getElementById("tile-modal").style.display = "none";
     const fastMode = document.getElementById("osm-fast-mode");
     const preserveMode = document.getElementById("osm-preserve-mode");
     const fastCard = document.getElementById("osm-fast-card");
     const preserveCard = document.getElementById("osm-preserve-card");
+
+    const fixedMode = document.getElementById("osm-fixed-mode");
+    const fixedCard = document.getElementById("osm-fixed-card");
+
+    const fixedAvailable =
+        Boolean(qleverBackend && fixedSourceTsvExportQuery);
+
+    fixedMode.disabled = !fixedAvailable;
+    fixedCard.classList.toggle("is-disabled", !fixedAvailable);
 
     const fastAvailable = Boolean(qleverBackend && exportQuery);
     const preserveAvailable =
@@ -526,11 +549,14 @@ function showOsmDialog() {
         fastMode.checked = true;
     } else if (preserveAvailable) {
         preserveMode.checked = true;
+    } else if (fixedAvailable) {
+        fixedMode.checked = true;
     } else {
         alert("OSM export requires a QLever backend and an export query.");
         return;
     }
 
+    updateOsmDownloadButtonState();
     document.getElementById("osm-modal").style.display = "flex";
 }
 
@@ -538,7 +564,7 @@ function hideOsmDialog() {
     document.getElementById("osm-modal").style.display = "none";
 }
 
-function selectedOsmExportConfig() {
+function selectedOsmExportConfig(fixedOutputFormat) {
     const selectedMode = document.querySelector(
         'input[name="osm-export-mode"]:checked'
     ).value;
@@ -547,6 +573,14 @@ function selectedOsmExportConfig() {
         return {
             input_format: "geometry-tsv",
             query: exportQuery
+        };
+    }
+
+    if (selectedMode === "fixed") {
+        return {
+            input_format: "fixed-source-tsv",
+            output_format: fixedOutputFormat,
+            query: fixedSourceTsvExportQuery
         };
     }
 
@@ -563,13 +597,15 @@ function selectedOsmExportConfig() {
     return config;
 }
 
-async function downloadOsmExport(config) {
-    const downloadButton = document.getElementById("osm-download");
+async function downloadOsmExport(config, fileName, clickedButton) {
+    const xmlButton = document.getElementById("osm-download-xml");
+    const pbfButton = document.getElementById("osm-download-pbf");
     const cancelButton = document.getElementById("osm-cancel");
 
-    downloadButton.disabled = true;
+    xmlButton.disabled = true;
+    pbfButton.disabled = true;
     cancelButton.disabled = true;
-    downloadButton.textContent = "Exporting OSM...";
+    clickedButton.textContent = "Exporting OSM...";
 
     try {
         const form = new URLSearchParams({
@@ -594,7 +630,7 @@ async function downloadOsmExport(config) {
         const link = document.createElement("a");
 
         link.href = url;
-        link.download = "export.osm";
+        link.download = fileName;
         link.click();
 
         URL.revokeObjectURL(url);
@@ -602,9 +638,11 @@ async function downloadOsmExport(config) {
     } catch (error) {
         alert("OSM export failed: " + error.message);
     } finally {
-        downloadButton.disabled = false;
+        xmlButton.disabled = false;
         cancelButton.disabled = false;
-        downloadButton.textContent = "Download .osm";
+        xmlButton.textContent = "Download .osm";
+        pbfButton.textContent = "Download .osm.pbf";
+        updateOsmDownloadButtonState();
     }
 }
 
@@ -616,9 +654,30 @@ document.getElementById("osm-cancel").onclick = function() {
     hideOsmDialog();
 };
 
-document.getElementById("osm-download").onclick = function() {
-    downloadOsmExport(selectedOsmExportConfig());
+document.getElementById("osm-download-xml").onclick = function() {
+    downloadOsmExport(
+        selectedOsmExportConfig("xml"),
+        "export.osm",
+        this
+    );
 };
+
+document.getElementById("osm-download-pbf").onclick = function() {
+    downloadOsmExport(
+        selectedOsmExportConfig("pbf"),
+        "export.osm.pbf",
+        this
+    );
+};
+
+document.getElementById("osm-fast-mode").onchange =
+    updateOsmDownloadButtonState;
+
+document.getElementById("osm-preserve-mode").onchange =
+    updateOsmDownloadButtonState;
+
+document.getElementById("osm-fixed-mode").onchange =
+    updateOsmDownloadButtonState;
 
 document.getElementById("ex-tsv").onclick = function() {
     let a = document.createElement("a");

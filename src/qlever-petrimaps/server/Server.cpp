@@ -2335,10 +2335,39 @@ util::http::Answer Server::handleOsmExportReq(
   if (inputFormat != "geometry-tsv" &&
       inputFormat != "relation-tsv" &&
       inputFormat != "relation-graph" &&
-      inputFormat != "source-primitives") {
+      inputFormat != "source-primitives" &&
+      inputFormat != "fixed-source-tsv") {
     throw std::invalid_argument(
         "Unsupported OSM export input_format: " + inputFormat);
   }
+
+  const bool isFixedSourceTsvFormat =
+    inputFormat == "fixed-source-tsv";
+
+  std::string fixedOutputFormat = "pbf";
+
+  if (config.contains("output_format")) {
+    if (!isFixedSourceTsvFormat) {
+      throw std::invalid_argument(
+          "output_format is only supported for fixed-source-tsv export.");
+    }
+
+    if (!config["output_format"].is_string()) {
+      throw std::invalid_argument(
+          "output_format must be either 'xml' or 'pbf'.");
+    }
+
+    fixedOutputFormat = config["output_format"].get<std::string>();
+
+    if (fixedOutputFormat != "xml" &&
+        fixedOutputFormat != "pbf") {
+      throw std::invalid_argument(
+          "output_format must be either 'xml' or 'pbf'.");
+    }
+  }
+
+  const bool isPbfExport =
+      isFixedSourceTsvFormat && fixedOutputFormat == "pbf";
 
   const bool isSourcePreservingFormat =
       inputFormat == "relation-graph" ||
@@ -2348,6 +2377,11 @@ util::http::Answer Server::handleOsmExportReq(
       petrimaps::OsmSourceDataset::Osm;
 
   if (config.contains("source_dataset")) {
+    if (isFixedSourceTsvFormat) {
+      throw std::invalid_argument(
+          "fixed-source-tsv encodes its source dataset in the QLever query.");
+    }
+
     if (!isSourcePreservingFormat) {
       throw std::invalid_argument(
           "source_dataset is only supported for source-preserving export.");
@@ -2371,6 +2405,10 @@ util::http::Answer Server::handleOsmExportReq(
   OsmQleverResolutionLimits limits;
 
   if (config.contains("resolution_limits")) {
+    if (isFixedSourceTsvFormat) {
+      throw std::invalid_argument(
+          "fixed-source-tsv encodes its resolution limits in the QLever query.");
+    }
     if (!isSourcePreservingFormat) {
       throw std::invalid_argument(
           "resolution_limits is only supported for source-preserving export.");
@@ -2429,8 +2467,15 @@ util::http::Answer Server::handleOsmExportReq(
     } else if (inputFormat == "relation-tsv") {
       exportQleverRelationTsvToOsmXmlFile(
           backend, query, tempPath, remoteAddr);
-    }
-     else {
+    } else if (isFixedSourceTsvFormat) {
+      if (isPbfExport) {
+        exportQleverFixedOsmTsvToOsmPbfFile(
+            backend, query, tempPath, remoteAddr);
+      } else {
+        exportQleverFixedOsmTsvToOsmXmlFile(
+          backend, query, tempPath, remoteAddr);
+      }
+    } else {
       const auto rootFormat =
            inputFormat == "source-primitives"
                ? OsmSourceRootQueryFormat::TypedPrimitives
@@ -2461,10 +2506,14 @@ util::http::Answer Server::handleOsmExportReq(
 
   util::http::Answer answer("200 OK", "");
   answer.params["Content-Encoding"] = "identity";
-  answer.params["Content-Type"] = 
-      "application/vnd.openstreetmap.data+xml; charset=utf-8";
+  answer.params["Content-Type"] =
+      isPbfExport
+          ? "application/octet-stream"
+          : "application/vnd.openstreetmap.data+xml; charset=utf-8";
   answer.params["Content-Disposition"] =
-      "attachment; filename=\"export.osm\"";
+      isPbfExport
+          ? "attachment; filename=\"export.osm.pbf\""
+          : "attachment; filename=\"export.osm\"";
   answer.params["Server"] = "qlever-petrimaps";
 
   SocketStreamBuf socketBuffer(sock);

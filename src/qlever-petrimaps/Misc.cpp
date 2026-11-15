@@ -25,6 +25,14 @@
 #include "util/log/Log.h"
 #include "util/xml/XmlWriter.h"
 
+#include <osmium/builder/osm_object_builder.hpp>
+#include <osmium/io/pbf_output.hpp>
+#include <osmium/io/header.hpp>
+#include <osmium/io/writer.hpp>
+#include <osmium/memory/buffer.hpp>
+#include <osmium/osm/location.hpp>
+#include <osmium/osm/timestamp.hpp>
+
 using petrimaps::RequestReader;
 using util::LogLevel::ERROR;
 using util::LogLevel::INFO;
@@ -2053,11 +2061,13 @@ uint64_t parseMemberSequence(const std::string& value) {
 
 double parseCoordinate(const std::string& value,
                        const std::string& column) {
+  const auto normalizedValue = normalizeSparqlLiteralValue(value);
+
   try {
     size_t parsedLength = 0;
-    const auto result = std::stod(value, &parsedLength);
+    const auto result = std::stod(normalizedValue, &parsedLength);
 
-    if (parsedLength == value.size() && std::isfinite(result)) {
+    if (parsedLength == normalizedValue.size() && std::isfinite(result)) {
       return result;
     }
   } catch (const std::exception&) {
@@ -2095,6 +2105,449 @@ std::pair<double, double> parseQleverPointWkt(
   }
 
   return {lon, lat};
+}
+
+OsmSourceObjectTsvReader::OsmSourceObjectTsvReader(
+    OsmPrimitiveStore* store)
+    : _store(store),
+      _tsvReader(
+          [this](const std::vector<std::string>& header) {
+            _columns = header;
+            validateHeader();
+          },
+          [this](const std::vector<std::string>& row) {
+            ++_rowNumber;
+            consumeRow(row);
+          }) {
+  if (_store == nullptr) {
+    throw std::runtime_error(
+        "OsmSourceObjectTsvReader requires an OsmPrimitiveStore.");
+  }
+}
+
+void OsmSourceObjectTsvReader::parse(const char* data, size_t size) {
+  if (_finished) {
+    throw std::runtime_error(
+        "Cannot parse into a finished OSM source-object TSV reader.");
+  }
+
+  _tsvReader.parse(data, size);
+}
+
+void OsmSourceObjectTsvReader::finish() {
+  if (_finished) {
+    throw std::runtime_error(
+        "OSM source-object TSV reader was already finished.");
+  }
+
+  _tsvReader.finish();
+  emitCurrentObject();
+  validateReferenceClosure();
+  _finished = true;
+}
+
+void OsmSourceObjectTsvReader::validateHeader() const {
+  const std::vector<std::string> expected = {
+      "record_kind", "osm_type", "osm_id", "sequence",
+      "tag_key", "tag_value", "node_ref", "member_type", "member_ref",
+      "member_role", "lon", "lat", "version", "timestamp",
+      "changeset", "uid", "user"};
+
+  if (_columns.size() != expected.size()) {
+    throw std::runtime_error(
+        "Invalid fixed OSM TSV header: unexpected column count.");
+  }
+
+  for (size_t i = 0; i < expected.size(); ++i) {
+    if (normalizeSparqlResultColumn(_columns[i]) != expected[i]) {
+      throw std::runtime_error(
+          "Invalid fixed OSM TSV header at column " +
+          std::to_string(i + 1) + ": expected " + expected[i] + ".");
+    }
+  }
+}
+
+OsmSourceObjectType parseFixedOsmType(
+    const std::string& raw) {
+  const auto value = normalizeSparqlLiteralValue(raw);
+
+  if (value == "node") {
+    return OsmSourceObjectType::Node;
+  }
+
+  if (value == "way") {
+    return OsmSourceObjectType::Way;
+  }
+
+  if (value == "relation") {
+    return OsmSourceObjectType::Relation;
+  }
+
+  throw std::runtime_error(
+      "Invalid osm_type in fixed OSM TSV: " + raw);
+}
+int fixedOsmTypeRank(OsmSourceObjectType type) {
+  if (type == OsmSourceObjectType::Node) {
+    return 0;
+  }
+
+  if (type == OsmSourceObjectType::Way) {
+    return 1;
+  }
+
+  return 2;
+}
+
+uint64_t parseFixedSequence(const std::string& raw) {
+  const auto value = normalizeSparqlLiteralValue(raw);
+
+  if (value.empty() ||
+      value.find_first_not_of("0123456789") != std::string::npos) {
+    throw std::runtime_error(
+        "Invalid sequece in fixed OSM TSV: " + raw);
+  }
+
+  try {
+    size_t parsedLength = 0;
+    const auto sequence = std::stoull(value, &parsedLength);
+
+    if (parsedLength != value.size()) {
+      throw std::runtime_error(
+          "Invalid sequence in fixed OSM TSV: " + raw);
+    }
+
+    return sequence;
+  } catch (const std::exception&) {
+    throw std::runtime_error(
+        "Invalid sequence in fixed OSM TSV: " + raw);
+  }
+}
+
+int64_t parseFixedOsmId(const std::string& raw) {
+  const auto value = normalizeSparqlLiteralValue(raw);
+
+  if (value.empty() ||
+      value.find_first_not_of("0123456789") != std::string::npos) {
+    throw std::runtime_error(
+        "Invalid osm_id in fixed OSM TSV: " + raw);
+  }
+
+  try {
+    size_t parsedLength = 0;
+    const auto id = std::stoll(value, &parsedLength);
+
+    if (parsedLength != value.size() || id <= 0) {
+      throw std::runtime_error(
+          "OSM source ID must be positive: " + raw);
+    }
+
+    return id;
+  } catch (const std::exception&) {
+    throw std::runtime_error(
+        "Invalid osm_id in fixed OSM TSV: " + raw);
+  }
+}
+
+std::string fixedOsmTypeName(OsmSourceObjectType type) {
+  if (type == OsmSourceObjectType::Node) {
+    return "node";
+  }
+
+  if (type == OsmSourceObjectType::Way) {
+    return "way";
+  }
+
+  return "relation";
+}
+
+void OsmSourceObjectTsvReader::startObject(
+    OsmSourceObjectType type, int64_t id) {
+  if (_hasFinishedObject) {
+    const auto nextTypeRank = fixedOsmTypeRank(type);
+    const auto previousTypeRank =
+        fixedOsmTypeRank(_lastFinishedType);
+
+    const bool typeMovedBackward =
+        nextTypeRank < previousTypeRank;
+
+    const bool idDidNotIncrease =
+        nextTypeRank == previousTypeRank &&
+        id <= _lastFinishedId;
+
+    if (typeMovedBackward || idDidNotIncrease) {
+      std::ostringstream message;
+      message << "Fixed OSM TSV objects are not ordered by "
+              << "osm_type and osm_id: received "
+              << fixedOsmTypeName(type) << " " << id
+              << " after "
+              << fixedOsmTypeName(_lastFinishedType) << " "
+              << _lastFinishedId << ".";
+
+      throw std::runtime_error(message.str());
+    }
+  }
+  
+  _hasCurrent = true;
+  _hasObjectRow = false;
+  _currentType = type;
+  _currentId = id;
+
+  _currentNode = {};
+  _currentWay = {};
+  _currentRelation = {};
+  _nextWayNodeSequence = 0;
+  _nextRelationMemberSequence = 0;
+
+  if (type == OsmSourceObjectType::Node) {
+    _currentNode.id = id;
+  } else if (type == OsmSourceObjectType::Way) {
+    _currentWay.id = id;
+  } else {
+    _currentRelation.id = id;
+  }
+}
+
+void OsmSourceObjectTsvReader::emitCurrentObject() {
+  if (!_hasCurrent) {
+    return;
+  }
+
+  if (!_hasObjectRow) {
+    throw std::runtime_error(
+        "Fixed OSM TSV object has no object row.");
+  }
+
+  if (_currentType == OsmSourceObjectType::Node) {
+    _store->insertNode(_currentNode);
+  } else if (_currentType == OsmSourceObjectType::Way) {
+    _store->insertWay(_currentWay);
+  } else {
+    _store->insertRelation(_currentRelation);
+  }
+
+  _lastFinishedType = _currentType;
+  _lastFinishedId = _currentId;
+  _hasFinishedObject = true;
+
+  _hasCurrent = false;
+  _hasObjectRow = false;
+}
+
+void OsmSourceObjectTsvReader::validateReferenceClosure() const {
+  const auto unresolved = findUnresolvedOsmReferences(*_store);
+
+  if (unresolved.empty()) {
+    return;
+  }
+
+  const auto describeIds = [](const std::set<int64_t>& ids) {
+    std::ostringstream out;
+    out << "[";
+
+    bool first = true;
+    for (const auto id : ids) {
+      if (!first) {
+        out << ", ";
+      }
+
+      out << id;
+      first = false;
+    }
+
+    out << "]";
+    return out.str();
+  };
+
+  throw std::runtime_error(
+    std::string(
+        "Fixed OSM TSV does not contain a closed source-object graph: "
+        "missing nodes=") + describeIds(unresolved.nodeIds) +
+        ", ways=" + describeIds(unresolved.wayIds) +
+        ", relations=" + describeIds(unresolved.relationIds) + ".");
+}
+
+void OsmSourceObjectTsvReader::consumeRow(
+    const std::vector<std::string>& row) {
+  if (row.size() != _columns.size()) {
+    throw std::runtime_error(
+        "Invalid fixed OSM TSV row " +
+        std::to_string(_rowNumber) +
+        ": wrong column count.");
+  }
+
+  const auto recordKind = normalizeSparqlLiteralValue(row[0]);
+  const auto type = parseFixedOsmType(row[1]);
+  const auto id = parseFixedOsmId(row[2]);
+
+  const auto requireEmpty = [&](size_t columnIndex) {
+    if (!row[columnIndex].empty()) {
+      throw std::runtime_error(
+          "Fixed OSM TSV " + recordKind + " row " +
+          std::to_string(_rowNumber) +
+          " must leave column " + _columns[columnIndex] +
+          " empty.");
+    }
+  };
+
+  if (!_hasCurrent || type != _currentType || id != _currentId) {
+    emitCurrentObject();
+    startObject(type, id);
+  }
+
+  if (recordKind == "object") {
+    if (_hasObjectRow) {
+      throw std::runtime_error(
+          "Duplicate object row for osm_id " +
+          std::to_string(id) + ".");
+    }
+
+    _hasObjectRow = true;
+
+    // 3: sequence, 4: tag_key, 5: tag_value, 6: node_ref,
+    // 7: member_type, 8: member_ref, 9: member_role
+    for (const auto columnIndex : {3u, 4u, 5u, 6u, 7u, 8u, 9u}) {
+      requireEmpty(columnIndex);
+    }
+
+    if (type == OsmSourceObjectType::Node) {
+      _currentNode.lon = parseCoordinate(row[10], "lon");
+      _currentNode.lat = parseCoordinate(row[11], "lat");
+
+      mergeMetadataFromRow(
+          &_currentNode.metadata, _columns, row,
+          "node ID " + std::to_string(id));
+    } else if (type == OsmSourceObjectType::Way) {
+      if (!row[10].empty() || !row[11].empty()) {
+        throw std::runtime_error(
+            "Only node object rows may contain lon or lat.");
+      }
+
+      mergeMetadataFromRow(
+          &_currentWay.metadata, _columns, row,
+          "way ID " + std::to_string(id));
+    } else {
+      if (!row[10].empty() || !row[11].empty()) {
+        throw std::runtime_error(
+            "Only node object rows may contain lon or lat.");
+      }
+
+      mergeMetadataFromRow(
+          &_currentRelation.metadata, _columns, row,
+          "relation ID " + std::to_string(id));
+    }
+
+    return;
+  }
+
+  if (!_hasObjectRow) {
+    throw std::runtime_error(
+        "Fixed OSM TSV row " + std::to_string(_rowNumber) +
+        " appears before its object row.");
+  }
+
+  if (recordKind == "tag") {
+
+    for (const auto columnIndex :
+     {3u, 6u, 7u, 8u, 9u, 10u, 11u, 12u, 13u, 14u, 15u, 16u}) {
+      requireEmpty(columnIndex);
+    }
+
+    const auto key = normalizeSparqlLiteralValue(row[4]);
+    const auto value = normalizeSparqlLiteralValue(row[5]);
+
+    if (key.empty()) {
+      throw std::runtime_error(
+          "Fixed OSM TSV tag row has an empty tag_key.");
+    }
+
+    std::unordered_map<std::string, std::string>* tags = nullptr;
+
+    if (_currentType == OsmSourceObjectType::Node) {
+      tags = &_currentNode.tags;
+    } else if (_currentType == OsmSourceObjectType::Way) {
+      tags = &_currentWay.tags;
+    } else {
+      tags = &_currentRelation.tags;
+    }
+
+    const auto existing = tags->find(key);
+
+    if (existing != tags->end() && existing->second != value) {
+      throw std::runtime_error(
+          "Conflicting tag values for osm_id " +
+          std::to_string(id) + ", key " + key + ".");
+    }
+
+    (*tags)[key] = value;
+    return;
+  }
+
+  if (recordKind == "way-node") {
+    if (type != OsmSourceObjectType::Way) {
+      throw std::runtime_error(
+          "Fixed OSM TSV way-node row must have osm_type=way.");
+    }
+
+    // tag_key, tag_value, member columns, coordinates, metadata
+    // must not be set on a way-node row.
+    for (const auto columnIndex :
+         {4u, 5u, 7u, 8u, 9u, 10u, 11u,
+          12u, 13u, 14u, 15u, 16u}) {
+      requireEmpty(columnIndex);
+    }
+
+    const auto sequence = parseFixedSequence(row[3]);
+
+    if (sequence != _nextWayNodeSequence) {
+      throw std::runtime_error(
+          "Invalid way-node sequence for way ID " +
+          std::to_string(id) + ": expected " +
+          std::to_string(_nextWayNodeSequence) + ", got " +
+          std::to_string(sequence) + ".");
+    }
+
+    const auto nodeRef = parseFixedOsmId(row[6]);
+    _currentWay.nodeRefs.push_back(nodeRef);
+    ++_nextWayNodeSequence;
+    return;
+  }
+
+  if (recordKind == "relation-member") {
+    if (type != OsmSourceObjectType::Relation) {
+      throw std::runtime_error(
+          "Fixed OSM TSV relation-member row must have "
+          "osm_type=relation.");
+    }
+
+    // tag fields, way-node field, coordinates, and metadata are invalid here.
+    for (const auto columnIndex :
+        {4u, 5u, 6u, 10u, 11u,
+          12u, 13u, 14u, 15u, 16u}) {
+      requireEmpty(columnIndex);
+    }
+
+    const auto sequence = parseFixedSequence(row[3]);
+
+    if (sequence != _nextRelationMemberSequence) {
+      throw std::runtime_error(
+          "Invalid relation-member sequence for relation ID " +
+          std::to_string(id) + ": expected " +
+          std::to_string(_nextRelationMemberSequence) + ", got " +
+          std::to_string(sequence) + ".");
+    }
+
+    const auto memberType = parseFixedOsmType(row[7]);
+    const auto memberRef = parseFixedOsmId(row[8]);
+    const auto memberRole = normalizeSparqlLiteralValue(row[9]);
+
+    _currentRelation.members.push_back(
+        {fixedOsmTypeName(memberType), memberRef, memberRole});
+    ++_nextRelationMemberSequence;
+    return;
+  }
+
+  throw std::runtime_error(
+      "Unsupported fixed OSM TSV record_kind: " + recordKind);
 }
 
 OsmWayResultReader::OsmWayResultReader(WayCallback cb)
@@ -3140,6 +3593,61 @@ void exportQleverRelationTsvToOsmXml(
   writeOsmXml(store, out);
 }
 
+static OsmPrimitiveStore readFixedOsmTsvFromQlever(
+    const std::string& backendUrl,
+    const std::string& query,
+    const std::string& remoteAddr) {
+  OsmPrimitiveStore store;
+  OsmSourceObjectTsvReader reader(&store);
+
+  RequestReader requestReader(backendUrl, 0, 0, 0, 0);
+
+  LOG(INFO) << "[OSM EXPORT] Fetching fixed source-object TSV";
+  // LOG(INFO) << "[OSM EXPORT] Fixed source-object query:\n" << query;
+
+  requestReader.requestRows(
+      query,
+      [&reader](const char* data, size_t size) {
+        reader.parse(data, size);
+      },
+      remoteAddr);
+
+  reader.finish();
+  return store;
+}
+
+void exportQleverFixedOsmTsvToOsmXmlFile(
+    const std::string& backendUrl,
+    const std::string& query,
+    const std::string& fileName,
+    const std::string& remoteAddr) {
+  const auto store =
+      readFixedOsmTsvFromQlever(backendUrl, query, remoteAddr);
+
+  LOG(INFO) << "[OSM EXPORT] Writing fixed source-object XML: "
+            << store.nodes.size() << " nodes, "
+            << store.ways.size() << " ways, "
+            << store.relations.size() << " relations";
+
+  writeOsmXmlFile(store, fileName);
+}
+
+void exportQleverFixedOsmTsvToOsmPbfFile(
+    const std::string& backendUrl,
+    const std::string& query,
+    const std::string& fileName,
+    const std::string& remoteAddr) {
+  const auto store =
+      readFixedOsmTsvFromQlever(backendUrl, query, remoteAddr);
+
+  LOG(INFO) << "[OSM EXPORT] Writing fixed source-object PBF: "
+            << store.nodes.size() << " nodes, "
+            << store.ways.size() << " ways, "
+            << store.relations.size() << " relations";
+
+  writeOsmPbfFile(store, fileName);
+}
+
 void exportQleverSourcePrimitivesToOsmXml(
     const std::string& backendUrl,
     const OsmSourcePrimitiveRoots& roots,
@@ -3284,6 +3792,7 @@ void OsmTsvToXmlExporter::finish() {
   _xmlWriter.finish();
   _finished = true;
 }
+
 // _____________________________________________________________________________
 void writeOsmXml(const OsmPrimitiveStore& store, std::ostream& out) {
   OsmXmlStreamWriter writer(out);
@@ -3304,6 +3813,162 @@ void writeOsmXmlFile(const OsmPrimitiveStore& store,
   if (!out) {
     throw std::runtime_error("Failed to write OSM XML output file: " + fileName);
   }
+}
+
+template <typename Builder>
+void applyOsmMetadataToPbfBuilder(
+    const OsmMetadata& metadata, Builder* builder) {
+  builder->set_visible(true);
+
+  if (metadata.hasVersion) {
+    builder->set_version(
+        static_cast<osmium::object_version_type>(metadata.version));
+  }
+
+  if (metadata.hasTimestamp) {
+    builder->set_timestamp(osmium::Timestamp(metadata.timestamp));
+  }
+
+  if (metadata.hasChangeset) {
+    builder->set_changeset(
+        static_cast<osmium::changeset_id_type>(metadata.changeset));
+  }
+
+  if (metadata.hasUid) {
+    builder->set_uid(
+        static_cast<osmium::user_id_type>(metadata.uid));
+  }
+
+  // libosmium에서는 user를 tags/member 같은 하위 builder보다 먼저 설정해야 한다.
+  if (metadata.hasUser) {
+    builder->set_user(metadata.user);
+  }
+}
+
+osmium::item_type pbfRelationMemberType(
+    const std::string& type) {
+  if (type == "node") {
+    return osmium::item_type::node;
+  }
+
+  if (type == "way") {
+    return osmium::item_type::way;
+  }
+
+  if (type == "relation") {
+    return osmium::item_type::relation;
+  }
+
+  throw std::runtime_error(
+      "Unsupported OSM relation member type for PBF: " + type);
+}
+
+void writeOsmPbfFile(const OsmPrimitiveStore& store,
+                     const std::string& fileName) {
+  osmium::io::Header header;
+  header.set("generator", "qlever-petrimaps");
+
+  osmium::io::Writer writer(
+      osmium::io::File(fileName, "pbf"),
+      header,
+      osmium::io::overwrite::allow);
+
+  {
+    osmium::memory::Buffer nodeBuffer(
+        1024 * 1024, osmium::memory::Buffer::auto_grow::yes);
+
+    for (const auto& node : store.nodes) {
+      osmium::builder::NodeBuilder nodeBuilder(nodeBuffer);
+
+      nodeBuilder.set_id(node.id);
+      nodeBuilder.set_location(
+          osmium::Location(node.lon, node.lat));
+
+      applyOsmMetadataToPbfBuilder(node.metadata, &nodeBuilder);
+
+      osmium::builder::TagListBuilder tagListBuilder(
+          nodeBuffer, &nodeBuilder);
+
+      for (const auto& tag : sortedTags(node.tags)) {
+        tagListBuilder.add_tag(tag.first, tag.second);
+      }
+    }
+
+    nodeBuffer.commit();
+    writer(std::move(nodeBuffer));
+  }
+
+  {
+    osmium::memory::Buffer wayBuffer(
+        1024 * 1024, osmium::memory::Buffer::auto_grow::yes);
+
+    for (const auto& way : store.ways) {
+      osmium::builder::WayBuilder wayBuilder(wayBuffer);
+
+      wayBuilder.set_id(way.id);
+      applyOsmMetadataToPbfBuilder(way.metadata, &wayBuilder);
+
+      {
+        osmium::builder::WayNodeListBuilder nodeListBuilder(
+            wayBuffer, &wayBuilder);
+
+        for (const auto nodeRef : way.nodeRefs) {
+          nodeListBuilder.add_node_ref(nodeRef);
+        }
+      }
+
+      {
+        osmium::builder::TagListBuilder tagListBuilder(
+            wayBuffer, &wayBuilder);
+
+        for (const auto& tag : sortedTags(way.tags)) {
+          tagListBuilder.add_tag(tag.first, tag.second);
+        }
+      }
+    }
+
+    wayBuffer.commit();
+    writer(std::move(wayBuffer));
+  }
+  {
+    osmium::memory::Buffer relationBuffer(
+        1024 * 1024, osmium::memory::Buffer::auto_grow::yes);
+
+    for (const auto& relation : store.relations) {
+      osmium::builder::RelationBuilder relationBuilder(
+          relationBuffer);
+
+      relationBuilder.set_id(relation.id);
+      applyOsmMetadataToPbfBuilder(
+          relation.metadata, &relationBuilder);
+
+      {
+        osmium::builder::RelationMemberListBuilder memberListBuilder(
+            relationBuffer, &relationBuilder);
+
+        for (const auto& member : relation.members) {
+          memberListBuilder.add_member(
+              pbfRelationMemberType(member.type),
+              member.ref,
+              member.role);
+        }
+      }
+
+      {
+        osmium::builder::TagListBuilder tagListBuilder(
+            relationBuffer, &relationBuilder);
+
+        for (const auto& tag : sortedTags(relation.tags)) {
+          tagListBuilder.add_tag(tag.first, tag.second);
+        }
+      }
+    }
+
+    relationBuffer.commit();
+    writer(std::move(relationBuffer));
+  }
+
+  writer.close();
 }
 }  // namespace petrimaps
 

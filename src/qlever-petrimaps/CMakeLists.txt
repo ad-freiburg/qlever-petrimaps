@@ -1,5 +1,17 @@
 file(GLOB_RECURSE QLEVER_PETRIMAPS_SRC *.cpp)
 find_package(PNG REQUIRED)
+find_package(ZLIB REQUIRED)
+
+find_path(PROTOZERO_INCLUDE_DIR
+	NAMES protozero/types.hpp
+)
+
+if (NOT PROTOZERO_INCLUDE_DIR)
+	message(FATAL_ERROR
+		"protozero headers were not found. "
+		"Install protozero, for example: brew install protozero"
+	)
+endif()
 
 find_path(LIBOSMIUM_INCLUDE_DIR
 	NAMES osmium/io/any_output.hpp
@@ -19,6 +31,7 @@ list(REMOVE_ITEM QLEVER_PETRIMAPS_SRC ${qlever_petrimaps_main})
 include_directories(
 	${QLEVER_PETRIMAPS_INCLUDE_DIR}
 	${PNG_INCLUDE_DIRS}_
+	${ZLIB_INCLUDE_DIRS}
 	${LIBOSMIUM_INCLUDE_DIR}
 )
 
@@ -57,6 +70,9 @@ add_custom_target(htmlfiles DEPENDS index.h example.h build.h style.h)
 
 add_dependencies(qlever_petrimaps_dep htmlfiles)
 
-target_link_libraries(qlever_petrimaps_dep PUBLIC pb_util_xml)
+target_link_libraries(qlever_petrimaps_dep PUBLIC
+	pb_util_xml
+	${ZLIB_LIBRARIES}
+)
 
 target_link_libraries(qlever-petrimaps qlever_petrimaps_dep 3rdparty_dep pb_util pb_util_geo pb_util_json pb_util_http ${PNG_LIBRARIES} -lpthread -lcurl)

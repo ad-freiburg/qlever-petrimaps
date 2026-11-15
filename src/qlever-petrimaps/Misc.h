@@ -345,6 +345,9 @@ void writeOsmXml(const OsmPrimitiveStore& store, std::ostream& out);
 void writeOsmXmlFile(const OsmPrimitiveStore& store,
                      const std::string& fileName);
 
+void writeOsmPbfFile(const OsmPrimitiveStore& store,
+                     const std::string& fileName);
+
 class TsvStreamReader {
   public:
     using HeaderCallback =
@@ -514,6 +517,50 @@ class OsmNodeTsvCollector {
     OsmPrimitiveStore* _store;
     OsmNodeResultReader _reader;
     bool _finished = false;
+};
+
+enum class OsmSourceObjectType {
+  Node,
+  Way,
+  Relation
+};
+
+class OsmSourceObjectTsvReader {
+  public:
+    explicit OsmSourceObjectTsvReader(OsmPrimitiveStore* store);
+
+    void parse(const char* data, size_t size);
+    void finish();
+
+  private:
+    void validateHeader() const;
+    void consumeRow(const std::vector<std::string>& row);
+    void startObject(OsmSourceObjectType type, int64_t id);
+    void emitCurrentObject();
+    void validateReferenceClosure() const;
+
+    OsmPrimitiveStore* _store;
+    TsvStreamReader _tsvReader;
+    std::vector<std::string> _columns;
+    size_t _rowNumber = 0;
+    bool _finished = false;
+
+    bool _hasCurrent = false;
+    bool _hasObjectRow = false;
+    OsmSourceObjectType _currentType = OsmSourceObjectType::Node;
+    int64_t _currentId = 0;
+
+    OsmNode _currentNode;
+    OsmWay _currentWay;
+    OsmRelation _currentRelation;
+
+    uint64_t _nextWayNodeSequence = 0;
+    uint64_t _nextRelationMemberSequence = 0;
+
+    bool _hasFinishedObject = false;
+    OsmSourceObjectType _lastFinishedType =
+        OsmSourceObjectType::Node;
+    int64_t _lastFinishedId = 0;
 };
 
 class OsmTsvToXmlExporter {
@@ -838,6 +885,18 @@ void exportQleverRelationTsvToOsmXml(const std::string& backendUrl,
                                      const std::string& query,
                                      std::ostream& out,
                                      const std::string& remoteAddr = "");
+
+void exportQleverFixedOsmTsvToOsmXmlFile(
+    const std::string& backendUrl,
+    const std::string& query,
+    const std::string& fileName,
+    const std::string& remoteAddr = "");
+
+void exportQleverFixedOsmTsvToOsmPbfFile(
+    const std::string& backendUrl,
+    const std::string& query,
+    const std::string& fileName,
+    const std::string& remoteAddr = "");
 
 enum class OsmSourceRootQueryFormat {
   TypedPrimitives,

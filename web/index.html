@@ -116,6 +116,17 @@
               </span>
             </span>
           </label>
+          <label id="osm-fixed-card" class="osm-mode-card">
+            <input id="osm-fixed-mode" type="radio"
+                     name="osm-export-mode" value="fixed">
+            <span class="osm-mode-copy">
+               <span class="osm-mode-title">Fixed source-object TSV</span>
+               <span class="osm-mode-desc">
+                  Uses a closed, fixed-schema source-object query. Download the
+                  preserved objects as OSM XML or OSM PBF.
+               </span>
+            </span>
+          </label>
         </div>
 
         <div id="osm-preserve-unavailable" hidden>
@@ -125,10 +136,13 @@
 
         <div id="osm-actions">
           <button id="osm-cancel" type="button">Cancel</button>
-          <button id="osm-download" type="button">Download .osm</button>
+          <button id="osm-download-xml" type="button">Download .osm</button>
+          <button id="osm-download-pbf" type="button" disabled>
+             Download .osm.pbf
+          </button>
         </div>
-      </div>
-    </div>
+       </div>
+     </div>
       <script src='build.js' defer></script>
    </body>
 </html>
