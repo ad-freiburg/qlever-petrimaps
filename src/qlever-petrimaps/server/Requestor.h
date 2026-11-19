@@ -324,6 +324,12 @@ class Requestor {
                         std::string sortBy) const;
   std::string prepQueryRow(std::string query, uint64_t row) const;
 
+  // The fill query for the geometry cache of a single query in lazy mode: the
+  // distinct non-point geometries of the given geometry columns of the query,
+  // sorted like the backend-wide fill query.
+  static std::string lazyFillQuery(const std::string& query,
+                                   const std::vector<std::string>& geomColumns);
+
   std::vector<std::pair<util::geo::FPoint, ROW_TYPE>> getDynamicPoints(
       const std::vector<IdMapping>& ids) const;
 
