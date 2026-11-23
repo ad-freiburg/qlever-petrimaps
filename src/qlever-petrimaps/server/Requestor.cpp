@@ -553,67 +553,6 @@ std::vector<std::string> Requestor::getColumns(const std::string& backend,
 }
 
 // _____________________________________________________________________________
-std::pair<size_t, size_t> Requestor::getMainQuery(const std::string& q) {
-  size_t start = std::string::npos;
-  size_t end = std::string::npos;
-  size_t d = 0;
-
-  for (size_t i = 0; i < q.size(); i++) {
-    char c = q[i];
-
-    // skip WS
-    if (std::isspace(static_cast<unsigned char>(c))) continue;
-
-    if (c == '#') {
-      // skip comments until newline
-      i = q.find_first_of("\r\n", i);
-      if (i == std::string::npos) break;
-      continue;
-    }
-
-    if (c == '\\') {
-      // skip escaped chars
-      i++;
-    } else if (c == '"' || c == '\'') {
-      auto del = q.substr(i, 1);
-      if (i + 2 < q.size() && q[i + 1] == c && q[i + 2] == c)
-        del = q.substr(i, 3);
-
-      // skip str literals
-      i += del.size();
-      for (; i < q.size() && q.compare(i, del.size(), del); i++) {
-        if (q[i] == '\\') i++;
-      }
-      i += del.size() - 1;
-    } else if (c == '<') {
-      // skip IRI
-      size_t j = i + 1;
-      while (j < q.size() && static_cast<unsigned char>(q[j]) > 0x20 &&
-             !std::strchr("<>\"{}|^`\\", q[j]))
-        j++;
-      if (j < q.size() && q[j] == '>') i = j;
-    } else if (c == '{') {
-      d++;
-    } else if (c == '}') {
-      if (d > 0) d--;
-    } else if (d == 0 && start == std::string::npos && i + 6 <= q.size()) {
-      // we have the SELECT
-      unsigned char prev = i > 0 ? q[i - 1] : ' ';
-      unsigned char next = i + 6 == q.size() ? ' ' : q[i + 6];
-      if (util::toLower(q.substr(i, 6)) == "select" && prev < 0x80 &&
-          !std::isalnum(prev) && !std::strchr("_-.:?$", prev) &&
-          next < 0x80 && !std::isalnum(next) && !std::strchr("_-.:", next))
-        start = i;
-    }
-
-    end = std::min(i + 1, q.size());
-  }
-
-  if (start == std::string::npos) return {std::string::npos, std::string::npos};
-  return {start, end};
-}
-
-// _____________________________________________________________________________
 std::string Requestor::prepQuery(std::string query,
                                  std::vector<std::string> columns,
                                  std::string sortBy) const {

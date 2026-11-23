@@ -4,11 +4,11 @@
 
 #include <string>
 
-#include "qlever-petrimaps/server/Requestor.h"
+#include "qlever-petrimaps/Misc.h"
 #include "util/Misc.h"
 #include "util/Test.h"
 
-using petrimaps::Requestor;
+using petrimaps::getMainQuery;
 
 // _____________________________________________________________________________
 int main(int argc, char** argv) {
@@ -30,7 +30,7 @@ SELECT DISTINCT ?pers ?geo {
   }
 LIMIT 10 # trailing { comment)";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, q.find("SELECT DISTINCT"));
     TEST(r.second, ==, q.find("LIMIT 10") + 8);
   }
@@ -50,7 +50,7 @@ SELECT DISTINCT ?pers ?geo {
   }
 LIMIT 10 # trailing { comment)";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, q.find("SELECT DISTINCT"));
     TEST(r.second, ==, q.find("LIMIT 10") + 8);
   }
@@ -70,7 +70,7 @@ SELECT DISTINCT ?pers ?geo {
   }
 LIMIT 10 # trailing { comment)";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, q.find("SELECT DISTINCT"));
     TEST(r.second, ==, q.find("LIMIT 10") + 8);
   }
@@ -90,7 +90,7 @@ SELECT DISTINCT ?pers $geo {
   }
 LIMIT 10 # trailing { comment)";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, q.find("SELECT DISTINCT"));
     TEST(r.second, ==, q.find("LIMIT 10") + 8);
   }
@@ -110,7 +110,7 @@ SELECT DISTINCT ?pers ?geo {
   }
 LIMIT 10 # trailing { comment)";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, q.find("SELECT DISTINCT"));
     TEST(r.second, ==, q.find("LIMIT 10") + 8);
   }
@@ -118,7 +118,7 @@ LIMIT 10 # trailing { comment)";
   {
     std::string q = "SELECT ?a WHERE { ?a ?b ?c }";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, 0);
     TEST(r.second, ==, q.size());
   }
@@ -126,7 +126,7 @@ LIMIT 10 # trailing { comment)";
   {
     std::string q = "SELECT?a WHERE { ?a ?b ?c }";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, 0);
     TEST(r.second, ==, q.size());
   }
@@ -134,7 +134,7 @@ LIMIT 10 # trailing { comment)";
   {
     std::string q = "SELECT?a WHERE {?a?b?c}";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, 0);
     TEST(r.second, ==, q.size());
   }
@@ -144,7 +144,7 @@ LIMIT 10 # trailing { comment)";
         "# select\nPREFIX ex: <http://ex#>\nselect ?selection WHERE { "
         "?selection ex:select ?c }\n";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, q.find("select ?selection"));
     TEST(r.second, ==, q.size() - 1);
   }
@@ -154,7 +154,7 @@ LIMIT 10 # trailing { comment)";
         "# select\nPREFIX ex: <http://ex#>\nselect?selection WHERE { "
         "?selection ex:select ?c }\n";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, q.find("select?selection"));
     TEST(r.second, ==, q.size() - 1);
   }
@@ -164,7 +164,7 @@ LIMIT 10 # trailing { comment)";
         "# select\nPREFIX ex: <http://ex#>\nselect?selection WHERE { "
         "?selection?b?c }\n";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, q.find("select?selection"));
     TEST(r.second, ==, q.size() - 1);
   }
@@ -176,7 +176,7 @@ LIMIT 10 # trailing { comment)";
         "PREFIX x.select: <http://ex#>\nPREFIX \xC3\xA4select: <http://ex#>\n"
         "select ?selection WHERE { ?selection select:select ?c }\n";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, q.find("select ?selection"));
     TEST(r.second, ==, q.size() - 1);
   }
@@ -186,7 +186,7 @@ LIMIT 10 # trailing { comment)";
         "# select\nPREFIX ex: <http://ex#>\nselect ?selection WHERE { "
         "?selection ex:a\\#b ex:it\\'s }\n";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, q.find("select ?selection"));
     TEST(r.second, ==, q.size() - 1);
   }
@@ -197,7 +197,7 @@ LIMIT 10 # trailing { comment)";
         "WITH %y AS { ?a ex:it\\'s ?c }\n"
         "select ?selection WHERE { INCLUDE %x INCLUDE %y }\n";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, q.find("select ?selection"));
     TEST(r.second, ==, q.size() - 1);
   }
@@ -208,7 +208,7 @@ LIMIT 10 # trailing { comment)";
         "FILTER(?c<\"a>b\") }\nselect ?selection WHERE { ?selection ex:select "
         "?c FILTER(?c<\"}>{\"&&?c>?d) }\n";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, q.find("select ?selection"));
     TEST(r.second, ==, q.size() - 1);
   }
@@ -218,7 +218,7 @@ LIMIT 10 # trailing { comment)";
         "# select\rPREFIX ex: <http://ex#>\rselect ?selection WHERE { "
         "?selection ex:select ?c } # comment\r";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, q.find("select ?selection"));
     TEST(r.second, ==, q.find(" # comment"));
   }
@@ -228,7 +228,7 @@ LIMIT 10 # trailing { comment)";
         "# select\nPREFIX ex: <http://ex#>\nselect ?selection WHERE { "
         "?selection ex:select \"\"\"a\"}\"\"\"@en, '''b'}'''^^ex:t }\n";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, q.find("select ?selection"));
     TEST(r.second, ==, q.size() - 1);
   }
@@ -239,7 +239,7 @@ LIMIT 10 # trailing { comment)";
         "ORDER BY DESC(?a) # order } select\n"
         "# un \"commentaire\" <x>\n  \n";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, 0);
     TEST(r.second, ==, q.find("DESC(?a)") + 8);
   }
@@ -248,7 +248,7 @@ LIMIT 10 # trailing { comment)";
     // "ask" queries
     std::string q = "ASK { ?a ?b ?c }";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, std::string::npos);
     TEST(r.second, ==, std::string::npos);
   }
@@ -257,7 +257,7 @@ LIMIT 10 # trailing { comment)";
     // "ask" queries
     std::string q = "ASK{?a?b?c}";
 
-    auto r = Requestor::getMainQuery(q);
+    auto r = getMainQuery(q);
     TEST(r.first, ==, std::string::npos);
     TEST(r.second, ==, std::string::npos);
   }

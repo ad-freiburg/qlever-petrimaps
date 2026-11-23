@@ -1990,7 +1990,7 @@ util::http::Answer Server::handleQueryReq(const Params& pars,
     throw std::invalid_argument("No query specified.");
 
   LOG(INFO) << "[SERVER] Queried backend is " << backendCfg.backend;
-  auto mq = Requestor::getMainQuery(rcfg.query);
+  auto mq = petrimaps::getMainQuery(rcfg.query);
   if (mq.first != std::string::npos && isatty(STDOUT_FILENO)) {
     // if output is a term underline the main query for dbg
     LOG(INFO) << "[SERVER] Query is:\n"
