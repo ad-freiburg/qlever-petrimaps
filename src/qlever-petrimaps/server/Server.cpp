@@ -4,6 +4,7 @@
 
 #include <png.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <cctype>
@@ -1989,7 +1990,18 @@ util::http::Answer Server::handleQueryReq(const Params& pars,
     throw std::invalid_argument("No query specified.");
 
   LOG(INFO) << "[SERVER] Queried backend is " << backendCfg.backend;
-  LOG(INFO) << "[SERVER] Query is:\n" << rcfg.query;
+  auto mq = Requestor::getMainQuery(rcfg.query);
+  if (mq.first != std::string::npos && isatty(STDOUT_FILENO)) {
+    // if output is a term underline the main query for dbg
+    LOG(INFO) << "[SERVER] Query is:\n"
+              << rcfg.query.substr(0, mq.first)
+              << "\033[4m"
+              << rcfg.query.substr(mq.first, mq.second - mq.first)
+              << "\033[24m"
+              << rcfg.query.substr(mq.second);
+  } else {
+    LOG(INFO) << "[SERVER] Query is:\n" << rcfg.query;
+  }
 
   createCache(backendCfg);
   std::string indexHash = loadCache(backendCfg);

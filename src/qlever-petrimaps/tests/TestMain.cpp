@@ -81,10 +81,10 @@ LIMIT 10 # trailing { comment)";
 WITH %second as {
 ?rad wdt:P31 wd:Q5 . }
 With %first AS {
-{ SELECT * WHERE { ?a ?b """SELECT * WHERE boese"{""" } }
-{  SELECT ?rad WHERE { INCLUDE %second } } .
+{ SELECT * WHERE { $a ?b """SELECT * WHERE boese"{""" } }
+{  SELECT $rad WHERE { INCLUDE %second } } .
 ?random wdt:P31 wd:Q901 . }
-SELECT DISTINCT ?pers ?geo {
+SELECT DISTINCT ?pers $geo {
   { SELECT ?random WHERE { INCLUDE %first } } # comment
   ?pers wdt:P108 ?org . FILTER(?x < 3 && ?y > 2) FILTER(?s != "}select{")
   }

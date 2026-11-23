@@ -2,15 +2,15 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
+#include "qlever-petrimaps/server/Requestor.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstring>
 #include <iostream>
-#include <regex>
 #include <sstream>
 
 #include "qlever-petrimaps/Misc.h"
-#include "qlever-petrimaps/server/Requestor.h"
 #include "util/Misc.h"
 #include "util/geo/Geo.h"
 #include "util/geo/PolyLine.h"
@@ -293,14 +293,14 @@ void Requestor::request(const std::string& remoteAddr) {
           }
 
           if (clusterI > 0) {
-            for (size_t m = 0; m < clusterI; m++) {
+            for (size_t m = 0; m <= clusterI; m++) {
               const auto& p = _objects[gid][oid - m];
               _pgrid[gsid].add(_cache->getPoints()[p.first],
                                getValFor(gid, vid, OID_TYPE{oid - m}),
                                OID_TYPE{j});
               if (buildClusters)
                 _clusterObjects[gid].push_back(
-                    {OID_TYPE{oid - m}, {m, clusterI}});
+                    {OID_TYPE{oid - m}, {m, clusterI + 1}});
               j++;
             }
           } else {
@@ -332,7 +332,7 @@ void Requestor::request(const std::string& remoteAddr) {
           }
 
           if (clusterI > 0) {
-            for (size_t m = 0; m < clusterI; m++) {
+            for (size_t m = 0; m <= clusterI; m++) {
               const auto& p = _dynamicPoints[gid][i - m];
               auto geom = p.first;
               _pgrid[gsid].add(
@@ -341,7 +341,7 @@ void Requestor::request(const std::string& remoteAddr) {
                   OID_TYPE{j});
               if (buildClusters)
                 _clusterObjects[gid].push_back(
-                    {OID_TYPE{i - m + _objects[gid].size()}, {m, clusterI}});
+                    {OID_TYPE{i - m + _objects[gid].size()}, {m, clusterI + 1}});
               j++;
             }
           } else {
@@ -541,12 +541,10 @@ void Requestor::requestRows(
 // _____________________________________________________________________________
 std::vector<std::string> Requestor::getColumns(const std::string& backend,
                                                std::string query) {
-  std::regex expr("select[^{]*(\\*|[\\?$][A-Z0-9_\\-+]*)+[^{]*\\s*\\{",
-                  std::regex_constants::icase);
-
-  query = std::regex_replace(query, expr, "SELECT * WHERE {$&",
-                             std::regex_constants::format_first_only) +
-          "}";
+  auto r = getMainQuery(query);
+  if (r.first != std::string::npos)
+    query = query.substr(0, r.first) + "SELECT * WHERE {" +
+            query.substr(r.first, r.second - r.first) + "}";
 
   query += " LIMIT 0";
 
@@ -575,7 +573,7 @@ std::pair<size_t, size_t> Requestor::getMainQuery(const std::string& q) {
 
     if (c == '"' || c == '\'') {
       auto del = q.substr(i, 1);
-      if (i + 2 < q.size() && q[i+1] == c && q[i+2] == c)
+      if (i + 2 < q.size() && q[i + 1] == c && q[i + 2] == c)
         del = q.substr(i, 3);
 
       // skip str literals
@@ -596,7 +594,7 @@ std::pair<size_t, size_t> Requestor::getMainQuery(const std::string& q) {
       if (d > 0) d--;
     } else if (d == 0 && start == std::string::npos && i + 6 <= q.size()) {
       // we have the SELECT
-      auto prev = i > 0 ? q[i-1] : ' ';
+      auto prev = i > 0 ? q[i - 1] : ' ';
       auto next = i + 6 == q.size() ? ' ' : q[i + 6];
       if (util::toLower(q.substr(i, 6)) == "select" && !std::isalnum(prev) &&
           !std::strchr("_?$:", prev) && !std::isalnum(next) && next != '_')
@@ -614,14 +612,10 @@ std::pair<size_t, size_t> Requestor::getMainQuery(const std::string& q) {
 std::string Requestor::prepQuery(std::string query,
                                  std::vector<std::string> columns,
                                  std::string sortBy) const {
-  std::regex expr("select[^{]*(\\*|[\\?$][A-Z0-9_\\-+]*)+[^{]*\\s*\\{",
-                  std::regex_constants::icase);
-
-  query =
-      std::regex_replace(query, expr,
-                         "SELECT " + util::implode(columns, " ") + " WHERE {$&",
-                         std::regex_constants::format_first_only) +
-      "}";
+  auto r = getMainQuery(query);
+  if (r.first != std::string::npos)
+    query = query.substr(0, r.first) + "SELECT " + util::implode(columns, " ") +
+            " WHERE {" + query.substr(r.first, r.second - r.first) + "}";
 
   if (sortBy.size()) query += " INTERNAL SORT BY " + sortBy;
   query += " LIMIT 18446744073709551615";
@@ -631,13 +625,10 @@ std::string Requestor::prepQuery(std::string query,
 
 // _____________________________________________________________________________
 std::string Requestor::prepQueryRow(std::string query, uint64_t row) const {
-  // replace first select
-  std::regex expr("select[^{]*(\\*|[\\?$][A-Z0-9_\\-+]*)+[^{]*\\s*\\{",
-                  std::regex_constants::icase);
-
-  query = std::regex_replace(query, expr, "SELECT * {$&",
-                             std::regex_constants::format_first_only) +
-          "}";
+  auto r = getMainQuery(query);
+  if (r.first != std::string::npos)
+    query = query.substr(0, r.first) + "SELECT * {" +
+            query.substr(r.first, r.second - r.first) + "}";
   if (_sortColumn.size()) query += " INTERNAL SORT BY " + _sortColumn;
   query += " OFFSET " + std::to_string(row) + " LIMIT 1";
   return query;
