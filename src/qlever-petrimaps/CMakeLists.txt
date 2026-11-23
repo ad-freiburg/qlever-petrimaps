@@ -5,6 +5,7 @@ find_package(PNG REQUIRED)
 set(qlever_petrimaps_main PetriMapsMain.cpp)
 
 list(REMOVE_ITEM QLEVER_PETRIMAPS_SRC ${qlever_petrimaps_main})
+list(FILTER QLEVER_PETRIMAPS_SRC EXCLUDE REGEX ".*/tests/.*")
 
 include_directories(
 	${QLEVER_PETRIMAPS_INCLUDE_DIR}
@@ -47,3 +48,5 @@ add_custom_target(htmlfiles DEPENDS index.h example.h build.h style.h)
 add_dependencies(qlever_petrimaps_dep htmlfiles)
 
 target_link_libraries(qlever-petrimaps qlever_petrimaps_dep 3rdparty_dep pb_util pb_util_geo pb_util_json pb_util_http ${PNG_LIBRARIES} -lpthread -lcurl)
+
+add_subdirectory(tests)

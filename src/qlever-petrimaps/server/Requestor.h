@@ -267,6 +267,8 @@ class Requestor {
   static std::vector<std::string> getColumns(const std::string& backend,
                                              std::string query);
 
+  static std::pair<size_t, size_t> getMainQuery(const std::string& query);
+
   double getVal(size_t lid, OID_TYPE oid) const;
   std::pair<double, double> getRasterMetas(size_t lid, OID_TYPE oid) const;
 

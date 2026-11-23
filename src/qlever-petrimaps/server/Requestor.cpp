@@ -3,6 +3,7 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <iostream>
 #include <regex>
@@ -551,6 +552,60 @@ std::vector<std::string> Requestor::getColumns(const std::string& backend,
 
   RequestReader reader(backend, -1, 0, 0, 0);
   return reader.requestColumns(query);
+}
+
+// _____________________________________________________________________________
+std::pair<size_t, size_t> Requestor::getMainQuery(const std::string& q) {
+  size_t start = std::string::npos;
+  size_t end = std::string::npos;
+  size_t d = 0;
+
+  for (size_t i = 0; i < q.size(); i++) {
+    char c = q[i];
+    if (std::isspace(static_cast<unsigned char>(c))) continue;
+
+    if (c == '#') {
+      // skip comments
+      i = q.find('\n', i);
+      if (i == std::string::npos) break;
+      continue;
+    }
+
+    if (c == '"' || c == '\'') {
+      auto del = q.substr(i, 1);
+      if (i + 2 < q.size() && q[i+1] == c && q[i+2] == c)
+        del = q.substr(i, 3);
+
+      // skip str literals
+      i += del.size();
+      for (; i < q.size() && q.compare(i, del.size(), del); i++) {
+        if (q[i] == '\\') i++;
+      }
+    } else if (c == '<') {
+      // skip IRI
+      size_t j = i + 1;
+      while (j < q.size() && q[j] != '>' && q[j] != '<' &&
+             !std::isspace(static_cast<unsigned char>(q[j])))
+        j++;
+      if (j < q.size() && q[j] == '>') i = j;
+    } else if (c == '{') {
+      d++;
+    } else if (c == '}') {
+      if (d > 0) d--;
+    } else if (d == 0 && start == std::string::npos && i + 6 <= q.size()) {
+      // we have the SELECT
+      auto prev = i > 0 ? q[i-1] : ' ';
+      auto next = i + 6 == q.size() ? ' ' : q[i + 6];
+      if (util::toLower(q.substr(i, 6)) == "select" && !std::isalnum(prev) &&
+          !std::strchr("_?$:", prev) && !std::isalnum(next) && next != '_')
+        start = i;
+    }
+
+    end = std::min(i + 1, q.size());
+  }
+
+  if (start == std::string::npos) return {std::string::npos, std::string::npos};
+  return {start, end};
 }
 
 // _____________________________________________________________________________
