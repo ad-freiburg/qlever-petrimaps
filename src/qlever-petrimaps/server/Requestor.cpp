@@ -562,6 +562,8 @@ std::pair<size_t, size_t> Requestor::getMainQuery(const std::string& q) {
 
   for (size_t i = 0; i < q.size(); i++) {
     char c = q[i];
+
+    // skip WS
     if (std::isspace(static_cast<unsigned char>(c))) continue;
 
     if (c == '#') {

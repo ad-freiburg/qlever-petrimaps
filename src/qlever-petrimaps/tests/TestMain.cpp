@@ -170,6 +170,17 @@ LIMIT 10 # trailing { comment)";
   }
 
   {
+    std::string q =
+        "SELECT ?a WHERE { ?a ?b ?c } # select { after where\n"
+        "ORDER BY DESC(?a) # order } select\n"
+        "# un \"commentaire\" <x>\n  \n";
+
+    auto r = Requestor::getMainQuery(q);
+    TEST(r.first, ==, 0);
+    TEST(r.second, ==, q.find("DESC(?a)") + 8);
+  }
+
+  {
     // "ask" queries
     std::string q = "ASK { ?a ?b ?c }";
 
