@@ -170,6 +170,70 @@ LIMIT 10 # trailing { comment)";
   }
 
   {
+    // prefixes named select
+    std::string q =
+        "# select\nPREFIX select: <http://ex#>\nPREFIX select-x: <http://ex#>\n"
+        "PREFIX x.select: <http://ex#>\nPREFIX \xC3\xA4select: <http://ex#>\n"
+        "select ?selection WHERE { ?selection select:select ?c }\n";
+
+    auto r = Requestor::getMainQuery(q);
+    TEST(r.first, ==, q.find("select ?selection"));
+    TEST(r.second, ==, q.size() - 1);
+  }
+
+  {
+    std::string q =
+        "# select\nPREFIX ex: <http://ex#>\nselect ?selection WHERE { "
+        "?selection ex:a\\#b ex:it\\'s }\n";
+
+    auto r = Requestor::getMainQuery(q);
+    TEST(r.first, ==, q.find("select ?selection"));
+    TEST(r.second, ==, q.size() - 1);
+  }
+
+  {
+    std::string q =
+        "# select\nPREFIX ex: <http://ex#>\nWITH %x AS { ?a ex:a\\#b ?c }\n"
+        "WITH %y AS { ?a ex:it\\'s ?c }\n"
+        "select ?selection WHERE { INCLUDE %x INCLUDE %y }\n";
+
+    auto r = Requestor::getMainQuery(q);
+    TEST(r.first, ==, q.find("select ?selection"));
+    TEST(r.second, ==, q.size() - 1);
+  }
+
+  {
+    std::string q =
+        "# select\nPREFIX ex: <http://ex#>\nWITH %x AS { ?a ex:p ?c "
+        "FILTER(?c<\"a>b\") }\nselect ?selection WHERE { ?selection ex:select "
+        "?c FILTER(?c<\"}>{\"&&?c>?d) }\n";
+
+    auto r = Requestor::getMainQuery(q);
+    TEST(r.first, ==, q.find("select ?selection"));
+    TEST(r.second, ==, q.size() - 1);
+  }
+
+  {
+    std::string q =
+        "# select\rPREFIX ex: <http://ex#>\rselect ?selection WHERE { "
+        "?selection ex:select ?c } # comment\r";
+
+    auto r = Requestor::getMainQuery(q);
+    TEST(r.first, ==, q.find("select ?selection"));
+    TEST(r.second, ==, q.find(" # comment"));
+  }
+
+  {
+    std::string q =
+        "# select\nPREFIX ex: <http://ex#>\nselect ?selection WHERE { "
+        "?selection ex:select \"\"\"a\"}\"\"\"@en, '''b'}'''^^ex:t }\n";
+
+    auto r = Requestor::getMainQuery(q);
+    TEST(r.first, ==, q.find("select ?selection"));
+    TEST(r.second, ==, q.size() - 1);
+  }
+
+  {
     std::string q =
         "SELECT ?a WHERE { ?a ?b ?c } # select { after where\n"
         "ORDER BY DESC(?a) # order } select\n"

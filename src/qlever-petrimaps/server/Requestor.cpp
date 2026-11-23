@@ -565,13 +565,16 @@ std::pair<size_t, size_t> Requestor::getMainQuery(const std::string& q) {
     if (std::isspace(static_cast<unsigned char>(c))) continue;
 
     if (c == '#') {
-      // skip comments
-      i = q.find('\n', i);
+      // skip comments until newline
+      i = q.find_first_of("\r\n", i);
       if (i == std::string::npos) break;
       continue;
     }
 
-    if (c == '"' || c == '\'') {
+    if (c == '\\') {
+      // skip escaped chars
+      i++;
+    } else if (c == '"' || c == '\'') {
       auto del = q.substr(i, 1);
       if (i + 2 < q.size() && q[i + 1] == c && q[i + 2] == c)
         del = q.substr(i, 3);
@@ -581,11 +584,12 @@ std::pair<size_t, size_t> Requestor::getMainQuery(const std::string& q) {
       for (; i < q.size() && q.compare(i, del.size(), del); i++) {
         if (q[i] == '\\') i++;
       }
+      i += del.size() - 1;
     } else if (c == '<') {
       // skip IRI
       size_t j = i + 1;
-      while (j < q.size() && q[j] != '>' && q[j] != '<' &&
-             !std::isspace(static_cast<unsigned char>(q[j])))
+      while (j < q.size() && static_cast<unsigned char>(q[j]) > 0x20 &&
+             !std::strchr("<>\"{}|^`\\", q[j]))
         j++;
       if (j < q.size() && q[j] == '>') i = j;
     } else if (c == '{') {
@@ -594,10 +598,11 @@ std::pair<size_t, size_t> Requestor::getMainQuery(const std::string& q) {
       if (d > 0) d--;
     } else if (d == 0 && start == std::string::npos && i + 6 <= q.size()) {
       // we have the SELECT
-      auto prev = i > 0 ? q[i - 1] : ' ';
-      auto next = i + 6 == q.size() ? ' ' : q[i + 6];
-      if (util::toLower(q.substr(i, 6)) == "select" && !std::isalnum(prev) &&
-          !std::strchr("_?$:", prev) && !std::isalnum(next) && next != '_')
+      unsigned char prev = i > 0 ? q[i - 1] : ' ';
+      unsigned char next = i + 6 == q.size() ? ' ' : q[i + 6];
+      if (util::toLower(q.substr(i, 6)) == "select" && prev < 0x80 &&
+          !std::isalnum(prev) && !std::strchr("_-.:?$", prev) &&
+          next < 0x80 && !std::isalnum(next) && !std::strchr("_-.:", next))
         start = i;
     }
 
