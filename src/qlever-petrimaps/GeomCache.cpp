@@ -49,14 +49,15 @@ const std::string &GeomCache::getFillQuery() const { return _config.fillQuery; }
 std::string GeomCache::getCountQuery() const {
   // Modify the query from `getFillQuery` to count the number of geometries.
   std::string query = getFillQuery();
-  auto pos = query.find("SELECT");
-  if (pos == std::string::npos) {
+  auto r = getMainQuery(query);
+  if (r.first == std::string::npos) {
     LOG(ERROR) << "Could not find SELECT in query: " << query;
     return "SELECT ?count WHERE { VALUES ?count { 0 } }";
   }
+  query = query.substr(0, r.first) +
+          "SELECT (COUNT(?geometry) AS ?count) WHERE { " +
+          query.substr(r.first, r.second - r.first) + " }";
   util::replaceAll(query, "INTERNAL SORT BY ?geometry", "");
-  query.insert(pos, "SELECT (COUNT(?geometry) AS ?count) WHERE { ");
-  query.append(" }");
   return query;
 }
 

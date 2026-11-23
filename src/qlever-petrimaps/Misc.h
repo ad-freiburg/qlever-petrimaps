@@ -15,6 +15,7 @@
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "util/JobQueue.h"
@@ -185,6 +186,8 @@ std::string normalizeURL(const std::string& inURL);
 std::string canonizeURL(const std::string& inURL,
                         const std::string& remoteAddr);
 std::string remoteAddress(int sock, const HeaderParams& headers);
+
+std::pair<size_t, size_t> getMainQuery(const std::string& query);
 
 void performCurlRequest(const std::string& url, const std::string& postFields,
                         const std::string& acceptHeader,
