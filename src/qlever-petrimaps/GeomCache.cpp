@@ -394,24 +394,23 @@ void GeomCache::request() {
 
   auto mode = std::ios::out | std::ios::in | std::ios::binary;
 
-  std::string pointsFName = util::getTmpFName("", "points");
+  std::string pointsFName;
+  close(util::getTmpF("", "points", "", &pointsFName));
   _pointsF.open(pointsFName, mode);
 
-  std::string linePointsFName = util::getTmpFName("", "linepoints");
+  std::string linePointsFName;
+  close(util::getTmpF("", "linepoints", "", &linePointsFName));
   _linePointsF.open(linePointsFName, mode);
 
-  std::string linesFName = util::getTmpFName("", "lines");
+  std::string linesFName;
+  close(util::getTmpF("", "lines", "", &linesFName));
   _linesF.open(linesFName, mode);
 
-  std::string qidToIdFName = util::getTmpFName("", "qidtoid");
+  // keep the descriptor as a writable handle into the qidToId file for
+  // overwriting the placeholders
+  std::string qidToIdFName;
+  _qidToIdOutFd = util::getTmpF("", "qidtoid", "", &qidToIdFName);
   _qidToIdF.open(qidToIdFName, mode);
-
-  // a writable handle into the qidToId file for overwriting the placeholders
-  _qidToIdOutFd = ::open(qidToIdFName.c_str(), O_RDWR);
-  if (_qidToIdOutFd < 0) {
-    throw std::runtime_error("Could not open " + qidToIdFName + ": " +
-                             strerror(errno));
-  }
 
   // immediately unlink
   unlink(pointsFName.c_str());
