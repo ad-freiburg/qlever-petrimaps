@@ -94,13 +94,20 @@ inline bool operator!=(const GeomCacheConfig& l, const GeomCacheConfig& r) {
   return !(l == r);
 }
 
+typedef std::vector<util::geo::Point<int16_t>,
+                    util::no_init_allocator<util::geo::Point<int16_t>>>
+    LinePoints;
+
 class GeomCache {
  public:
   GeomCache() : _config(), _curRow(0), _maxMemory(-1) {}
   explicit GeomCache(const GeomCacheConfig& config, size_t maxMemory)
       : _config(config), _curRow(0), _maxMemory(maxMemory) {}
 
-  ~GeomCache() { closeQidToIdOut(); }
+  ~GeomCache() {
+    closeQidToIdOut();
+    closeLinePoints();
+  }
 
   // owns file descriptors, must not be copied
   GeomCache(const GeomCache&) = delete;
@@ -109,7 +116,13 @@ class GeomCache {
   GeomCache& operator=(GeomCache&& o) {
     _config = o._config;
     _lines = std::move(o._lines);
-    _linePoints = std::move(o._linePoints);
+    _lineBoxes = std::move(o._lineBoxes);
+    _lineFlags = std::move(o._lineFlags);
+    closeLinePoints();
+    _linePointsFd = o._linePointsFd;
+    _linePointsOff = o._linePointsOff;
+    _numLinePoints = o._numLinePoints;
+    o._linePointsFd = -1;
     _points = std::move(o._points);
     _qidToId = std::move(o._qidToId);
     _dangling = o._dangling;
@@ -152,11 +165,8 @@ class GeomCache {
     return _points;
   }
 
-  const std::vector<util::geo::Point<int16_t>,
-                    util::no_init_allocator<util::geo::Point<int16_t>>>&
-  getLinePoints() const {
-    return _linePoints;
-  }
+  // read lineId points from disk into a buffer
+  void readLinePoints(LINEID_TYPE lineId, LinePoints* buf) const;
 
   const std::vector<size_t, util::no_init_allocator<size_t>>& getLines() const {
     return _lines;
@@ -165,9 +175,29 @@ class GeomCache {
   util::geo::FBox getPointBBox(size_t id) const {
     return util::geo::getBoundingBox(_points[id]);
   }
-  util::geo::DBox getLineBBox(LINEID_TYPE lineId) const;
+  util::geo::DBox getLineBBox(LINEID_TYPE lineId) const {
+    const auto& b = _lineBoxes[lineId];
+    return util::geo::DBox(
+        util::geo::DPoint(b.getLowerLeft().getX() / 10.0,
+                          b.getLowerLeft().getY() / 10.0),
+        util::geo::DPoint(b.getUpperRight().getX() / 10.0,
+                          b.getUpperRight().getY() / 10.0));
+  }
 
-  size_t serializeToDisk(const std::string& fname) const;
+  bool isArea(LINEID_TYPE lineId) const {
+    return _lineFlags[lineId] & LINE_IS_AREA;
+  }
+
+  bool isInnerArea(LINEID_TYPE lineId) const {
+    return _lineFlags[lineId] & LINE_IS_INNER_AREA;
+  }
+
+  struct DiskOffsets {
+    size_t linePoints;
+    size_t qidToId;
+  };
+
+  DiskOffsets serializeToDisk(const std::string& fname) const;
 
   void fromDisk(const std::string& fname, size_t blockSize = 1024 * 1024);
 
@@ -181,7 +211,7 @@ class GeomCache {
   }
 
   size_t getLineEnd(LINEID_TYPE lineId) const {
-    return lineId + 1 < _lines.size() ? _lines[lineId + 1] : _linePoints.size();
+    return lineId + 1 < _lines.size() ? _lines[lineId + 1] : _numLinePoints;
   }
 
   static std::string indexHashFromDisk(const std::string& fname);
@@ -235,10 +265,27 @@ class GeomCache {
 
   std::vector<util::geo::FPoint, util::no_init_allocator<util::geo::FPoint>>
       _points;
-  std::vector<util::geo::Point<int16_t>,
-              util::no_init_allocator<util::geo::Point<int16_t>>>
-      _linePoints;
   std::vector<size_t, util::no_init_allocator<size_t>> _lines;
+
+  static const uint8_t LINE_IS_AREA = 1;
+  static const uint8_t LINE_IS_INNER_AREA = 2;
+  std::vector<util::geo::I32Box, util::no_init_allocator<util::geo::I32Box>>
+      _lineBoxes;
+  std::vector<uint8_t, util::no_init_allocator<uint8_t>> _lineFlags;
+
+  // the line points themselves stay in the cache file
+  int _linePointsFd = -1;
+  size_t _linePointsOff = 0;
+  size_t _numLinePoints = 0;
+
+  // the line points file of request(), copied into the cache file
+  int _linePointsTmpFd = -1;
+
+  void openLinePoints(const std::string& fname, size_t off, size_t num);
+  void closeLinePoints();
+  void readLinePoints(size_t start, size_t num,
+                      util::geo::Point<int16_t>* out) const;
+  void buildLineMetas();
 
   size_t _pointsFSize;
   size_t _linePointsFSize;

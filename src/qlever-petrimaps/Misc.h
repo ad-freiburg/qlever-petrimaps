@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <exception>
+#include <fstream>
 #include <functional>
 #include <limits>
 #include <sstream>
@@ -39,8 +40,7 @@ struct TYPED_ID {
 
   // NO implicit instantation from RAW_ID_TYPE ore size_t, always spell it out
   explicit TYPED_ID(const RAW_ID_TYPE val) : _val{val} {}
-  explicit TYPED_ID(const size_t val)
-      : _val{static_cast<RAW_ID_TYPE>(val)} {}
+  explicit TYPED_ID(const size_t val) : _val{static_cast<RAW_ID_TYPE>(val)} {}
 
   operator RAW_ID_TYPE() const { return _val; }
 
@@ -128,10 +128,12 @@ struct IdMapping {
 // ID types must not grow a vtable or stop being memcpy-able
 static_assert(sizeof(ID_TYPE) == sizeof(RAW_ID_TYPE),
               "an ID must be exactly as big as its raw value");
-static_assert(std::is_trivially_copyable<ID_TYPE>::value,
-              "an ID must be trivially copyable, it is serialized as raw bytes");
-static_assert(std::is_standard_layout<IdMapping>::value,
-              "IdMapping must be standard layout, it is serialized as raw bytes");
+static_assert(
+    std::is_trivially_copyable<ID_TYPE>::value,
+    "an ID must be trivially copyable, it is serialized as raw bytes");
+static_assert(
+    std::is_standard_layout<IdMapping>::value,
+    "IdMapping must be standard layout, it is serialized as raw bytes");
 
 union ID {
   uint64_t val;
@@ -291,6 +293,9 @@ inline void petrimapsCurlSetup(CURL* curl) {
 }
 
 size_t writeStringCb(void* contents, size_t size, size_t nmemb, void* userp);
+
+// Copy n bytes of fd to f
+void copy(int fd, size_t n, std::ofstream* f);
 
 inline std::string httpRequest(const std::string& url,
                                const std::string& postFields = "",

@@ -391,14 +391,19 @@ void Requestor::request(const std::string& remoteAddr) {
 #pragma omp section
       {
         size_t i = 0;
+        LinePoints linePoints;
         for (const auto& l : _objects[gid]) {
           if (l.first >= I_OFFSET &&
               l.first < std::numeric_limits<ID_TYPE>::max()) {
             LINEID_TYPE lineId{l.first - I_OFFSET};
             bool lineIsArea = isArea(l.first);
 
-            size_t start = _cache->getLine(lineId);
-            size_t end = _cache->getLineEnd(lineId);
+            try {
+              _cache->readLinePoints(lineId, &linePoints);
+            } catch (...) {
+              ePtr4 = std::current_exception();
+              break;
+            }
 
             double mainX = 0;
             double mainY = 0;
@@ -414,8 +419,7 @@ void Requestor::request(const std::string& remoteAddr) {
             util::geo::FBox fbox;
             util::geo::FPoint lastP;
 
-            for (size_t li = start; li < end; li++) {
-              const auto& cur = _cache->getLinePoints()[li];
+            for (const auto& cur : linePoints) {
 
               if (isMCoord(cur.getX())) {
                 mainX = rmCoord(cur.getX());
@@ -600,17 +604,18 @@ const ResObj Requestor::getGeom(size_t lid, OID_TYPE oid, double rad) const {
 util::geo::DLine Requestor::extractLineGeom(GID_TYPE gid, double minD) const {
   util::geo::DLine dline;
 
-  size_t start = getLine(gid);
-  size_t end = getLineEnd(gid);
+  LinePoints linePoints;
+  _cache->readLinePoints(LINEID_TYPE{gid - I_OFFSET}, &linePoints);
+  const size_t end = linePoints.size();
 
   double mainX = 0;
   double mainY = 0;
 
   size_t gi = 0;
 
-  for (size_t i = start; i < end; i++) {
+  for (size_t i = 0; i < end; i++) {
     // extract real geom
-    const auto& cur = _cache->getLinePoints()[i];
+    const auto& cur = linePoints[i];
 
     if (isMCoord(cur.getX())) {
       mainX = rmCoord(cur.getX());
@@ -636,21 +641,12 @@ util::geo::DLine Requestor::extractLineGeom(GID_TYPE gid, double minD) const {
 
 // _____________________________________________________________________________
 bool Requestor::isArea(GID_TYPE gid) const {
-  size_t end = getLineEnd(gid);
-
-  if (end == 0) return false;
-
-  return isMCoord(_cache->getLinePoints()[end - 1].getX());
+  return _cache->isArea(LINEID_TYPE{gid - I_OFFSET});
 }
 
 // _____________________________________________________________________________
 bool Requestor::isInnerArea(GID_TYPE gid) const {
-  size_t end = getLineEnd(gid);
-
-  if (end == 0) return false;
-
-  return isMCoord(_cache->getLinePoints()[end - 1].getX()) &&
-         rmCoord(_cache->getLinePoints()[end - 1].getX()) == 1;
+  return _cache->isInnerArea(LINEID_TYPE{gid - I_OFFSET});
 }
 
 // _____________________________________________________________________________
@@ -845,8 +841,9 @@ bool Requestor::lineIntersects(GID_TYPE gid,
                                const util::geo::DBox& bbox) const {
   const auto& lbox = getLineBBox(gid);
   if (!util::geo::intersects(lbox, bbox)) return false;
-  size_t start = getLine(gid);
-  size_t end = getLineEnd(gid);
+
+  LinePoints linePoints;
+  _cache->readLinePoints(LINEID_TYPE{gid - I_OFFSET}, &linePoints);
 
   util::geo::DPoint curPa, curPb;
   int s = 0;
@@ -854,9 +851,8 @@ bool Requestor::lineIntersects(GID_TYPE gid,
 
   double mainX = 0;
   double mainY = 0;
-  for (size_t i = start; i < end; i++) {
+  for (const auto& cur : linePoints) {
     // extract real geom
-    const auto& cur = getLinePoints()[i];
 
     if (isMCoord(cur.getX())) {
       mainX = rmCoord(cur.getX());

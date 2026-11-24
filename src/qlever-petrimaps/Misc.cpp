@@ -2,18 +2,20 @@
 // Chair of Algorithms and Data Structures.
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
+#include "qlever-petrimaps/Misc.h"
+
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <stdint.h>
 #include <sys/socket.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <exception>
 #include <string>
 #include <vector>
 
-#include "qlever-petrimaps/Misc.h"
 #include "util/String.h"
 #include "util/log/Log.h"
 
@@ -284,7 +286,8 @@ void RequestReader::parseIds(const char* c, size_t size) {
     if (_curByte == 0) {
       if (_curIdCol < _geomFields) {
         // geometry ID
-        _ids[_curIdCol].push_back({QLEVER_ID_TYPE{_curId.val}, ID_TYPE{_ids[_curIdCol].size()}});
+        _ids[_curIdCol].push_back(
+            {QLEVER_ID_TYPE{_curId.val}, ID_TYPE{_ids[_curIdCol].size()}});
       } else if (_curIdCol < _valFields + _geomFields) {
         // value
 
@@ -562,4 +565,19 @@ util::geo::FPoint petrimaps::decodeGeoPoint(uint64_t valueBits,
   }
   return {(static_cast<double>(lon) / MAX_QUANTIZED_COORD) * 2 * 180 - 180,
           (static_cast<double>(lat) / MAX_QUANTIZED_COORD) * 2 * 90 - 90};
+}
+
+// _____________________________________________________________________________
+void petrimaps::copy(int fd, size_t n, std::ofstream* f) {
+  std::vector<char> buf(std::min<size_t>(n, 4 * 1024 * 1024));
+  for (size_t pos = 0; pos < n && *f; pos += buf.size()) {
+    size_t m = std::min(buf.size(), n - pos);
+    ssize_t r = util::preadAll(fd, reinterpret_cast<unsigned char*>(buf.data()),
+                               m, pos);
+    if (r != static_cast<ssize_t>(m)) {
+      f->setstate(std::ios::badbit);
+      return;
+    }
+    f->write(buf.data(), m);
+  }
 }

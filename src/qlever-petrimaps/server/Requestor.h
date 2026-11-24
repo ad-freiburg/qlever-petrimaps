@@ -228,12 +228,6 @@ class Requestor {
     return _cache->getLineEnd(LINEID_TYPE{gid - I_OFFSET});
   }
 
-  const std::vector<util::geo::Point<int16_t>,
-                    util::no_init_allocator<util::geo::Point<int16_t>>>&
-  getLinePoints() const {
-    return _cache->getLinePoints();
-  }
-
   util::geo::DBox getLineBBox(GID_TYPE gid) const {
     return _cache->getLineBBox(LINEID_TYPE{gid - I_OFFSET});
   }

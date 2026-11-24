@@ -382,9 +382,9 @@ void GeomCache::request() {
   _state = IN_HEADER;
   _points.clear();
   _lines.clear();
-  _linePoints.clear();
   _qidToId.close();
   closeQidToIdOut();
+  closeLinePoints();
 
   _lastQidToId = {std::numeric_limits<QLEVER_ID_TYPE>::max(),
                   ID_TYPE{std::numeric_limits<RAW_ID_TYPE>::max()}};
@@ -399,15 +399,13 @@ void GeomCache::request() {
   _pointsF.open(pointsFName, mode);
 
   std::string linePointsFName;
-  close(util::getTmpF("", "linepoints", "", &linePointsFName));
+  _linePointsTmpFd = util::getTmpF("", "linepoints", "", &linePointsFName);
   _linePointsF.open(linePointsFName, mode);
 
   std::string linesFName;
   close(util::getTmpF("", "lines", "", &linesFName));
   _linesF.open(linesFName, mode);
 
-  // keep the descriptor as a writable handle into the qidToId file for
-  // overwriting the placeholders
   std::string qidToIdFName;
   _qidToIdOutFd = util::getTmpF("", "qidtoid", "", &qidToIdFName);
   _qidToIdF.open(qidToIdFName, mode);
@@ -454,11 +452,6 @@ void GeomCache::request() {
                 sizeof(util::geo::FPoint) * _pointsFSize);
   _pointsF.close();
 
-  checkMem(sizeof(util::geo::Point<int16_t>) * _linePointsFSize, _maxMemory);
-  _linePoints.resize(_linePointsFSize);
-  _linePointsF.seekg(0);
-  _linePointsF.read(reinterpret_cast<char *>(&_linePoints[0]),
-                    sizeof(util::geo::Point<int16_t>) * _linePointsFSize);
   _linePointsF.close();
 
   checkMem(sizeof(size_t) * _linesFSize, _maxMemory);
@@ -670,7 +663,8 @@ void GeomCache::addMultiPolygon(const util::geo::MultiPolygon<double> &mp,
           std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET) {
         std::stringstream ss;
         ss << "Maximum number of non-point objects ("
-           << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET << ") exceeded.";
+           << std::numeric_limits<RAW_ID_TYPE>::max() - I_OFFSET
+           << ") exceeded.";
         throw std::runtime_error(ss.str());
       }
 
@@ -948,37 +942,104 @@ void GeomCache::insertLine(const util::geo::DLine &lR, bool isArea,
 }
 
 // _____________________________________________________________________________
-util::geo::DBox GeomCache::getLineBBox(LINEID_TYPE lineId) const {
-  util::geo::DBox ret;
+void GeomCache::readLinePoints(LINEID_TYPE lineId, LinePoints *buf) const {
   size_t start = getLine(lineId);
+  size_t end = getLineEnd(lineId);
+  buf->resize(end - start);
+  readLinePoints(start, end - start, buf->data());
+}
 
-  bool s = false;
+// _____________________________________________________________________________
+void GeomCache::readLinePoints(size_t start, size_t num,
+                               util::geo::Point<int16_t> *out) const {
+  if (num == 0) return;
+  const size_t elemSize = sizeof(util::geo::Point<int16_t>);
+  ssize_t r =
+      util::preadAll(_linePointsFd, reinterpret_cast<unsigned char *>(out),
+                     num * elemSize, _linePointsOff + start * elemSize);
+  if (r != static_cast<ssize_t>(num * elemSize)) {
+    throw std::runtime_error("Could not read line points from cache file");
+  }
+}
 
-  double mainX = 0;
-  double mainY = 0;
-  for (size_t i = start; i < start + 4; i++) {
-    // extract real geom
-    const auto &cur = _linePoints[i];
+// _____________________________________________________________________________
+void GeomCache::openLinePoints(const std::string &fname, size_t off,
+                               size_t num) {
+  closeLinePoints();
+  _linePointsFd = open(fname.c_str(), O_RDONLY);
+  if (_linePointsFd < 0) {
+    throw std::runtime_error("Could not open cache file " + fname + ": " +
+                             strerror(errno));
+  }
+  _linePointsOff = off;
+  _numLinePoints = num;
 
-    if (isMCoord(cur.getX())) {
-      mainX = rmCoord(cur.getX());
-      mainY = rmCoord(cur.getY());
+  buildLineMetas();
+}
+
+// _____________________________________________________________________________
+void GeomCache::closeLinePoints() {
+  if (_linePointsFd >= 0) close(_linePointsFd);
+  if (_linePointsTmpFd >= 0) close(_linePointsTmpFd);
+  _linePointsFd = -1;
+  _linePointsTmpFd = -1;
+  _linePointsOff = 0;
+  _numLinePoints = 0;
+  _lineBoxes.clear();
+  _lineFlags.clear();
+}
+
+// _____________________________________________________________________________
+void GeomCache::buildLineMetas() {
+  const size_t n = _lines.size();
+  checkMem((sizeof(util::geo::I32Box) + sizeof(uint8_t)) * n, _maxMemory);
+  _lineBoxes.resize(n);
+  _lineFlags.resize(n);
+
+  std::atomic<bool> failed(false);
+
+#pragma omp parallel for schedule(dynamic, 4096)
+  for (size_t i = 0; i < n; i++) {
+    if (failed) continue;  // unspin
+
+    size_t start = _lines[i];
+    size_t len = getLineEnd(LINEID_TYPE{i}) - start;
+    util::geo::Point<int16_t> p[4], last(0, 0);
+    try {
+      // first 4 points are bbox
+      readLinePoints(start, std::min<size_t>(4, len), p);
+
+      // last point is area/inner area flag
+      if (len) readLinePoints(start + len - 1, 1, &last);
+    } catch (...) {
+      failed = true;
       continue;
     }
 
-    util::geo::DPoint curP((mainX * M_COORD_GRANULARITY + cur.getX()) / 10.0,
-                           (mainY * M_COORD_GRANULARITY + cur.getY()) / 10.0);
-
-    if (!s) {
-      ret.setLowerLeft(curP);
-      s = true;
-    } else {
-      ret.setUpperRight(curP);
-      return ret;
+    util::geo::I32Point main(0, 0);
+    util::geo::I32Box box({0, 0}, {0, 0});
+    size_t c = 0;
+    for (size_t k = 0; k < std::min<size_t>(4, len) && c < 2; k++) {
+      if (isMCoord(p[k].getX())) {
+        main = {rmCoord(p[k].getX()), rmCoord(p[k].getY())};
+        continue;
+      }
+      util::geo::I32Point q(main.getX() * M_COORD_GRANULARITY + p[k].getX(),
+                            main.getY() * M_COORD_GRANULARITY + p[k].getY());
+      if (c == 0) box.setLowerLeft(q);
+      else box.setUpperRight(q);
+      c++;
     }
+
+    _lineBoxes[i] = box;
+    bool area = isMCoord(last.getX());
+    bool inner = area && rmCoord(last.getX()) == 1;
+    _lineFlags[i] =
+        (area ? LINE_IS_AREA : 0) | (inner ? LINE_IS_INNER_AREA : 0);
+    _curRow++;
   }
 
-  return ret;
+  if (failed) throw std::runtime_error("Corrupted cache file");
 }
 
 // _____________________________________________________________________________
@@ -1015,9 +1076,9 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
   // a block size of 0 means "single blokc"
   if (blockSize == 0) blockSize = std::numeric_limits<size_t>::max();
   _points.clear();
-  _linePoints.clear();
   _lines.clear();
   _qidToId.close();
+  closeLinePoints();
 
   std::ifstream f(fname, std::ios::binary);
 
@@ -1062,8 +1123,6 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
   // linePoints
   f.read(reinterpret_cast<char *>(&numLinePoints), sizeof(size_t));
   if (!f) throw std::runtime_error("Corrupted cache file");
-  checkMem(sizeof(util::geo::Point<int16_t>) * numLinePoints, _maxMemory);
-  _linePoints.resize(numLinePoints);
   posLinePoints = f.tellg();
   f.seekg(sizeof(util::geo::Point<int16_t>) * numLinePoints, f.cur);
   if (!f) throw std::runtime_error("Corrupted cache file");
@@ -1084,7 +1143,7 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
   f.seekg(sizeof(IdMapping) * numQidToId, f.cur);
   if (!f) throw std::runtime_error("Corrupted cache file");
 
-  _totalSize = numPoints + numLinePoints + numLines + numQidToId;
+  _totalSize = numPoints + 2 * numLines + numQidToId;
   _curRow = 0;
 
   f.close();
@@ -1096,22 +1155,17 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
     size_t elemSize;
   };
 
-  Block sections[3];
+  Block sections[2];
 
   sections[0].data = reinterpret_cast<unsigned char *>(_points.data());
   sections[0].off = posPoints;
   sections[0].size = numPoints;
   sections[0].elemSize = sizeof(util::geo::FPoint);
 
-  sections[1].data = reinterpret_cast<unsigned char *>(_linePoints.data());
-  sections[1].off = posLinePoints;
-  sections[1].size = numLinePoints;
-  sections[1].elemSize = sizeof(util::geo::Point<int16_t>);
-
-  sections[2].data = reinterpret_cast<unsigned char *>(_lines.data());
-  sections[2].off = posLines;
-  sections[2].size = numLines;
-  sections[2].elemSize = sizeof(size_t);
+  sections[1].data = reinterpret_cast<unsigned char *>(_lines.data());
+  sections[1].off = posLines;
+  sections[1].size = numLines;
+  sections[1].elemSize = sizeof(size_t);
 
   std::vector<Block> blocks;
 
@@ -1152,14 +1206,19 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
 
   _qidToId.open(fname, posQidToId, numQidToId);
   _curRow += numQidToId;
+
+  openLinePoints(fname, posLinePoints, numLinePoints);
 }
 
 // _____________________________________________________________________________
-size_t GeomCache::serializeToDisk(const std::string &fname) const {
+GeomCache::DiskOffsets GeomCache::serializeToDisk(
+    const std::string &fname) const {
   const std::string tmpFname = fname + ".tmp";
   std::ofstream f;
   f.open(tmpFname, std::ios::binary);
   if (!f) throw std::runtime_error("Could not open " + tmpFname);
+
+  DiskOffsets offs;
 
   std::string h = _indexHash.substr(0, 99);
   h.insert(h.end(), 99 - h.size(), ' ');
@@ -1178,32 +1237,21 @@ size_t GeomCache::serializeToDisk(const std::string &fname) const {
   f.write(reinterpret_cast<const char *>(&_points[0]),
           sizeof(util::geo::FPoint) * num);
 
-  num = _linePoints.size();
+  // line points
+  num = _linePointsFSize;
   f.write(reinterpret_cast<const char *>(&num), sizeof(size_t));
-  f.write(reinterpret_cast<const char *>(&_linePoints[0]),
-          sizeof(util::geo::Point<int16_t>) * num);
+  offs.linePoints = f.tellp();
+  copy(_linePointsTmpFd, sizeof(util::geo::Point<int16_t>) * num, &f);
 
   num = _lines.size();
   f.write(reinterpret_cast<const char *>(&num), sizeof(size_t));
   f.write(reinterpret_cast<const char *>(&_lines[0]), sizeof(size_t) * num);
 
+  // qidToId
   num = _qidToIdOutSize;
   f.write(reinterpret_cast<const char *>(&num), sizeof(size_t));
-  size_t qidToIdOff = f.tellp();
-
-  std::vector<char> buf(4 * 1024 * 1024);
-  size_t total = sizeof(IdMapping) * num;
-  for (size_t pos = 0; pos < total && f; pos += buf.size()) {
-    size_t n = std::min(buf.size(), total - pos);
-    ssize_t r = util::preadAll(
-        _qidToIdOutFd, reinterpret_cast<unsigned char *>(buf.data()), n, pos);
-    if (r != static_cast<ssize_t>(n)) {
-      f.close();
-      unlink(tmpFname.c_str());
-      throw std::runtime_error("Could not read qlever IDs from temporary file");
-    }
-    f.write(buf.data(), n);
-  }
+  offs.qidToId = f.tellp();
+  copy(_qidToIdOutFd, sizeof(IdMapping) * num, &f);
 
   f.close();
 
@@ -1218,7 +1266,7 @@ size_t GeomCache::serializeToDisk(const std::string &fname) const {
                              ": " + strerror(errno));
   }
 
-  return qidToIdOff;
+  return offs;
 }
 
 // _____________________________________________________________________________
@@ -1308,11 +1356,11 @@ std::string GeomCache::load(const std::string &cacheDir) {
       request();
       requestIds();
       LOG(INFO) << "Serializing to cache file " << cacheFile << "...";
-      size_t qidToIdOff = serializeToDisk(cacheFile);
+      auto offs = serializeToDisk(cacheFile);
       LOG(INFO) << "done ...";
 
-      // from now on, read qidToId from the cache file
-      _qidToId.open(cacheFile, qidToIdOff, _qidToIdOutSize);
+      _qidToId.open(cacheFile, offs.qidToId, _qidToIdOutSize);
+      openLinePoints(cacheFile, offs.linePoints, _linePointsFSize);
       closeQidToIdOut();
     }
   } else {
@@ -1325,9 +1373,10 @@ std::string GeomCache::load(const std::string &cacheDir) {
 
     try {
       LOG(INFO) << "Serializing to temporary cache file " << tmpFile << "...";
-      size_t qidToIdOff = serializeToDisk(tmpFile);
+      auto offs = serializeToDisk(tmpFile);
       LOG(INFO) << "done ...";
-      _qidToId.open(tmpFile, qidToIdOff, _qidToIdOutSize);
+      _qidToId.open(tmpFile, offs.qidToId, _qidToIdOutSize);
+      openLinePoints(tmpFile, offs.linePoints, _linePointsFSize);
     } catch (...) {
       unlink(tmpFile.c_str());
       throw;
