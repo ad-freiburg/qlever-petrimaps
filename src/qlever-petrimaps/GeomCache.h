@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "qlever-petrimaps/Misc.h"
+#include "util/BlockReader.h"
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
@@ -99,11 +100,18 @@ class GeomCache {
   explicit GeomCache(const GeomCacheConfig& config, size_t maxMemory)
       : _config(config), _curRow(0), _maxMemory(maxMemory) {}
 
+  ~GeomCache() { closeQidToIdOut(); }
+
+  // owns file descriptors, must not be copied
+  GeomCache(const GeomCache&) = delete;
+  GeomCache& operator=(const GeomCache&) = delete;
+
   GeomCache& operator=(GeomCache&& o) {
     _config = o._config;
     _lines = std::move(o._lines);
     _linePoints = std::move(o._linePoints);
     _points = std::move(o._points);
+    _qidToId = std::move(o._qidToId);
     _dangling = o._dangling;
     _state = o._state;
     return *this;
@@ -159,7 +167,7 @@ class GeomCache {
   }
   util::geo::DBox getLineBBox(LINEID_TYPE lineId) const;
 
-  void serializeToDisk(const std::string& fname) const;
+  size_t serializeToDisk(const std::string& fname) const;
 
   void fromDisk(const std::string& fname, size_t blockSize = 1024 * 1024);
 
@@ -192,10 +200,8 @@ class GeomCache {
 
   uint8_t _curByte;
   ID _curId;
-  QLEVER_ID_TYPE _maxQid;
   size_t _totalSize = 0;
   std::atomic<size_t> _curRow;
-  std::atomic<size_t> _curIdRow;
   size_t _curUniqueGeom;
   size_t _maxMemory;
 
@@ -255,7 +261,27 @@ class GeomCache {
 
   IdMapping _lastQidToId;
 
-  std::vector<IdMapping, util::no_init_allocator<IdMapping>> _qidToId;
+  IdMapping _nextPlaceholder;
+  bool _hasNextPlaceholder = false;
+  size_t _placeholdersRead = 0;
+
+  int _qidToIdOutFd = -1;
+  size_t _qidToIdOutSize = 0;
+  std::vector<IdMapping> _qidToIdOutBuf;
+  QLEVER_ID_TYPE _qidToIdOutLastQid = 0;
+  bool _qidToIdOutSorted = true;
+
+  static const size_t QID_TO_ID_OUT_BUF = 64 * 1024;
+  static const size_t QID_TO_ID_SORT_MEM = 512 * 1024 * 1024;
+
+  static int cmpQidToId(const void* a, const void* b);
+
+  void readPlaceholder();
+  void writeQidToId(const IdMapping& idm);
+  void flushQidToIdOut();
+  void closeQidToIdOut();
+
+  util::BlockReader<IdMapping> _qidToId;
 
   std::string _dangling, _prev, _raw;
   ParseState _state;

@@ -18,6 +18,8 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
+#include <thread>
 
 #include "qlever-petrimaps/GeomCache.h"
 #include "qlever-petrimaps/Misc.h"
@@ -41,6 +43,18 @@ using util::LogLevel::DEBUG;
 using util::LogLevel::ERROR;
 using util::LogLevel::INFO;
 using util::LogLevel::WARN;
+
+const size_t GeomCache::QID_TO_ID_OUT_BUF;
+const size_t GeomCache::QID_TO_ID_SORT_MEM;
+
+// _____________________________________________________________________________
+int GeomCache::cmpQidToId(const void *a, const void *b) {
+  const auto *l = static_cast<const IdMapping *>(a);
+  const auto *r = static_cast<const IdMapping *>(b);
+  if (*l < *r) return -1;
+  if (*r < *l) return 1;
+  return 0;
+}
 
 // _____________________________________________________________________________
 const std::string &GeomCache::getFillQuery() const { return _config.fillQuery; }
@@ -263,39 +277,39 @@ void GeomCache::parseIds(const char *c, size_t size) {
                   << " points), " << _geometryDuplicates << " duplicates)";
       }
 
-      if (_curIdRow < _qidToId.size() && _qidToId[_curIdRow].qid == 0) {
-        // if we have two consecutive and equivalent QLever ids, the geometry
-        // was returned multiple times in the fill query. This can happen if the
-        // same WKT string is used in multiple distinct objects, but then stored
-        // in qlever using the same internal qlever ID. To avoid a false multi-
-        // plication of results (all geoms of matching qlever ID are joined), we
-        // set such repeated qlever IDs to an unused dummy value.
-        if (_lastQid == _curId.val) {
+      // if we have two consecutive and equivalent QLever ids, the geometry
+      // was returned multiple times in the fill query. This can happen if the
+      // same WKT string is used in multiple distinct objects, but then stored
+      // in qlever using the same internal qlever ID. To avoid a false multi-
+      // plication of results (all geoms of matching qlever ID are joined), we
+      // drop all geometries of such a repeated row.
+      bool duplicate = false;
+
+      // the first geometry of a row always has a preliminary qlever id of 0
+      if (_hasNextPlaceholder && _nextPlaceholder.qid == 0) {
+        duplicate = _lastQid == _curId.val;
+        if (duplicate) {
           LOG(DEBUG) << "Found duplicate internal qlever ID " << _curId.val
                      << " for row " << _curRow
                      << ", ignoring this geometry duplicate!";
-          _qidToId[_curIdRow].qid = -1;
           _geometryDuplicates++;
         } else {
-          _qidToId[_curIdRow].qid = _curId.val;
+          writeQidToId({_curId.val, _nextPlaceholder.id});
         }
         _lastQid = _curId.val;
-        if (_curId.val > _maxQid) _maxQid = _curId.val;
+        readPlaceholder();
       } else {
         LOG(WARN) << "The results for the binary IDs are out of sync.";
       }
 
       // if a qlever entity contained multiple geometries (MULTILINESTRING,
-      // MULTIPOLYGON, MULTIPOINT), they appear consecutively in
-      // _qidToId; continuation geometries are marked by a
-      // preliminary qlever ID of 1, while the first geometry always has a
-      // preliminary id of 0
-      while (_curIdRow + 1 < _qidToId.size() - 1 &&
-             _qidToId[_curIdRow + 1].qid == 1) {
-        _qidToId[++_curIdRow].qid = _curId.val;
+      // MULTIPOLYGON, MULTIPOINT), they appear consecutively in the
+      // placeholders; continuation geometries are marked by a preliminary
+      // qlever ID of 1. They are dropped with their row if it is a duplicate.
+      while (_hasNextPlaceholder && _nextPlaceholder.qid == 1) {
+        if (!duplicate) writeQidToId({_curId.val, _nextPlaceholder.id});
+        readPlaceholder();
       }
-
-      _curIdRow++;
     }
   }
 }
@@ -369,7 +383,8 @@ void GeomCache::request() {
   _points.clear();
   _lines.clear();
   _linePoints.clear();
-  _qidToId.clear();
+  _qidToId.close();
+  closeQidToIdOut();
 
   _lastQidToId = {std::numeric_limits<QLEVER_ID_TYPE>::max(),
                   ID_TYPE{std::numeric_limits<RAW_ID_TYPE>::max()}};
@@ -377,41 +392,32 @@ void GeomCache::request() {
   _raw.clear();
   _raw.reserve(1000);
 
-  char *pointsFName = strdup("pointsXXXXXX");
-  int i = mkstemp(pointsFName);
-  if (i == -1) throw std::runtime_error("Could not create temporary file");
-  close(i);
-  _pointsF.open(pointsFName, std::ios::out | std::ios::in | std::ios::binary);
+  auto mode = std::ios::out | std::ios::in | std::ios::binary;
 
-  char *linePointsFName = strdup("linepointsXXXXXX");
-  i = mkstemp(linePointsFName);
-  if (i == -1) throw std::runtime_error("Could not create temporary file");
-  close(i);
-  _linePointsF.open(linePointsFName,
-                    std::ios::out | std::ios::in | std::ios::binary);
+  std::string pointsFName = util::getTmpFName("", "points");
+  _pointsF.open(pointsFName, mode);
 
-  char *linesFName = strdup("linesXXXXXX");
-  i = mkstemp(linesFName);
-  if (i == -1) throw std::runtime_error("Could not create temporary file");
-  close(i);
-  _linesF.open(linesFName, std::ios::out | std::ios::in | std::ios::binary);
+  std::string linePointsFName = util::getTmpFName("", "linepoints");
+  _linePointsF.open(linePointsFName, mode);
 
-  char *qidToIdFName = strdup("qidtoidXXXXXX");
-  i = mkstemp(qidToIdFName);
-  if (i == -1) throw std::runtime_error("Could not create temporary file");
-  close(i);
-  _qidToIdF.open(qidToIdFName, std::ios::out | std::ios::in | std::ios::binary);
+  std::string linesFName = util::getTmpFName("", "lines");
+  _linesF.open(linesFName, mode);
+
+  std::string qidToIdFName = util::getTmpFName("", "qidtoid");
+  _qidToIdF.open(qidToIdFName, mode);
+
+  // a writable handle into the qidToId file for overwriting the placeholders
+  _qidToIdOutFd = ::open(qidToIdFName.c_str(), O_RDWR);
+  if (_qidToIdOutFd < 0) {
+    throw std::runtime_error("Could not open " + qidToIdFName + ": " +
+                             strerror(errno));
+  }
 
   // immediately unlink
-  unlink(pointsFName);
-  unlink(linePointsFName);
-  unlink(linesFName);
-  unlink(qidToIdFName);
-
-  free(pointsFName);
-  free(linePointsFName);
-  free(linesFName);
-  free(qidToIdFName);
+  unlink(pointsFName.c_str());
+  unlink(linePointsFName.c_str());
+  unlink(linesFName.c_str());
+  unlink(qidToIdFName.c_str());
 
   _pointsFSize = 0;
   _linePointsFSize = 0;
@@ -463,13 +469,6 @@ void GeomCache::request() {
                sizeof(size_t) * _linesFSize);
   _linesF.close();
 
-  checkMem(sizeof(IdMapping) * _qidToIdFSize, _maxMemory);
-  _qidToId.resize(_qidToIdFSize);
-  _qidToIdF.seekg(0);
-  _qidToIdF.read(reinterpret_cast<char *>(&_qidToId[0]),
-                 sizeof(IdMapping) * _qidToIdFSize);
-  _qidToIdF.close();
-
   LOG(INFO) << "[GEOMCACHE] Done";
   LOG(INFO) << "[GEOMCACHE] Received " << _curUniqueGeom << " unique geoms ("
             << _geometryDuplicates << " geometry duplicates transferred)";
@@ -481,14 +480,22 @@ void GeomCache::request() {
 void GeomCache::requestIds() {
   _loadStatusStage = _LoadStatusStages::ParseIds;
 
+  LOG(INFO) << "[GEOMCACHE] Query is " << getFillQuery();
+
   _curByte = 0;
   _curRow = 0;
-  _curIdRow = 0;
   _curUniqueGeom = 0;
-  _maxQid = 0;
   _lastQid = -1;
 
-  LOG(INFO) << "[GEOMCACHE] Query is " << getFillQuery();
+  // read back the placeholders written by request()
+  _qidToIdF.clear();
+  _qidToIdF.seekg(0);
+  _placeholdersRead = 0;
+  readPlaceholder();
+
+  _qidToIdOutSize = 0;
+  _qidToIdOutSorted = true;
+  _qidToIdOutBuf.reserve(QID_TO_ID_OUT_BUF);
 
   size_t lastNum = -1;
 
@@ -505,12 +512,95 @@ void GeomCache::requestIds() {
   }
 
   LOG(INFO) << "[GEOMCACHE] Received " << _curRow << " rows";
-  LOG(INFO) << "[GEOMCACHE] Done";
 
-  // sorting by qlever id
-  LOG(INFO) << "[GEOMCACHE] Sorting results by qlever ID...";
-  std::stable_sort(_qidToId.begin(), _qidToId.end());
-  LOG(INFO) << "[GEOMCACHE] ... done";
+  flushQidToIdOut();
+  std::vector<IdMapping>().swap(_qidToIdOutBuf);
+
+  if (_hasNextPlaceholder) {
+    LOG(WARN) << "[GEOMCACHE] " << (_qidToIdFSize - _placeholdersRead + 1)
+              << " geometries did not receive a qlever ID";
+  }
+  _qidToIdF.close();
+  _hasNextPlaceholder = false;
+
+  if (_qidToIdOutSorted) {
+    LOG(INFO) << "[GEOMCACHE] Results were already sorted by qlever ID";
+  } else {
+    LOG(WARN) << "[GEOMCACHE] Results were not sorted by qlever ID, sorting "
+              << _qidToIdOutSize << " entries...";
+
+    int sortedFd = util::getTmpFUnlinked("", "qidtoidsorted");
+    size_t numThreads = std::max<size_t>(
+        1, std::min<size_t>(4, std::thread::hardware_concurrency()));
+    size_t maxMem = std::min<size_t>(_maxMemory, QID_TO_ID_SORT_MEM);
+    if (util::externalSort(_qidToIdOutFd, sortedFd, sizeof(IdMapping),
+                           _qidToIdOutSize, numThreads, maxMem,
+                           cmpQidToId) < 0) {
+      close(sortedFd);
+      throw std::runtime_error("Could not sort qlever IDs on disk");
+    }
+
+    close(_qidToIdOutFd);
+    _qidToIdOutFd = sortedFd;
+
+    LOG(INFO) << "[GEOMCACHE] ... done";
+  }
+
+  LOG(INFO) << "[GEOMCACHE] Done";
+}
+
+// _____________________________________________________________________________
+void GeomCache::readPlaceholder() {
+  _hasNextPlaceholder = false;
+  if (_placeholdersRead >= _qidToIdFSize) return;
+
+  _qidToIdF.read(reinterpret_cast<char *>(&_nextPlaceholder),
+                 sizeof(IdMapping));
+  if (!_qidToIdF) {
+    LOG(WARN) << "[GEOMCACHE] Could not read geometry placeholder "
+              << _placeholdersRead;
+    return;
+  }
+  _placeholdersRead++;
+  _hasNextPlaceholder = true;
+}
+
+// _____________________________________________________________________________
+void GeomCache::writeQidToId(const IdMapping &idm) {
+  if (_qidToIdOutSize > 0 && idm.qid < _qidToIdOutLastQid) {
+    _qidToIdOutSorted = false;
+  }
+  _qidToIdOutLastQid = idm.qid;
+  _qidToIdOutSize++;
+
+  _qidToIdOutBuf.push_back(idm);
+  if (_qidToIdOutBuf.size() >= QID_TO_ID_OUT_BUF) flushQidToIdOut();
+}
+
+// _____________________________________________________________________________
+void GeomCache::flushQidToIdOut() {
+  if (_qidToIdOutSize > _placeholdersRead) {
+    throw std::logic_error("qlever ID entries overtook their placeholders");
+  }
+
+  size_t bytes = _qidToIdOutBuf.size() * sizeof(IdMapping);
+  size_t pos = (_qidToIdOutSize - _qidToIdOutBuf.size()) * sizeof(IdMapping);
+  ssize_t r = util::pwriteAll(
+      _qidToIdOutFd,
+      reinterpret_cast<const unsigned char *>(_qidToIdOutBuf.data()), bytes,
+      pos);
+  if (r != static_cast<ssize_t>(bytes)) {
+    throw std::runtime_error(std::string("Could not write qlever IDs: ") +
+                             strerror(errno));
+  }
+  _qidToIdOutBuf.clear();
+}
+
+// _____________________________________________________________________________
+void GeomCache::closeQidToIdOut() {
+  if (_qidToIdOutFd >= 0) close(_qidToIdOutFd);
+  _qidToIdOutFd = -1;
+  _qidToIdOutSize = 0;
 }
 
 // _____________________________________________________________________________
@@ -723,52 +813,21 @@ GeomCache::getRelObjects(const std::vector<IdMapping> &ids) const {
   // (geom id, result row)
   std::vector<std::pair<GID_TYPE, ROW_TYPE>> ret;
 
-  // in most cases, the return size will be exactly the size of the ids set
-  ret.reserve(ids.size());
-
   // only counts multi-geometries once
   size_t numObjects = 0;
 
-  size_t i = 0;
-  size_t j = 0;
+  if (!_qidToId.isOpen()) return {ret, numObjects};  // no cache loaded
 
-  while (i < ids.size() && j < _qidToId.size()) {
-    if (ids[i].qid == _qidToId[j].qid) {
-      size_t prefJ = j;
+  // in most cases, the return size will be exactly the size of the ids set
+  ret.reserve(ids.size());
 
-      while (j < _qidToId.size() && ids[i].qid == _qidToId[j].qid) {
-        if (ret.size() == 0 || ret.back().second != ids[i].id) numObjects++;
-        ret.push_back(
-            {GID_TYPE{_qidToId[j].id.val()}, ROW_TYPE{ids[i].id.val()}});
-        j++;
-      }
-
-      j = prefJ;
-      i++;
-    } else if (ids[i].qid < _qidToId[j].qid) {
-      i++;
-    } else {
-      size_t gallop = 1;
-      do {
-        if (j + gallop >= _qidToId.size()) {
-          j = std::lower_bound(_qidToId.begin() + j + gallop / 2,
-                               _qidToId.end(), ids[i]) -
-              _qidToId.begin();
-          break;
-        }
-
-        if (_qidToId[j + gallop].qid >= ids[i].qid) {
-          j = std::lower_bound(_qidToId.begin() + j + gallop / 2,
-                               _qidToId.begin() + j + gallop, ids[i]) -
-              _qidToId.begin();
-          break;
-        }
-
-        gallop *= 2;
-
-      } while (true);
-    }
-  }
+  auto cursor = _qidToId.cursor();
+  util::mergeJoin(cursor, ids,
+                  [&](const IdMapping &geom, const IdMapping &res) {
+                    ROW_TYPE row{res.id.val()};
+                    if (ret.empty() || ret.back().second != row) numObjects++;
+                    ret.push_back({GID_TYPE{geom.id.val()}, row});
+                  });
 
   return {ret, numObjects};
 }
@@ -959,6 +1018,7 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
   _points.clear();
   _linePoints.clear();
   _lines.clear();
+  _qidToId.close();
 
   std::ifstream f(fname, std::ios::binary);
 
@@ -1021,8 +1081,6 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
   // qidToId
   f.read(reinterpret_cast<char *>(&numQidToId), sizeof(size_t));
   if (!f) throw std::runtime_error("Corrupted cache file");
-  checkMem(sizeof(IdMapping) * numQidToId, _maxMemory);
-  _qidToId.resize(numQidToId);
   posQidToId = f.tellg();
   f.seekg(sizeof(IdMapping) * numQidToId, f.cur);
   if (!f) throw std::runtime_error("Corrupted cache file");
@@ -1039,7 +1097,7 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
     size_t elemSize;
   };
 
-  Block sections[4];
+  Block sections[3];
 
   sections[0].data = reinterpret_cast<unsigned char *>(_points.data());
   sections[0].off = posPoints;
@@ -1055,11 +1113,6 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
   sections[2].off = posLines;
   sections[2].size = numLines;
   sections[2].elemSize = sizeof(size_t);
-
-  sections[3].data = reinterpret_cast<unsigned char *>(_qidToId.data());
-  sections[3].off = posQidToId;
-  sections[3].size = numQidToId;
-  sections[3].elemSize = sizeof(IdMapping);
 
   std::vector<Block> blocks;
 
@@ -1097,12 +1150,17 @@ void GeomCache::fromDisk(const std::string &fname, size_t blockSize) {
   close(fd);
 
   if (failed) throw std::runtime_error("Corrupted cache file");
+
+  _qidToId.open(fname, posQidToId, numQidToId);
+  _curRow += numQidToId;
 }
 
 // _____________________________________________________________________________
-void GeomCache::serializeToDisk(const std::string &fname) const {
+size_t GeomCache::serializeToDisk(const std::string &fname) const {
+  const std::string tmpFname = fname + ".tmp";
   std::ofstream f;
-  f.open(fname, std::ios::binary);
+  f.open(tmpFname, std::ios::binary);
+  if (!f) throw std::runtime_error("Could not open " + tmpFname);
 
   std::string h = _indexHash.substr(0, 99);
   h.insert(h.end(), 99 - h.size(), ' ');
@@ -1130,12 +1188,38 @@ void GeomCache::serializeToDisk(const std::string &fname) const {
   f.write(reinterpret_cast<const char *>(&num), sizeof(size_t));
   f.write(reinterpret_cast<const char *>(&_lines[0]), sizeof(size_t) * num);
 
-  num = _qidToId.size();
+  num = _qidToIdOutSize;
   f.write(reinterpret_cast<const char *>(&num), sizeof(size_t));
-  f.write(reinterpret_cast<const char *>(&_qidToId[0]),
-          sizeof(IdMapping) * num);
+  size_t qidToIdOff = f.tellp();
+
+  std::vector<char> buf(4 * 1024 * 1024);
+  size_t total = sizeof(IdMapping) * num;
+  for (size_t pos = 0; pos < total && f; pos += buf.size()) {
+    size_t n = std::min(buf.size(), total - pos);
+    ssize_t r = util::preadAll(
+        _qidToIdOutFd, reinterpret_cast<unsigned char *>(buf.data()), n, pos);
+    if (r != static_cast<ssize_t>(n)) {
+      f.close();
+      unlink(tmpFname.c_str());
+      throw std::runtime_error("Could not read qlever IDs from temporary file");
+    }
+    f.write(buf.data(), n);
+  }
 
   f.close();
+
+  if (!f) {
+    unlink(tmpFname.c_str());
+    throw std::runtime_error("Could not write cache file " + tmpFname);
+  }
+
+  if (rename(tmpFname.c_str(), fname.c_str()) != 0) {
+    unlink(tmpFname.c_str());
+    throw std::runtime_error("Could not rename " + tmpFname + " to " + fname +
+                             ": " + strerror(errno));
+  }
+
+  return qidToIdOff;
 }
 
 // _____________________________________________________________________________
@@ -1225,14 +1309,32 @@ std::string GeomCache::load(const std::string &cacheDir) {
       request();
       requestIds();
       LOG(INFO) << "Serializing to cache file " << cacheFile << "...";
-      serializeToDisk(cacheFile);
+      size_t qidToIdOff = serializeToDisk(cacheFile);
       LOG(INFO) << "done ...";
+
+      // from now on, read qidToId from the cache file
+      _qidToId.open(cacheFile, qidToIdOff, _qidToIdOutSize);
+      closeQidToIdOut();
     }
   } else {
     _indexHash = requestIndexHash();
     LOG(INFO) << "Index hash is '" << _indexHash << "'";
     request();
     requestIds();
+
+    std::string tmpFile = util::getTmpFName("<tmp>", "petrimaps-cache");
+
+    try {
+      LOG(INFO) << "Serializing to temporary cache file " << tmpFile << "...";
+      size_t qidToIdOff = serializeToDisk(tmpFile);
+      LOG(INFO) << "done ...";
+      _qidToId.open(tmpFile, qidToIdOff, _qidToIdOutSize);
+    } catch (...) {
+      unlink(tmpFile.c_str());
+      throw;
+    }
+    unlink(tmpFile.c_str());
+    closeQidToIdOut();
   }
 
   // read raster meta data
