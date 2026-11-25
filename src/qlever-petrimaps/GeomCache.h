@@ -115,13 +115,14 @@ class GeomCache {
 
   GeomCache& operator=(GeomCache&& o) {
     _config = o._config;
-    _lines = std::move(o._lines);
     _lineBoxes = std::move(o._lineBoxes);
     _lineFlags = std::move(o._lineFlags);
     closeLinePoints();
     _linePointsFd = o._linePointsFd;
     _linePointsOff = o._linePointsOff;
     _numLinePoints = o._numLinePoints;
+    _linesOff = o._linesOff;
+    _numLines = o._numLines;
     o._linePointsFd = -1;
     _points = std::move(o._points);
     _qidToId = std::move(o._qidToId);
@@ -168,10 +169,6 @@ class GeomCache {
   // read lineId points from disk into a buffer
   void readLinePoints(LINEID_TYPE lineId, LinePoints* buf) const;
 
-  const std::vector<size_t, util::no_init_allocator<size_t>>& getLines() const {
-    return _lines;
-  }
-
   util::geo::FBox getPointBBox(size_t id) const {
     return util::geo::getBoundingBox(_points[id]);
   }
@@ -194,6 +191,7 @@ class GeomCache {
 
   struct DiskOffsets {
     size_t linePoints;
+    size_t lines;
     size_t qidToId;
   };
 
@@ -201,17 +199,12 @@ class GeomCache {
 
   void fromDisk(const std::string& fname, size_t blockSize = 1024 * 1024);
 
-  size_t getLine(LINEID_TYPE lineId) const { return _lines[lineId]; }
   bool setConfig(const GeomCacheConfig& cfg) {
     if (_config.fillQuery != cfg.fillQuery) {
       _config = cfg;
       return true;
     }
     return false;
-  }
-
-  size_t getLineEnd(LINEID_TYPE lineId) const {
-    return lineId + 1 < _lines.size() ? _lines[lineId + 1] : _numLinePoints;
   }
 
   static std::string indexHashFromDisk(const std::string& fname);
@@ -265,7 +258,6 @@ class GeomCache {
 
   std::vector<util::geo::FPoint, util::no_init_allocator<util::geo::FPoint>>
       _points;
-  std::vector<size_t, util::no_init_allocator<size_t>> _lines;
 
   static const uint8_t LINE_IS_AREA = 1;
   static const uint8_t LINE_IS_INNER_AREA = 2;
@@ -273,16 +265,21 @@ class GeomCache {
       _lineBoxes;
   std::vector<uint8_t, util::no_init_allocator<uint8_t>> _lineFlags;
 
-  // the line points themselves stay in the cache file
   int _linePointsFd = -1;
   size_t _linePointsOff = 0;
   size_t _numLinePoints = 0;
+  size_t _linesOff = 0;
+  size_t _numLines = 0;
 
-  // the line points file of request(), copied into the cache file
   int _linePointsTmpFd = -1;
+  int _linesTmpFd = -1;
 
-  void openLinePoints(const std::string& fname, size_t off, size_t num);
+  void openLinePoints(const std::string& fname, size_t linePointsOff,
+                      size_t numLinePoints, size_t linesOff, size_t numLines);
   void closeLinePoints();
+  void readLineStarts(size_t first, size_t num, size_t* out) const;
+
+  static const size_t LINE_POINTS_WINDOW = 2 * 1024 * 1024;
   void readLinePoints(size_t start, size_t num,
                       util::geo::Point<int16_t>* out) const;
   void buildLineMetas();

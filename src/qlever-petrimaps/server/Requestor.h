@@ -220,14 +220,6 @@ class Requestor {
     return oid < getObjects(lid).size() + getDynamicPoints(lid).size();
   }
 
-  size_t getLine(GID_TYPE gid) const {
-    return _cache->getLine(LINEID_TYPE{gid - I_OFFSET});
-  }
-
-  size_t getLineEnd(GID_TYPE gid) const {
-    return _cache->getLineEnd(LINEID_TYPE{gid - I_OFFSET});
-  }
-
   util::geo::DBox getLineBBox(GID_TYPE gid) const {
     return _cache->getLineBBox(LINEID_TYPE{gid - I_OFFSET});
   }
