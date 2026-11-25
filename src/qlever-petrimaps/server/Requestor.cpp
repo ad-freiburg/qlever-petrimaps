@@ -608,6 +608,7 @@ util::geo::DLine Requestor::extractLineGeom(GID_TYPE gid, double minD) const {
   LinePoints linePoints;
   _cache->readLinePoints(LINEID_TYPE{gid - I_OFFSET}, &linePoints);
   const size_t end = linePoints.size();
+  dline.reserve(end);
 
   double mainX = 0;
   double mainY = 0;

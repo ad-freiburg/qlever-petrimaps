@@ -198,6 +198,7 @@ void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
 
   // polygon in pixelspace
   util::geo::IPolygon pxPoly;
+  pxPoly.getOuter().reserve(line.size());
   int minY = std::numeric_limits<int>::max();
   int maxY = std::numeric_limits<int>::min();
   int minX = std::numeric_limits<int>::max();
@@ -264,6 +265,11 @@ void RenderContext::drawDensePolyLine(
   for (size_t i = 0; i < l.size(); i++) {
     util::geo::DPoint a(l[i ? i - 1 : 0].getX(), l[i ? i - 1 : 0].getY());
     util::geo::DPoint b(l[i].getX(), l[i].getY());
+
+    if ((a.getX() < -1 && b.getX() < -1) || (a.getX() > _w && b.getX() > _w) ||
+        (a.getY() < -1 && b.getY() < -1) || (a.getY() > _h && b.getY() > _h)) {
+      continue;
+    }
 
     const auto& vis =
         util::geo::intersection(util::geo::DLineSegment{a, b}, tile);
