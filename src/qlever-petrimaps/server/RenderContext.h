@@ -61,8 +61,18 @@ class RenderContext {
     return {((p.getX() - orx) / mercW) * w, h - ((p.getY() - ory) / mercH) * h};
   }
 
+  static util::geo::DPoint mercToPxD(util::geo::DPoint p, double orx,
+                                     double ory, double mercW, double mercH,
+                                     int w, int h) {
+    return {((p.getX() - orx) / mercW) * w, h - ((p.getY() - ory) / mercH) * h};
+  }
+
  private:
   heatmap_stamp_t* rasterStamp(double w, double h) const;
+
+  template <typename T>
+  void drawDensePolyLine(size_t tid, const std::vector<util::geo::Point<T>>& l,
+                         double step, double mind, double val);
 
   std::vector<std::vector<uint32_t>> _points;
   std::vector<std::vector<uint32_t>> _areaFillPoints;

@@ -192,13 +192,9 @@ void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
   }
 
   if (border) {
-    const auto& denseline = util::geo::sparseify(
-        util::geo::densify(pxPoly.getOuter(),
-                           std::max(0.5, (_ostyle.lineWidth * 1.0) / 4.0)),
-        (_ostyle.lineWidth * 1.0) / 10.0);
-    for (const auto& p : denseline) {
-      drawLinePoint(tid, p.getX(), p.getY(), val, 1, 1);
-    }
+    drawDensePolyLine(tid, pxPoly.getOuter(),
+                      std::max(0.5, (_ostyle.lineWidth * 1.0) / 4.0),
+                      (_ostyle.lineWidth * 1.0) / 10.0, val);
   }
 
   if (line.size() < 3) return;
@@ -223,12 +219,53 @@ void RenderContext::drawArea(size_t tid, const util::geo::DLine& line,
 // _____________________________________________________________________________
 void RenderContext::drawLine(size_t tid, const util::geo::DLine& line,
                              double val) {
-  double res = _mercH / _h;
-  const auto& denseline = util::geo::densify(line, res * 1);
+  util::geo::DLine pxLine;
+  pxLine.reserve(line.size());
+  for (const auto& p : line) {
+    pxLine.push_back(mercToPxD(p, _orx, _ory, _mercW, _mercH, _w, _h));
+  }
 
-  for (const auto& p : denseline) {
-    auto pix = mercToPx(p, _orx, _ory, _mercW, _mercH, _w, _h);
-    drawLinePoint(tid, pix.getX(), pix.getY(), val, 1, 1);
+  drawDensePolyLine(tid, pxLine, 1, 0, val);
+}
+
+// _____________________________________________________________________________
+template <typename T>
+void RenderContext::drawDensePolyLine(
+    size_t tid, const std::vector<util::geo::Point<T>>& l, double step,
+    double mind, double val) {
+  if (l.empty() || step <= 0) return;
+
+  const util::geo::DBox tile({-1, -1}, {_w, _h});
+
+  util::geo::Point<int> last;
+
+  for (size_t i = 0; i < l.size(); i++) {
+    util::geo::DPoint a(l[i ? i - 1 : 0].getX(), l[i ? i - 1 : 0].getY());
+    util::geo::DPoint b(l[i].getX(), l[i].getY());
+
+    const auto& vis =
+        util::geo::intersection(util::geo::DLineSegment{a, b}, tile);
+    if (vis.first.empty()) continue;
+
+    double len = util::geo::dist(a, b);
+    double from = util::geo::dist(a, vis.first);
+    double to = util::geo::dist(a, vis.second);
+
+    for (double k = std::max(1.0, std::ceil(from / step));; k++) {
+      double d = std::min(k * step, len);
+      if (d > to) break;
+
+      double t = len > 0 ? d / len : 1;
+      util::geo::Point<int> p(a.getX() + t * (b.getX() - a.getX()),
+                              a.getY() + t * (b.getY() - a.getY()));
+
+      if (last.empty() || util::geo::dist(p, last) >= mind) {
+        drawLinePoint(tid, p.getX(), p.getY(), val, 1, 1);
+        last = p;
+      }
+
+      if (d == len) break;
+    }
   }
 }
 
