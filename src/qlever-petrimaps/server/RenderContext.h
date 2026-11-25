@@ -70,6 +70,9 @@ class RenderContext {
  private:
   heatmap_stamp_t* rasterStamp(double w, double h) const;
 
+  template <typename V, typename T>
+  V& buffered(std::vector<V>* bufs, size_t tid, T init);
+
   template <typename T>
   void drawDensePolyLine(size_t tid, const std::vector<util::geo::Point<T>>& l,
                          double step, double mind, double val);

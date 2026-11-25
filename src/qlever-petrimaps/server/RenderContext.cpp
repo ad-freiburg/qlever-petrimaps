@@ -49,34 +49,38 @@ RenderContext::RenderContext(int w, int h, double orx, double ory, double mercW,
       _orx(orx),
       _ory(ory),
       _mercW(mercW),
-      _mercH(mercH) {
-  for (size_t i = 0; i < _points.size(); i++) {
-    _rasterDims[i].resize(w * h, {1, 1});
-    _weights[i].resize(w * h, 0);
-    _areaFillWeights[i].resize(w * h, 0);
-    _lineWeights[i].resize(w * h, 0);
-  }
+      _mercH(mercH) {}
+
+// _____________________________________________________________________________
+template <typename V, typename T>
+V& RenderContext::buffered(std::vector<V>* buffers, size_t tid, T init) {
+  // only resize them if needed to safe some mem...
+  if ((*buffers)[tid].empty()) (*buffers)[tid].resize(_w * _h, init);
+  return (*buffers)[tid];
 }
 
 // _____________________________________________________________________________
 void RenderContext::drawFillPoint(size_t tid, int px, int py, double weight,
                                   int r) {
+  if (_style != OBJECTS && _style != HEATMAP) return;
+  auto& weights = buffered(&_areaFillWeights, tid, 0.0);
+
   if (_style == OBJECTS) {
     // for the raw style, increase the size of the points a bit
     for (int x = px - r; x <= px + r; x++) {
       for (int y = py - r; y <= py + r; y++) {
         if (x >= 0 && y >= 0 && x < _w && y < _h) {
-          if (_areaFillWeights[tid][_w * y + x] == 0)
+          if (weights[_w * y + x] == 0)
             _areaFillPoints[tid].push_back(_w * y + x);
-          _areaFillWeights[tid][_w * y + x] += weight;
+          weights[_w * y + x] += weight;
         }
       }
     }
   } else if (_style == HEATMAP) {
     if (px >= 0 && py >= 0 && px < _w && py < _h) {
-      if (_areaFillWeights[tid][_w * py + px] == 0)
+      if (weights[_w * py + px] == 0)
         _areaFillPoints[tid].push_back(_w * py + px);
-      _areaFillWeights[tid][_w * py + px] += weight;
+      weights[_w * py + px] += weight;
     }
   }
 }
@@ -111,29 +115,31 @@ void RenderContext::drawLinePoint(size_t tid, int px, int py, double weight,
 void RenderContext::drawLinePoint(size_t tid, int px, int py, double weight,
                                   double, double, double r) {
   if (r < 0) return;
+  auto& weights = buffered(&_lineWeights, tid, 0.0);
+
   if (_style == OBJECTS) {
     if (px >= 0 && py >= 0 && px < _w && py < _h) {
       if (abs(ceil(r) - r) > 0.1) {
         if (px + 1 < _w && py + 1 < _h &&
-            _lineWeights[tid][_w * (py + 1) + px + 1] == 0) {
+            weights[_w * (py + 1) + px + 1] == 0) {
           _linePoints[tid].push_back(_w * (py + 1) + px + 1);
-          _lineWeights[tid][_w * (py + 1) + px + 1] = 1;
+          weights[_w * (py + 1) + px + 1] = 1;
         }
-        if (py + 1 < _h && _lineWeights[tid][_w * (py + 1) + px] == 0) {
+        if (py + 1 < _h && weights[_w * (py + 1) + px] == 0) {
           _linePoints[tid].push_back(_w * (py + 1) + px);
-          _lineWeights[tid][_w * (py + 1) + px] = 1;
+          weights[_w * (py + 1) + px] = 1;
         }
       }
-      if (_lineWeights[tid][_w * py + px] == 0) {
+      if (weights[_w * py + px] == 0) {
         _linePoints[tid].push_back(_w * py + px);
-        _lineWeights[tid][_w * py + px] = 1;
+        weights[_w * py + px] = 1;
       }
     }
   } else {
     if (px >= 0 && py >= 0 && px < _w && py < _h) {
-      if (_lineWeights[tid][_w * py + px] == 0)
+      if (weights[_w * py + px] == 0)
         _linePoints[tid].push_back(_w * py + px);
-      _lineWeights[tid][_w * py + px] += weight;
+      weights[_w * py + px] += weight;
     }
   }
 }
@@ -141,30 +147,32 @@ void RenderContext::drawLinePoint(size_t tid, int px, int py, double weight,
 // _____________________________________________________________________________
 void RenderContext::drawPoint(size_t tid, int px, int py, double weight,
                               double rasterW, double rasterH) {
+  auto& weights = buffered(&_weights, tid, 0.0);
+
   if (_style == RASTER) {
     if (px >= 0 && py >= 0 && px < _w && py < _h) {
-      _rasterDims[tid][_w * py + px] = {rasterW, rasterH};
-      if (_weights[tid][_w * py + px] == 0) {
+      buffered(&_rasterDims, tid, std::make_pair(1.0f, 1.0f))[_w * py + px] = {
+          rasterW, rasterH};
+      if (weights[_w * py + px] == 0) {
         _points[tid].push_back(_w * py + px);
-        _weights[tid][_w * py + px] = weight;
+        weights[_w * py + px] = weight;
       } else {
         // not entirely correct, but looks good on very low zoom levels
         // where many raster cells are rendered onto the same pixel
-        _weights[tid][_w * py + px] =
-            (_weights[tid][_w * py + px] + weight) / 2.0;
+        weights[_w * py + px] = (weights[_w * py + px] + weight) / 2.0;
       }
     }
   } else if (_style == OBJECTS) {
     if (px >= 0 && py >= 0 && px < _w && py < _h) {
-      if (_weights[tid][_w * py + px] == 0)
+      if (weights[_w * py + px] == 0)
         _points[tid].push_back(_w * py + px);
-      _weights[tid][_w * py + px] = 1;
+      weights[_w * py + px] = 1;
     }
   } else {
     if (px >= 0 && py >= 0 && px < _w && py < _h) {
-      if (_weights[tid][_w * py + px] == 0)
+      if (weights[_w * py + px] == 0)
         _points[tid].push_back(_w * py + px);
-      _weights[tid][_w * py + px] += weight;
+      weights[_w * py + px] += weight;
     }
   }
 }
