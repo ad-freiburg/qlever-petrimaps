@@ -557,7 +557,17 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
         if (idx > 0 && ret[idx] == ret[idx - 1]) continue;
         auto oid = ret[idx];
         auto gid = r->getObject(lid, oid).first;
-        if (!util::geo::intersects(r->getLineBBox(gid), bbox)) continue;
+        const auto& lbox = r->getLineBBox(gid);
+        if (!util::geo::intersects(lbox, bbox)) continue;
+
+        if (lbox.getUpperRight().getX() - lbox.getLowerLeft().getX() < res &&
+            lbox.getUpperRight().getY() - lbox.getLowerLeft().getY() < res) {
+          auto pix = RenderContext::mercToPx(util::geo::centroid(lbox), orx,
+                                             ory, mercW, mercH, w, h);
+          // shortcut to avoid any disk lookup
+          rcontext.drawLinePoint(0, pix.getX(), pix.getY(), 1, 1, 1);
+          continue;
+        }
 
         if (r->isArea(gid) && !r->isInnerArea(gid)) {
           rcontext.drawArea(0, r->extractLineGeom(gid, 3 * res),
