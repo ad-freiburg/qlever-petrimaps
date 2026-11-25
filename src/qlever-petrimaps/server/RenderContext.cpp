@@ -63,7 +63,7 @@ V& RenderContext::buffered(std::vector<V>* buffers, size_t tid, T init) {
 void RenderContext::drawFillPoint(size_t tid, int px, int py, double weight,
                                   int r) {
   if (_style != OBJECTS && _style != HEATMAP) return;
-  auto& weights = buffered(&_areaFillWeights, tid, 0.0);
+  auto& weights = buffered(&_areaFillWeights, tid, 0.0f);
 
   if (_style == OBJECTS) {
     // for the raw style, increase the size of the points a bit
@@ -96,7 +96,7 @@ void RenderContext::writeInteriorObjects(heatmap_t* hm) {
         size_t y = p / _w;
         size_t x = p - (y * _w);
         heatmap_add_weighted_point_with_stamp(
-            hm, x, y, std::max(0.0, std::min(1.0, _areaFillWeights[i][p])),
+            hm, x, y, std::max(0.0f, std::min(1.0f, _areaFillWeights[i][p])),
             fillStamp);
       }
     }
@@ -115,7 +115,7 @@ void RenderContext::drawLinePoint(size_t tid, int px, int py, double weight,
 void RenderContext::drawLinePoint(size_t tid, int px, int py, double weight,
                                   double, double, double r) {
   if (r < 0) return;
-  auto& weights = buffered(&_lineWeights, tid, 0.0);
+  auto& weights = buffered(&_lineWeights, tid, 0.0f);
 
   if (_style == OBJECTS) {
     if (px >= 0 && py >= 0 && px < _w && py < _h) {
@@ -147,7 +147,7 @@ void RenderContext::drawLinePoint(size_t tid, int px, int py, double weight,
 // _____________________________________________________________________________
 void RenderContext::drawPoint(size_t tid, int px, int py, double weight,
                               double rasterW, double rasterH) {
-  auto& weights = buffered(&_weights, tid, 0.0);
+  auto& weights = buffered(&_weights, tid, 0.0f);
 
   if (_style == RASTER) {
     if (px >= 0 && py >= 0 && px < _w && py < _h) {
@@ -393,7 +393,7 @@ void RenderContext::writeHeatmap(heatmap_t* hm) {
         size_t y = p / _w;
         size_t x = p - (y * _w);
         heatmap_add_weighted_point_with_stamp(
-            hm, x, y, std::max(0.0, _areaFillWeights[i][p]), fillStamp);
+            hm, x, y, std::max(0.0f, _areaFillWeights[i][p]), fillStamp);
       }
     }
     heatmap_stamp_free(fillStamp);

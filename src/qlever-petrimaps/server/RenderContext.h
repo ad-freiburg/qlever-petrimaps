@@ -80,9 +80,9 @@ class RenderContext {
   std::vector<std::vector<uint32_t>> _points;
   std::vector<std::vector<uint32_t>> _areaFillPoints;
   std::vector<std::vector<uint32_t>> _linePoints;
-  std::vector<std::vector<double>> _weights;
-  std::vector<std::vector<double>> _areaFillWeights;
-  std::vector<std::vector<double>> _lineWeights;
+  std::vector<std::vector<float>> _weights;
+  std::vector<std::vector<float>> _areaFillWeights;
+  std::vector<std::vector<float>> _lineWeights;
   std::vector<std::vector<std::pair<float, float>>> _rasterDims;
   std::vector<unsigned char> _image;
   MapStyle _style;
