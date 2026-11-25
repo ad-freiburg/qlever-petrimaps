@@ -434,11 +434,15 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
   LOG(INFO) << "[SERVER] Virt cell size: " << virtCellSize;
   LOG(INFO) << "[SERVER] Num virt cells: " << subCellSize * subCellSize;
 
+  size_t numRenderThreads = res < THRESHOLD ? 1 : NUM_THREADS;
+
+  LOG(INFO) << "[SERVER] Render threads: " << numRenderThreads;
+
   checkMem(sizeof(unsigned char) * w * h * 4 +
-               sizeof(unsigned char) * w * h * 4 * NUM_THREADS * 2,
+               sizeof(unsigned char) * w * h * 4 * numRenderThreads * 2,
            _maxMemory);
   RenderContext rcontext(w, h, orx, ory, mercW, mercH, style, lcfg.objectStyle,
-                         NUM_THREADS);
+                         numRenderThreads);
 
   // POINTS
   if (intersects(r->getPointGrid(lid).getBBox(), fbbox)) {
@@ -490,7 +494,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
       auto iBox = intersection(r->getPointGrid(lid).getBBox(), fbbox);
       const auto& grid = r->getPointGrid(lid);
 
-#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
+#pragma omp parallel for num_threads(numRenderThreads) schedule(static)
       for (size_t x = grid.getCellXFromX(iBox.getLowerLeft().getX());
            x <= grid.getCellXFromX(iBox.getUpperRight().getX()); x++) {
         for (size_t y = grid.getCellYFromY(iBox.getLowerLeft().getY());
@@ -570,7 +574,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
       const auto& agrid = r->getAreaGrid(lid);
       auto iBox = intersection(lpgrid.getBBox(), fbbox);
 
-#pragma omp parallel for num_threads(NUM_THREADS) schedule(static)
+#pragma omp parallel for num_threads(numRenderThreads) schedule(static)
       for (size_t x = lpgrid.getCellXFromX(iBox.getLowerLeft().getX());
            x <= lpgrid.getCellXFromX(iBox.getUpperRight().getX()); x++) {
         for (size_t y = lpgrid.getCellYFromY(iBox.getLowerLeft().getY());
