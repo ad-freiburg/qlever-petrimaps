@@ -71,6 +71,8 @@ using util::geo::LineSegment;
 using util::geo::webMercToLatLng;
 
 const static double THRESHOLD = 200;
+
+const static size_t MAX_RENDER_THREADS = 4;
 static std::atomic<size_t> _curRow;
 
 // _____________________________________________________________________________
@@ -422,11 +424,13 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
     if (lcfg.colorscheme == "Reds") colorScheme = heatmap_cs_Reds_discrete;
   }
 
-  checkMem(sizeof(float) * w * h, _maxMemory);
+  checkMem(2 * sizeof(float) * w * h, _maxMemory);
   double realCellSize = r->getPointGrid(lid).getCellWidth();
   double virtCellSize = res * 1.5;
 
-  size_t NUM_THREADS = std::thread::hardware_concurrency();
+  size_t NUM_THREADS = std::max<size_t>(
+      1, std::min<size_t>(MAX_RENDER_THREADS,
+                          std::thread::hardware_concurrency()));
 
   size_t subCellSize = (size_t)ceil(realCellSize / virtCellSize);
 
@@ -438,9 +442,7 @@ util::http::Answer Server::handleHeatMapReq(const Params& pars,
 
   LOG(INFO) << "[SERVER] Render threads: " << numRenderThreads;
 
-  checkMem(sizeof(unsigned char) * w * h * 4 +
-               sizeof(unsigned char) * w * h * 4 * numRenderThreads * 2,
-           _maxMemory);
+  checkMem(RenderContext::maxMem(w, h, style, numRenderThreads), _maxMemory);
   RenderContext rcontext(w, h, orx, ory, mercW, mercH, style, lcfg.objectStyle,
                          numRenderThreads);
 

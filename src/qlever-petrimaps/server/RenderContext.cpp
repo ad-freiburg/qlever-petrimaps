@@ -52,6 +52,20 @@ RenderContext::RenderContext(int w, int h, double orx, double ory, double mercW,
       _mercH(mercH) {}
 
 // _____________________________________________________________________________
+size_t RenderContext::maxMem(int w, int h, MapStyle style, size_t numThreads) {
+  // per thread and pixel: point and line weights and pixel indices
+  size_t perPx = 2 * (sizeof(float) + sizeof(uint32_t));
+
+  // area fill weights and pixel indices, not used for aster maps
+  if (style != RASTER) perPx += sizeof(float) + sizeof(uint32_t);
+
+  // raster dimensions, *only* used for raster maps
+  if (style == RASTER) perPx += sizeof(std::pair<float, float>);
+
+  return static_cast<size_t>(w) * h * (4 + numThreads * perPx);
+}
+
+// _____________________________________________________________________________
 template <typename V, typename T>
 V& RenderContext::buffered(std::vector<V>* buffers, size_t tid, T init) {
   // only resize them if needed to safe some mem...

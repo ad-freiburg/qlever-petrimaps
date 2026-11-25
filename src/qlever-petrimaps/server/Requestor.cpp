@@ -140,7 +140,8 @@ void Requestor::request(const std::string& remoteAddr) {
 
     LOG(INFO) << "[REQUESTOR] Calculating bounding box of result...";
 
-    size_t NUM_THREADS = std::thread::hardware_concurrency();
+    size_t NUM_THREADS = std::max<size_t>(
+        1, std::min<size_t>(4, std::thread::hardware_concurrency()));
 
     std::vector<util::geo::FBox> pointBoxes(NUM_THREADS);
     std::vector<util::geo::DBox> lineBoxes(NUM_THREADS);

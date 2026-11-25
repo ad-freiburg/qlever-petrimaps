@@ -35,6 +35,8 @@ class RenderContext {
     return _linePoints[i];
   }
   std::vector<unsigned char>& getImage() { return _image; }
+
+  static size_t maxMem(int w, int h, MapStyle style, size_t numThreads);
   void drawLinePoint(size_t tid, int px, int py, double weight, double rasterW,
                      double rasterH, double rad);
   void drawLinePoint(size_t tid, int px, int py, double weight, double rasterW,
